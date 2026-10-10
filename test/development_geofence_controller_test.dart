@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pingplace/src/domain/smart_arrival_detection.dart';
 import 'package:pingplace/src/geofence/development_geofence_controller.dart';
 import 'package:pingplace/src/geofence/geofence_service.dart';
+import 'package:pingplace/src/location/location_service.dart';
 
 final class FakeGeofenceService implements GeofenceService {
   final StreamController<GeofenceEvent> eventsController =
@@ -43,12 +44,62 @@ final class FakeGeofenceService implements GeofenceService {
   }
 }
 
+final class FakeLocationService implements LocationService {
+  final StreamController<LocationServiceEvent> eventsController =
+      StreamController<LocationServiceEvent>.broadcast();
+  int startCount = 0;
+  int stopCount = 0;
+  Object? startError;
+
+  @override
+  Stream<LocationServiceEvent> get events => eventsController.stream;
+
+  @override
+  Future<void> start() async {
+    startCount++;
+    if (startError != null) throw startError!;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+  }
+
+  @override
+  void dispose() {
+    eventsController.close();
+  }
+}
+
+GeofenceEvent enterEvent([DateTime? at]) =>
+    GeofenceEvent(type: GeofenceEventType.enter, at: at ?? DateTime.now());
+
+LocationServiceEvent locationEvent(
+  double meters, {
+  double accuracy = 10,
+  DateTime? at,
+}) {
+  const target = TargetLocation(latitude: 32, longitude: 34.8);
+  return LocationServiceEvent.sample(
+    LocationSample(
+      latitude: target.latitude + meters / 111320,
+      longitude: target.longitude,
+      accuracy: accuracy,
+      timestamp: at ?? DateTime.now(),
+    ),
+  );
+}
+
 void main() {
   test(
     'real ENTER translates to the existing engine OuterEnter path',
     () async {
       final service = FakeGeofenceService();
-      final controller = DevelopmentGeofenceController(service: service);
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
       await controller.initialize();
       await controller.register();
 
@@ -62,6 +113,8 @@ void main() {
 
       expect(controller.registered, isTrue);
       expect(controller.state, DetectionState.approaching);
+      expect(location.startCount, 1);
+      expect(controller.preciseLocationActive, isTrue);
       expect(
         controller.eventLog.any(
           (entry) => entry.contains('OUTER_ENTER_RECEIVED'),
@@ -75,7 +128,10 @@ void main() {
   test('permission missing is visible and blocks registration', () async {
     final service = FakeGeofenceService()
       ..status = GeofencePermissionStatus.foregroundOnly;
-    final controller = DevelopmentGeofenceController(service: service);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
     await controller.initialize();
     await controller.register();
 
@@ -90,7 +146,10 @@ void main() {
 
   test('real EXIT translates to OuterExit and returns to armed', () async {
     final service = FakeGeofenceService();
-    final controller = DevelopmentGeofenceController(service: service);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
     await controller.initialize();
     await controller.register();
     service.eventsController.add(
@@ -119,7 +178,10 @@ void main() {
     'platform error is visible and cannot move armed engine to approaching',
     () async {
       final service = FakeGeofenceService();
-      final controller = DevelopmentGeofenceController(service: service);
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
       await controller.initialize();
       await controller.register();
 
@@ -148,7 +210,10 @@ void main() {
     'unknown platform event is treated as an error, never as ENTER',
     () async {
       final service = FakeGeofenceService();
-      final controller = DevelopmentGeofenceController(service: service);
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
       await controller.initialize();
       await controller.register();
 
@@ -165,4 +230,189 @@ void main() {
       controller.dispose();
     },
   );
+
+  test(
+    'valid sample outside inner radius remains approaching and active',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(150));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.approaching);
+      expect(controller.preciseLocationActive, isTrue);
+      expect(controller.latestDistance, greaterThan(80));
+      expect(location.stopCount, 0);
+      controller.dispose();
+    },
+  );
+
+  test(
+    'valid inner sample confirms arrival and stops precise location',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(70));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.cooldown);
+      expect(controller.arrivalConfirmed, isTrue);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('INNER_REACHED')),
+        isTrue,
+      );
+      expect(controller.preciseLocationActive, isFalse);
+      expect(location.stopCount, greaterThanOrEqualTo(1));
+      controller.dispose();
+    },
+  );
+
+  test(
+    'poor accuracy inside inner radius is rejected and remains active',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+        config: const SmartArrivalConfig(
+          target: TargetLocation(latitude: 32, longitude: 34.8),
+          maxAcceptedAccuracy: 25,
+        ),
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(40, accuracy: 26));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.approaching);
+      expect(controller.arrivalConfirmed, isFalse);
+      expect(controller.preciseLocationActive, isTrue);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('LOW_ACCURACY')),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('outer EXIT while approaching stops precise location', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent());
+    await Future<void>.delayed(Duration.zero);
+    service.eventsController.add(
+      GeofenceEvent(type: GeofenceEventType.exit, at: DateTime.now()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state, DetectionState.armed);
+    expect(controller.preciseLocationActive, isFalse);
+    expect(location.stopCount, greaterThanOrEqualTo(1));
+    controller.dispose();
+  });
+
+  test(
+    'approach timeout returns to armed and stops precise location',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+        config: const SmartArrivalConfig(
+          target: TargetLocation(latitude: 32, longitude: 34.8),
+          approachTimeout: Duration(milliseconds: 20),
+        ),
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.preciseLocationActive, isFalse);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('APPROACH_TIMEOUT')),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test(
+    'location service failure is visible and cannot confirm arrival',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(
+        const LocationServiceEvent.failure('location provider unavailable'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.arrivalConfirmed, isFalse);
+      expect(controller.state, DetectionState.disarmed);
+      expect(controller.lastError, contains('location provider unavailable'));
+      controller.dispose();
+    },
+  );
+
+  test('late location sample after stop is ignored', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent());
+    await Future<void>.delayed(Duration.zero);
+    location.eventsController.add(locationEvent(70));
+    await Future<void>.delayed(Duration.zero);
+    final arrivalCount = controller.eventLog
+        .where((entry) => entry.contains('INNER_REACHED'))
+        .length;
+    location.eventsController.add(locationEvent(40));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.arrivalConfirmed, isTrue);
+    expect(
+      controller.eventLog.where((entry) => entry.contains('INNER_REACHED')),
+      hasLength(arrivalCount),
+    );
+    controller.dispose();
+  });
 }

@@ -125,8 +125,8 @@ final class _RealGeofenceSection extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             const Text(
-              'Android OS wake-up test only. This does not start precise GPS '
-              'verification.',
+              'Android OS outer wake-up starts temporary precise verification '
+              'only while APPROACHING.',
             ),
             const SizedBox(height: 8),
             Row(
@@ -156,10 +156,43 @@ final class _RealGeofenceSection extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text('Outer radius: ${controller.radius.round()} m'),
+            Text('Inner radius: ${controller.config.innerRadius.round()} m'),
+            Text(
+              'Max accepted accuracy: '
+              '${controller.config.maxAcceptedAccuracy.toStringAsFixed(0)} m',
+            ),
             Text(
               'Registration: ${controller.registered ? 'REGISTERED' : 'NOT REGISTERED'}',
             ),
             Text('Permission: $permission'),
+            Text('Engine state: ${controller.state.name.toUpperCase()}'),
+            Text(
+              'Precise location: '
+              '${controller.preciseLocationActive ? 'ACTIVE' : 'INACTIVE'}',
+            ),
+            if (controller.latestLatitude != null)
+              Text(
+                'Latest location: ${controller.latestLatitude!.toStringAsFixed(6)}, '
+                '${controller.latestLongitude!.toStringAsFixed(6)}',
+              ),
+            Text(
+              'Latest distance: '
+              '${controller.latestDistance?.toStringAsFixed(1) ?? '—'} m',
+            ),
+            Text(
+              'Latest accuracy: '
+              '${controller.latestAccuracy?.toStringAsFixed(1) ?? '—'} m',
+            ),
+            Text(
+              'Latest timestamp: '
+              '${controller.latestLocationTimestamp?.toIso8601String() ?? '—'}',
+            ),
+            Text(
+              'Approach timeout: '
+              '${controller.approachDeadline?.toIso8601String() ?? 'inactive'}',
+            ),
+            if (controller.arrivalConfirmed)
+              const Text('ARRIVED CONFIRMED; precise location stopped.'),
             if (event != null)
               Text(
                 'Last real event: ${event.type.name.toUpperCase()} at ${event.at.toIso8601String()}',

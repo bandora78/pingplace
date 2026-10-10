@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
@@ -19,10 +20,13 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val methodChannelName = "pingplace/geofence"
     private val eventChannelName = "pingplace/geofence/events"
+    private val locationMethodChannelName = "pingplace/location"
+    private val locationEventChannelName = "pingplace/location/events"
     private val geofenceId = "pingplace-phase0-outer"
     private val permissionRequestCode = 4201
     private var permissionResult: MethodChannel.Result? = null
     private var eventSink: EventChannel.EventSink? = null
+    private var locationEventSink: EventChannel.EventSink? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -51,7 +55,54 @@ class MainActivity : FlutterActivity() {
                     GeofenceEventBus.detach()
                 }
             })
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, locationMethodChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> startPreciseLocation(result)
+                    "stop" -> stopPreciseLocation(result)
+                    else -> result.notImplemented()
+                }
+            }
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, locationEventChannelName)
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    locationEventSink = events
+                    LocationEventBus.attach(this@MainActivity) { payload ->
+                        runOnUiThread { locationEventSink?.success(payload) }
+                    }
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    locationEventSink = null
+                    LocationEventBus.detach()
+                }
+            })
         restoreRegistration()
+    }
+
+    private fun startPreciseLocation(result: MethodChannel.Result) {
+        if (permissionStatus() != "backgroundAllowed") {
+            result.error("LOCATION_PERMISSION_MISSING", "Background location permission is required", permissionStatus())
+            return
+        }
+        try {
+            val intent = Intent(this, PreciseLocationService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ContextCompat.startForegroundService(this, intent)
+            } else {
+                startService(intent)
+            }
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("LOCATION_SERVICE_FAILED", error.message, error.toString())
+        }
+    }
+
+    private fun stopPreciseLocation(result: MethodChannel.Result) {
+        stopService(Intent(this, PreciseLocationService::class.java).apply {
+            action = PreciseLocationService.ACTION_STOP
+        })
+        result.success(null)
     }
 
     private fun permissionStatus(): String {

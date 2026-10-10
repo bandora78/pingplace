@@ -66,6 +66,16 @@ final class SmartArrivalConfig {
   final Duration cooldownDuration;
   final Duration approachTimeout;
   final double maxAcceptedAccuracy;
+
+  SmartArrivalConfig copyWith({TargetLocation? target}) => SmartArrivalConfig(
+    target: target ?? this.target,
+    outerRadius: outerRadius,
+    innerRadius: innerRadius,
+    rearmRadius: rearmRadius,
+    cooldownDuration: cooldownDuration,
+    approachTimeout: approachTimeout,
+    maxAcceptedAccuracy: maxAcceptedAccuracy,
+  );
 }
 
 sealed class DetectionEvent {
