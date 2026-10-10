@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../geofence/development_geofence_controller.dart';
+import '../geofence/geofence_service.dart';
 import 'development_simulation_controller.dart';
 
 final class DevelopmentSimulationScreen extends StatefulWidget {
@@ -13,17 +15,33 @@ final class DevelopmentSimulationScreen extends StatefulWidget {
 final class _DevelopmentSimulationScreenState
     extends State<DevelopmentSimulationScreen> {
   final SimulationController controller = SimulationController();
+  final DevelopmentGeofenceController realGeofence =
+      DevelopmentGeofenceController();
+  late final TextEditingController latitudeController;
+  late final TextEditingController longitudeController;
 
   @override
   void initState() {
     super.initState();
     controller.addListener(_refresh);
+    realGeofence.addListener(_refresh);
+    latitudeController = TextEditingController(
+      text: realGeofence.latitude.toString(),
+    );
+    longitudeController = TextEditingController(
+      text: realGeofence.longitude.toString(),
+    );
+    realGeofence.initialize();
   }
 
   @override
   void dispose() {
     controller.removeListener(_refresh);
     controller.dispose();
+    realGeofence.removeListener(_refresh);
+    realGeofence.dispose();
+    latitudeController.dispose();
+    longitudeController.dispose();
     super.dispose();
   }
 
@@ -36,11 +54,24 @@ final class _DevelopmentSimulationScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'Development-only controls. All actions dispatch events to the '
-            'SmartArrivalDetectionEngine.',
+          const Text('Development-only diagnostics and controls.'),
+          const SizedBox(height: 12),
+          _RealGeofenceSection(
+            controller: realGeofence,
+            latitudeController: latitudeController,
+            longitudeController: longitudeController,
           ),
           const SizedBox(height: 12),
+          Text(
+            'SIMULATION MODE',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Simulation controls use the same SmartArrivalDetectionEngine and '
+            'are independent of the real Android geofence.',
+          ),
+          const SizedBox(height: 8),
           _StatusCard(controller: controller),
           const SizedBox(height: 12),
           _ControlGrid(controller: controller),
@@ -56,6 +87,119 @@ final class _DevelopmentSimulationScreenState
                 : SelectableText(controller.eventLog.reversed.join('\n')),
           ),
         ],
+      ),
+    );
+  }
+}
+
+final class _RealGeofenceSection extends StatelessWidget {
+  const _RealGeofenceSection({
+    required this.controller,
+    required this.latitudeController,
+    required this.longitudeController,
+  });
+
+  final DevelopmentGeofenceController controller;
+  final TextEditingController latitudeController;
+  final TextEditingController longitudeController;
+
+  @override
+  Widget build(BuildContext context) {
+    final permission = switch (controller.permission) {
+      GeofencePermissionStatus.denied => 'DENIED',
+      GeofencePermissionStatus.foregroundOnly => 'FOREGROUND ONLY',
+      GeofencePermissionStatus.backgroundAllowed =>
+        'BACKGROUND / ALWAYS ALLOWED',
+    };
+    final event = controller.lastEvent;
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'REAL GEOFENCE TEST',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Android OS wake-up test only. This does not start precise GPS '
+              'verification.',
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: latitudeController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                    decoration: const InputDecoration(labelText: 'Latitude'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: longitudeController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                      signed: true,
+                    ),
+                    decoration: const InputDecoration(labelText: 'Longitude'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('Outer radius: ${controller.radius.round()} m'),
+            Text(
+              'Registration: ${controller.registered ? 'REGISTERED' : 'NOT REGISTERED'}',
+            ),
+            Text('Permission: $permission'),
+            if (event != null)
+              Text(
+                'Last real event: ${event.type.name.toUpperCase()} at ${event.at.toIso8601String()}',
+              ),
+            if (controller.lastError != null)
+              Text(
+                'ERROR: ${controller.lastError}',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton(
+                  onPressed: controller.requestPermission,
+                  child: const Text('REQUEST / CHECK PERMISSION'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final latitude = double.tryParse(latitudeController.text);
+                    final longitude = double.tryParse(longitudeController.text);
+                    if (latitude == null || longitude == null) return;
+                    controller.latitude = latitude;
+                    controller.longitude = longitude;
+                    controller.register();
+                  },
+                  child: const Text('REGISTER OUTER GEOFENCE'),
+                ),
+                OutlinedButton(
+                  onPressed: controller.remove,
+                  child: const Text('REMOVE GEOFENCE'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (controller.eventLog.isNotEmpty)
+              SelectableText(controller.eventLog.reversed.take(8).join('\n')),
+          ],
+        ),
       ),
     );
   }
