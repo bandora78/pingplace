@@ -191,4 +191,22 @@ void main() {
     expect(engine.cooldownUntil, isNull);
     expect(engine.exitObservedDuringCooldown, isFalse);
   });
+
+  test('rearm crossing uses its explicit timestamp deterministically', () {
+    final engine = createEngine();
+    final at = DateTime(2026, 10, 10, 12);
+
+    engine.dispatch(const Arm());
+    engine.dispatch(OuterEnter(at: at));
+    engine.dispatch(LocationReceived(sampleAtMeters(70, at: at)));
+    engine.dispatch(RearmRadiusCrossed(at.add(const Duration(minutes: 2))));
+
+    expect(engine.state, DetectionState.cooldown);
+    expect(engine.exitObservedDuringCooldown, isTrue);
+
+    final result = engine.dispatch(
+      CooldownElapsed(at.add(const Duration(minutes: 10))),
+    );
+    expect(result.state, DetectionState.armed);
+  });
 }

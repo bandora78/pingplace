@@ -103,9 +103,9 @@ final class CooldownElapsed extends DetectionEvent {
 }
 
 final class RearmRadiusCrossed extends DetectionEvent {
-  const RearmRadiusCrossed({this.at});
+  const RearmRadiusCrossed(this.at);
 
-  final DateTime? at;
+  final DateTime at;
 }
 
 final class ApproachTimedOut extends DetectionEvent {
@@ -281,7 +281,7 @@ final class SmartArrivalDetectionEngine {
     }
   }
 
-  void _handleRearmCrossed(DateTime? at, List<DetectionEffect> effects) {
+  void _handleRearmCrossed(DateTime at, List<DetectionEffect> effects) {
     if (_state == DetectionState.cooldown) {
       _exitObservedDuringCooldown = true;
     }
@@ -291,10 +291,8 @@ final class SmartArrivalDetectionEngine {
     }
   }
 
-  bool _cooldownExpiredAt(DateTime? at) {
-    final comparisonTime = at ?? DateTime.now();
-    return _cooldownUntil != null && !comparisonTime.isBefore(_cooldownUntil!);
-  }
+  bool _cooldownExpiredAt(DateTime at) =>
+      _cooldownUntil != null && !at.isBefore(_cooldownUntil!);
 
   void _returnToArmed(
     List<DetectionEffect> effects, {
