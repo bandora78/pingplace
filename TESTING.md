@@ -95,3 +95,17 @@ enforces the matching foreground-service permission. OEM power management,
 location settings, and process death can still prevent or delay delivery; record
 the actual result. Force-stop is a separate state and can block receiver/service
 delivery until the user launches PingPlace again.
+
+## Geofence PendingIntent registration regression
+
+Physical testing on a Xiaomi 15 exposed `ApiException: 10: PendingIntent must be mutable` during geofence registration. The geofence PendingIntent now uses `FLAG_UPDATE_CURRENT` plus `FLAG_MUTABLE` on Android 12/API 31 and later. Earlier Android versions omit the mutability flag for compatibility. Registration, removal, and restoration continue to use the same explicit `GeofenceBroadcastReceiver`, request code `4202`, and PendingIntent helper.
+
+Retest procedure:
+
+1. Install the current debug APK and grant the requested location permissions.
+2. Register a test place and confirm registration succeeds without `ApiException: 10`.
+3. Confirm diagnostics show the geofence as registered.
+4. Remove and re-register the same test place to verify removal and registration use the same PendingIntent identity.
+5. Repeat the cold/background geofence procedure without force-stopping the app and record whether temporary verification starts in the background.
+
+Record the device model, Android version, permission state, registration/removal results, foreground-service notification behavior, and any logcat errors. This fix requires physical Android verification; Dart tests cannot prove OEM geofencing behavior.
