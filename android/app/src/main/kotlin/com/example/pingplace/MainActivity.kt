@@ -13,6 +13,7 @@ import com.google.android.gms.location.LocationServices
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
@@ -94,7 +95,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun register(call: MethodChannel.MethodCall, result: MethodChannel.Result) {
+    private fun register(call: MethodCall, result: MethodChannel.Result) {
         if (permissionStatus() != "backgroundAllowed") {
             result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
             return

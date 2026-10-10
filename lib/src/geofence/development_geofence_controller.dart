@@ -122,8 +122,10 @@ final class DevelopmentGeofenceController {
     lastEvent = event;
     _log('BACKGROUND_EVENT_RECEIVED ${event.type.name.toUpperCase()}');
     final eventType = event.type;
-    if (event.error != null) {
-      _fail('GEOFENCE_EVENT_FAILED: ${event.error}');
+    if (eventType == GeofenceEventType.error || event.error != null) {
+      _fail(
+        'GEOFENCE_EVENT_FAILED: ${event.error ?? 'Unknown geofence event'}',
+      );
       return;
     }
     final result = engine.dispatch(

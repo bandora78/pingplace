@@ -5,60 +5,124 @@ import android.content.Context
 import android.content.Intent
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.Instant
 
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
-            GeofenceEventBus.publish(context, "enter", "Invalid geofencing intent")
+            GeofenceEventBus.publish(context, "error", "Invalid geofencing intent")
             return
         }
         if (event.hasError()) {
-            GeofenceEventBus.publish(context, "enter", "${event.errorCode}")
+            GeofenceEventBus.publish(context, "error", "GeofencingEvent error ${event.errorCode}")
             return
         }
         val type = when (event.geofenceTransition) {
             Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
             Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
-            else -> "enter"
+            else -> "error"
         }
-        GeofenceEventBus.publish(context, type, null)
+        GeofenceEventBus.publish(
+            context,
+            type,
+            if (type == "error") "Unsupported geofence transition ${event.geofenceTransition}" else null,
+        )
     }
 }
 
 object GeofenceEventBus {
     private const val PREFS = "pingplace_geofence"
-    private const val PENDING_EVENT = "pending_event"
+    private const val PENDING_EVENTS = "pending_events"
+    private const val MAX_PENDING_EVENTS = 32
     private var sink: ((Map<String, Any?>) -> Unit)? = null
 
+    @Synchronized
     fun attach(context: Context, newSink: (Map<String, Any?>) -> Unit) {
         sink = newSink
-        val pending = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(PENDING_EVENT, null)
-        if (pending != null) {
-            val parts = pending.split("|", limit = 3)
-            if (parts.size == 3) {
-                newSink(mapOf("type" to parts[0], "timestamp" to parts[1], "error" to parts[2].ifEmpty { null }))
-            }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(PENDING_EVENT).apply()
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val queue = readQueue(preferences.getString(PENDING_EVENTS, null))
+        while (queue.isNotEmpty()) {
+            val event = queue.removeAt(0)
+            val payload = event.toPayload()
+            newSink(payload)
+            // Remove only after the event has been handed to Flutter. If the sink
+            // throws, the event remains persisted for the next attachment.
+            preferences.edit().putString(PENDING_EVENTS, encode(queue)).apply()
+        }
+        if (queue.isEmpty()) {
+            preferences.edit().remove(PENDING_EVENTS).apply()
         }
     }
 
+    @Synchronized
     fun detach() {
         sink = null
     }
 
+    @Synchronized
     fun publish(context: Context, type: String, error: String?) {
-        val timestamp = Instant.now().toString()
-        val payload = mapOf<String, Any?>("type" to type, "timestamp" to timestamp, "error" to error)
+        val event = PendingGeofenceEvent(type, Instant.now().toString(), error)
         val currentSink = sink
         if (currentSink != null) {
-            currentSink(payload)
-        } else {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(PENDING_EVENT, "$type|$timestamp|${error ?: ""}")
-                .apply()
+            currentSink(event.toPayload())
+            return
         }
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val queue = readQueue(preferences.getString(PENDING_EVENTS, null))
+        if (queue.size == MAX_PENDING_EVENTS) {
+            queue.removeAt(0)
+        }
+        queue.add(event)
+        preferences.edit().putString(PENDING_EVENTS, encode(queue)).apply()
+    }
+
+    private fun readQueue(serialized: String?): MutableList<PendingGeofenceEvent> {
+        if (serialized.isNullOrEmpty()) return mutableListOf()
+        return try {
+            val json = JSONArray(serialized)
+            buildList {
+                for (index in 0 until json.length()) {
+                    val item = json.getJSONObject(index)
+                    add(
+                        PendingGeofenceEvent(
+                            type = item.getString("type"),
+                            timestamp = item.getString("timestamp"),
+                            error = item.optString("error").ifEmpty { null },
+                        ),
+                    )
+                }
+            }.toMutableList()
+        } catch (_: Exception) {
+            mutableListOf()
+        }
+    }
+
+    private fun encode(queue: List<PendingGeofenceEvent>): String {
+        val json = JSONArray()
+        queue.forEach { event ->
+            json.put(
+                JSONObject().apply {
+                    put("type", event.type)
+                    put("timestamp", event.timestamp)
+                    put("error", event.error ?: JSONObject.NULL)
+                },
+            )
+        }
+        return json.toString()
+    }
+
+    private data class PendingGeofenceEvent(
+        val type: String,
+        val timestamp: String,
+        val error: String?,
+    ) {
+        fun toPayload(): Map<String, Any?> = mapOf(
+            "type" to type,
+            "timestamp" to timestamp,
+            "error" to error,
+        )
     }
 }

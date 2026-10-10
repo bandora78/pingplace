@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
 
-enum GeofenceEventType { enter, exit }
+enum GeofenceEventType { enter, exit, error }
 
 final class GeofenceEvent {
   const GeofenceEvent({required this.type, required this.at, this.error});
@@ -97,10 +97,20 @@ final class MethodChannelGeofenceService implements GeofenceService {
   static GeofenceEvent _parseEvent(Map<dynamic, dynamic> value) {
     final type = value['type'] as String?;
     final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
+    final error = value['error'] as String?;
+    final eventType = switch (type) {
+      'enter' => GeofenceEventType.enter,
+      'exit' => GeofenceEventType.exit,
+      _ => GeofenceEventType.error,
+    };
     return GeofenceEvent(
-      type: type == 'exit' ? GeofenceEventType.exit : GeofenceEventType.enter,
+      type: eventType,
       at: timestamp ?? DateTime.now(),
-      error: value['error'] as String?,
+      error:
+          error ??
+          (eventType == GeofenceEventType.error
+              ? 'Unknown geofence event type: $type'
+              : null),
     );
   }
 }

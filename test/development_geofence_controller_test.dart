@@ -114,4 +114,55 @@ void main() {
     );
     controller.dispose();
   });
+
+  test(
+    'platform error is visible and cannot move armed engine to approaching',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(service: service);
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.error,
+          at: DateTime.utc(2026, 1, 1),
+          error: 'Unsupported geofence transition 99',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.lastError, contains('Unsupported geofence transition'));
+      expect(
+        controller.eventLog.any(
+          (entry) => entry.contains('GEOFENCE_EVENT_FAILED'),
+        ),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test(
+    'unknown platform event is treated as an error, never as ENTER',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(service: service);
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.error,
+          at: DateTime.utc(2026, 1, 1),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.lastError, contains('Unknown geofence event'));
+      controller.dispose();
+    },
+  );
 }
