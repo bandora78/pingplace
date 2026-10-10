@@ -13,11 +13,19 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
-            GeofenceEventBus.publish(context, "error", "Invalid geofencing intent")
+            val message = "Invalid geofencing intent"
+            GeofenceEventBus.publish(context, "error", message)
+            if (!GeofenceEventBus.isAttached()) {
+                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
+            }
             return
         }
         if (event.hasError()) {
-            GeofenceEventBus.publish(context, "error", "GeofencingEvent error ${event.errorCode}")
+            val message = "GeofencingEvent error ${event.errorCode}"
+            GeofenceEventBus.publish(context, "error", message)
+            if (!GeofenceEventBus.isAttached()) {
+                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
+            }
             return
         }
         val type = when (event.geofenceTransition) {
@@ -25,19 +33,35 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
             else -> "error"
         }
-        GeofenceEventBus.publish(
-            context,
-            type,
-            if (type == "error") "Unsupported geofence transition ${event.geofenceTransition}" else null,
-        )
+        val error = if (type == "error") {
+            "Unsupported geofence transition ${event.geofenceTransition}"
+        } else {
+            null
+        }
+        GeofenceEventBus.publish(context, type, error)
+        if (type == "enter") {
+            val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
+            val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
+            val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
+            if (latitude == null || longitude == null) {
+                GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted")
+            } else if (!GeofenceEventBus.isAttached()) {
+                PreciseLocationService.startFromGeofence(context, latitude, longitude)
+            }
+        } else if (type == "exit" && !GeofenceEventBus.isAttached()) {
+            PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null)
+        }
     }
 }
 
 object GeofenceEventBus {
-    private const val PREFS = "pingplace_geofence"
+    const val PREFS = "pingplace_geofence"
     private const val PENDING_EVENTS = "pending_events"
     private const val MAX_PENDING_EVENTS = 32
     private var sink: ((Map<String, Any?>) -> Unit)? = null
+
+    @Synchronized
+    fun isAttached(): Boolean = sink != null
 
     @Synchronized
     fun attach(context: Context, newSink: (Map<String, Any?>) -> Unit) {

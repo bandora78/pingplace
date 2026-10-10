@@ -72,3 +72,26 @@ confirmation, duplicate events, errors, and the complete diagnostic log.
 Automated Flutter tests verify orchestration and domain behavior only; they do
 not prove Android background GPS behavior or OEM-specific power-management
 behavior.
+
+### T04-06 — Cold/background geofence entry
+
+1. Register the target and confirm background location permission.
+2. Move outside the outer radius.
+3. Put PingPlace in normal background or close the UI/process as appropriate.
+4. Do **not** force-stop PingPlace.
+5. Enter the outer radius.
+6. Verify the geofence receiver starts temporary arrival verification without
+   manually reopening the UI. A visible low-importance foreground-service
+   notification is expected while verification is active.
+7. Continue inside the inner radius and verify the headless Dart engine records
+   `INNER_REACHED`/arrival processing and stops the service.
+8. Reopen PingPlace and verify the persisted geofence/location event history is
+   replayed and the diagnostic state is reconciled.
+
+The geofence transition is an Android 12+ foreground-service start exemption,
+but the app must still have the required background location permission and the
+service must declare the `location` foreground-service type. Android 14+ also
+enforces the matching foreground-service permission. OEM power management,
+location settings, and process death can still prevent or delay delivery; record
+the actual result. Force-stop is a separate state and can block receiver/service
+delivery until the user launches PingPlace again.

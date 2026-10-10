@@ -67,6 +67,7 @@ class MainActivity : FlutterActivity() {
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     locationEventSink = events
+                    PreciseLocationService.handoffToForeground()
                     LocationEventBus.attach(this@MainActivity) { payload ->
                         runOnUiThread { locationEventSink?.success(payload) }
                     }
@@ -176,6 +177,10 @@ class MainActivity : FlutterActivity() {
                         .putString("geofence_latitude", latitude.toString())
                         .putString("geofence_longitude", longitude.toString())
                         .putString("geofence_radius", radius.toString())
+                        .apply()
+                    getSharedPreferences(GeofenceEventBus.PREFS, MODE_PRIVATE).edit()
+                        .putString("target_latitude", latitude.toString())
+                        .putString("target_longitude", longitude.toString())
                         .apply()
                     result.success(null)
                 }
