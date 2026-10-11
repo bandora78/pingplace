@@ -24,6 +24,26 @@ final class GeofenceRegistration {
   final double radius;
 }
 
+final class GeofenceRecoveryStatus {
+  const GeofenceRecoveryStatus({
+    this.registrationConfirmed = false,
+    this.lastRecoveryAttempt,
+    this.lastRecoverySuccess,
+    this.lastRecoveryFailure,
+    this.lastBackgroundEvent,
+    this.lastBackgroundFailure,
+    this.diagnostics = const [],
+  });
+
+  final bool registrationConfirmed;
+  final DateTime? lastRecoveryAttempt;
+  final DateTime? lastRecoverySuccess;
+  final String? lastRecoveryFailure;
+  final DateTime? lastBackgroundEvent;
+  final String? lastBackgroundFailure;
+  final List<String> diagnostics;
+}
+
 abstract interface class GeofenceService {
   Stream<GeofenceEvent> get events;
 
@@ -34,6 +54,11 @@ abstract interface class GeofenceService {
   Future<bool> get registrationStatus;
 
   Future<GeofenceRegistration?> get registration async => null;
+
+  Future<GeofenceRecoveryStatus> get recoveryStatus async =>
+      const GeofenceRecoveryStatus();
+
+  Future<bool> restoreRegistration() async => false;
 
   Future<void> register({
     required double latitude,
@@ -99,6 +124,31 @@ final class MethodChannelGeofenceService implements GeofenceService {
       radius: radius,
     );
   }
+
+  @override
+  Future<GeofenceRecoveryStatus> get recoveryStatus async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'recoveryStatus',
+    );
+    final map = value ?? const {};
+    DateTime? parseDate(Object? raw) =>
+        raw is String ? DateTime.tryParse(raw) : null;
+    return GeofenceRecoveryStatus(
+      registrationConfirmed: map['registrationConfirmed'] == true,
+      lastRecoveryAttempt: parseDate(map['lastRecoveryAttempt']),
+      lastRecoverySuccess: parseDate(map['lastRecoverySuccess']),
+      lastRecoveryFailure: map['lastRecoveryFailure'] as String?,
+      lastBackgroundEvent: parseDate(map['lastBackgroundEvent']),
+      lastBackgroundFailure: map['lastBackgroundFailure'] as String?,
+      diagnostics: (map['diagnostics'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<bool> restoreRegistration() async =>
+      await _methodChannel.invokeMethod<bool>('restoreGeofence') ?? false;
 
   @override
   Future<void> register({

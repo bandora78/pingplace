@@ -26,6 +26,8 @@ void main() {
         'timestamp': enteredAt.toIso8601String(),
       });
 
+      expect(diagnostics, contains(contains('BACKGROUND_SESSION_RESTORED')));
+
       expect(session.engine?.state, DetectionState.approaching);
       expect(diagnostics, contains('PRECISE_LOCATION_STARTED'));
       expect(commands, isEmpty);

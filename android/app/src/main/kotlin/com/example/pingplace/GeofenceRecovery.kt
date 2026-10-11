@@ -1,0 +1,221 @@
+package com.example.pingplace
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Build
+import androidx.core.content.ContextCompat
+import com.google.android.gms.location.Geofence
+import com.google.android.gms.location.GeofencingRequest
+import com.google.android.gms.location.LocationServices
+import org.json.JSONArray
+import java.time.Instant
+
+object GeofenceRecovery {
+    const val REGISTRATION_PREFS = "pingplace_registration"
+    private const val RECOVERY_PREFS = "pingplace_recovery"
+    private const val DIAGNOSTICS = "diagnostics"
+    private const val MAX_DIAGNOSTICS = 100
+    private const val CONFIRMED = "registration_confirmed"
+    private const val LAST_ATTEMPT = "last_recovery_attempt"
+    private const val LAST_SUCCESS = "last_recovery_success"
+    private const val LAST_FAILURE = "last_recovery_failure"
+    private const val LAST_BACKGROUND_EVENT = "last_background_event"
+    private const val LAST_BACKGROUND_FAILURE = "last_background_failure"
+    private const val GEOfENCE_ID = "pingplace-phase0-outer"
+    private val lock = Any()
+    private var inFlight = false
+
+    data class Registration(
+        val latitude: Double,
+        val longitude: Double,
+        val radius: Float,
+    )
+
+    fun registrationPreferences(context: Context) =
+        context.getSharedPreferences(REGISTRATION_PREFS, Context.MODE_PRIVATE)
+
+    fun readRegistration(context: Context): Registration? {
+        val current = registrationPreferences(context)
+        val currentRegistration = parseRegistration(current)
+        if (currentRegistration != null) return currentRegistration
+
+        // Preserve registrations written by the pre-Task-07 Activity preferences.
+        val legacyNames = listOf(
+            "MainActivity_preferences",
+            "com.example.pingplace.MainActivity_preferences",
+        )
+        for (name in legacyNames) {
+            val legacy = context.getSharedPreferences(name, Context.MODE_PRIVATE)
+            val registration = parseRegistration(legacy) ?: continue
+            writeRegistration(context, registration)
+            return registration
+        }
+        return null
+    }
+
+    fun writeRegistration(context: Context, registration: Registration) {
+        registrationPreferences(context).edit()
+            .putString("latitude", registration.latitude.toString())
+            .putString("longitude", registration.longitude.toString())
+            .putString("radius", registration.radius.toString())
+            .apply()
+    }
+
+    fun clearRegistration(context: Context) {
+        registrationPreferences(context).edit().clear().apply()
+        context.getSharedPreferences("MainActivity_preferences", Context.MODE_PRIVATE).edit().clear().apply()
+    }
+
+    fun markRegistrationConfirmed(context: Context, confirmed: Boolean) {
+        val editor = recoveryPreferences(context).edit().putBoolean(CONFIRMED, confirmed)
+        if (confirmed) editor.putString(LAST_SUCCESS, Instant.now().toString())
+        editor.apply()
+    }
+
+    fun isRegistrationConfirmed(context: Context): Boolean =
+        recoveryPreferences(context).getBoolean(CONFIRMED, false)
+
+    fun status(context: Context): Map<String, Any?> {
+        val preferences = recoveryPreferences(context)
+        return mapOf(
+            "registrationConfirmed" to preferences.getBoolean(CONFIRMED, false),
+            "lastRecoveryAttempt" to preferences.getString(LAST_ATTEMPT, null),
+            "lastRecoverySuccess" to preferences.getString(LAST_SUCCESS, null),
+            "lastRecoveryFailure" to preferences.getString(LAST_FAILURE, null),
+            "lastBackgroundEvent" to preferences.getString(LAST_BACKGROUND_EVENT, null),
+            "lastBackgroundFailure" to preferences.getString(LAST_BACKGROUND_FAILURE, null),
+            "diagnostics" to readDiagnostics(preferences),
+        )
+    }
+
+    fun recordBackgroundEvent(context: Context, type: String, error: String?) {
+        val preferences = recoveryPreferences(context)
+        val timestamp = Instant.now().toString()
+        val editor = preferences.edit().putString(LAST_BACKGROUND_EVENT, timestamp)
+        if (error != null) editor.putString(LAST_BACKGROUND_FAILURE, "$timestamp $error")
+        editor.apply()
+        recordDiagnostic(context, if (error == null) "BACKGROUND_EVENT_RECEIVED $type" else "BACKGROUND_EVENT_FAILED $error")
+    }
+
+    fun recordDiagnostic(context: Context, message: String) {
+        val preferences = recoveryPreferences(context)
+        val diagnostics = try {
+            JSONArray(preferences.getString(DIAGNOSTICS, "[]"))
+        } catch (_: Exception) {
+            JSONArray()
+        }
+        diagnostics.put("${Instant.now()} $message")
+        while (diagnostics.length() > MAX_DIAGNOSTICS) diagnostics.remove(0)
+        preferences.edit().putString(DIAGNOSTICS, diagnostics.toString()).apply()
+    }
+
+    fun restore(
+        context: Context,
+        reason: String,
+        callback: (success: Boolean, error: String?) -> Unit,
+    ) {
+        synchronized(lock) {
+            if (inFlight) {
+                recordDiagnostic(context, "GEOFENCE_RECOVERY_ALREADY_RUNNING")
+                callback(false, "A geofence recovery is already running")
+                return
+            }
+            inFlight = true
+        }
+        val preferences = recoveryPreferences(context)
+        val startedAt = Instant.now().toString()
+        val diagnosticPrefix = if (reason == "boot") "BOOT_RECOVERY" else "GEOFENCE_RECOVERY"
+        preferences.edit()
+            .putString(LAST_ATTEMPT, startedAt)
+            .remove(LAST_FAILURE)
+            .putBoolean(CONFIRMED, false)
+            .apply()
+        recordDiagnostic(context, "${diagnosticPrefix}_STARTED reason=$reason")
+
+        fun finish(success: Boolean, error: String?) {
+            synchronized(lock) { inFlight = false }
+            if (success) {
+                val timestamp = Instant.now().toString()
+                preferences.edit()
+                    .putBoolean(CONFIRMED, true)
+                    .putString(LAST_SUCCESS, timestamp)
+                    .apply()
+                recordDiagnostic(context, "${diagnosticPrefix}_COMPLETED reason=$reason")
+                recordDiagnostic(context, "GEOFENCE_RESTORED")
+            } else {
+                val message = error ?: "Unknown geofence recovery failure"
+                preferences.edit().putString(LAST_FAILURE, "${Instant.now()} $message").apply()
+                recordDiagnostic(context, "${diagnosticPrefix}_FAILED $message")
+            }
+            callback(success, error)
+        }
+
+        val registration = readRegistration(context)
+        if (registration == null) {
+            finish(false, "No saved geofence configuration")
+            return
+        }
+        context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE).edit()
+            .putString("target_latitude", registration.latitude.toString())
+            .putString("target_longitude", registration.longitude.toString())
+            .apply()
+        if (!hasLocationPermission(context)) {
+            finish(false, "Background location permission is missing")
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+            !(context.getSystemService(LocationManager::class.java)?.isLocationEnabled ?: false)
+        ) {
+            finish(false, "Location services are disabled")
+            return
+        }
+
+        val geofence = Geofence.Builder()
+            .setRequestId(GEOfENCE_ID)
+            .setCircularRegion(registration.latitude, registration.longitude, registration.radius)
+            .setExpirationDuration(Geofence.NEVER_EXPIRE)
+            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+            .build()
+        val request = GeofencingRequest.Builder()
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+            .addGeofence(geofence)
+            .build()
+        val pendingIntent = GeofencePendingIntent.get(context)
+        val client = LocationServices.getGeofencingClient(context)
+        client.removeGeofences(pendingIntent).addOnCompleteListener {
+            client.addGeofences(request, pendingIntent)
+                .addOnSuccessListener { finish(true, null) }
+                .addOnFailureListener { error -> finish(false, error.message ?: error.toString()) }
+        }
+    }
+
+    private fun parseRegistration(preferences: android.content.SharedPreferences): Registration? {
+        val latitude = preferences.getString("latitude", null)?.toDoubleOrNull()
+            ?: preferences.getString("geofence_latitude", null)?.toDoubleOrNull()
+        val longitude = preferences.getString("longitude", null)?.toDoubleOrNull()
+            ?: preferences.getString("geofence_longitude", null)?.toDoubleOrNull()
+        val radius = preferences.getString("radius", null)?.toFloatOrNull()
+            ?: preferences.getString("geofence_radius", null)?.toFloatOrNull()
+        if (latitude == null || longitude == null || radius == null ||
+            !latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
+            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0f
+        ) return null
+        return Registration(latitude, longitude, radius)
+    }
+
+    private fun hasLocationPermission(context: Context): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun recoveryPreferences(context: Context) =
+        context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)
+
+    private fun readDiagnostics(preferences: android.content.SharedPreferences): List<String> = try {
+        val json = JSONArray(preferences.getString(DIAGNOSTICS, "[]"))
+        buildList { for (index in 0 until json.length()) add(json.getString(index)) }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}

@@ -14,6 +14,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
             val message = "Invalid geofencing intent"
+            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
             GeofenceEventBus.publish(context, "error", message)
             if (!GeofenceEventBus.isAttached()) {
                 PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
@@ -22,6 +23,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         }
         if (event.hasError()) {
             val message = "GeofencingEvent error ${event.errorCode}"
+            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
             GeofenceEventBus.publish(context, "error", message)
             if (!GeofenceEventBus.isAttached()) {
                 PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
@@ -38,6 +40,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         } else {
             null
         }
+        GeofenceRecovery.recordBackgroundEvent(context, type, error)
         GeofenceEventBus.publish(context, type, error)
         if (type == "enter") {
             val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)

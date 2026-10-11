@@ -34,8 +34,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "checkPermission" -> result.success(permissionStatus())
-                    "registrationStatus" -> result.success(getPreferences(MODE_PRIVATE).contains("geofence_latitude"))
+                    "registrationStatus" -> result.success(GeofenceRecovery.isRegistrationConfirmed(this))
                     "registrationDetails" -> result.success(registrationDetails())
+                    "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
+                    "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
                     "remove" -> remove(result)
@@ -196,11 +198,11 @@ class MainActivity : FlutterActivity() {
         LocationServices.getGeofencingClient(this).removeGeofences(pendingIntent).addOnCompleteListener {
             LocationServices.getGeofencingClient(this).addGeofences(request, pendingIntent)
                 .addOnSuccessListener {
-                    getPreferences(MODE_PRIVATE).edit()
-                        .putString("geofence_latitude", latitude.toString())
-                        .putString("geofence_longitude", longitude.toString())
-                        .putString("geofence_radius", radius.toString())
-                        .apply()
+                    GeofenceRecovery.writeRegistration(
+                        this,
+                        GeofenceRecovery.Registration(latitude, longitude, radius),
+                    )
+                    GeofenceRecovery.markRegistrationConfirmed(this, true)
                     getSharedPreferences(GeofenceEventBus.PREFS, MODE_PRIVATE).edit()
                         .putString("target_latitude", latitude.toString())
                         .putString("target_longitude", longitude.toString())
@@ -214,50 +216,31 @@ class MainActivity : FlutterActivity() {
     private fun remove(result: MethodChannel.Result) {
         LocationServices.getGeofencingClient(this).removeGeofences(GeofencePendingIntent.get(this))
             .addOnSuccessListener {
-                getPreferences(MODE_PRIVATE).edit()
-                    .remove("geofence_latitude")
-                    .remove("geofence_longitude")
-                    .remove("geofence_radius")
-                    .apply()
+                GeofenceRecovery.clearRegistration(this)
+                GeofenceRecovery.markRegistrationConfirmed(this, false)
                 result.success(null)
             }
             .addOnFailureListener { error -> result.error("GEOFENCE_REMOVE_FAILED", error.message, error.toString()) }
     }
 
     private fun restoreRegistration() {
-        if (permissionStatus() != "backgroundAllowed") return
-        val preferences = getPreferences(MODE_PRIVATE)
-        val latitude = preferences.getString("geofence_latitude", null)?.toDoubleOrNull() ?: return
-        val longitude = preferences.getString("geofence_longitude", null)?.toDoubleOrNull() ?: return
-        val radius = preferences.getString("geofence_radius", null)?.toFloatOrNull() ?: return
-        if (!latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
-            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0f
-        ) return
-        val geofence = Geofence.Builder()
-            .setRequestId(geofenceId)
-            .setCircularRegion(latitude, longitude, radius)
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
-        val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofence(geofence)
-            .build()
-        val pendingIntent = GeofencePendingIntent.get(this)
-        LocationServices.getGeofencingClient(this).removeGeofences(pendingIntent).addOnCompleteListener {
-            LocationServices.getGeofencingClient(this).addGeofences(request, pendingIntent)
+        GeofenceRecovery.restore(this, "ui_startup") { _, _ -> }
+    }
+
+    private fun restoreGeofence(result: MethodChannel.Result) {
+        GeofenceRecovery.restore(this, "manual") { success, error ->
+            if (success) result.success(true)
+            else result.error("GEOFENCE_RECOVERY_FAILED", error, null)
         }
     }
 
     private fun registrationDetails(): Map<String, Any?>? {
-        val preferences = getPreferences(MODE_PRIVATE)
-        val latitude = preferences.getString("geofence_latitude", null)?.toDoubleOrNull()
-        val longitude = preferences.getString("geofence_longitude", null)?.toDoubleOrNull()
-        val radius = preferences.getString("geofence_radius", null)?.toDoubleOrNull()
-        if (latitude == null || longitude == null || radius == null ||
-            !latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
-            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0.0
-        ) return null
-        return mapOf("latitude" to latitude, "longitude" to longitude, "radius" to radius)
+        val registration = GeofenceRecovery.readRegistration(this) ?: return null
+        return mapOf(
+            "latitude" to registration.latitude,
+            "longitude" to registration.longitude,
+            "radius" to registration.radius.toDouble(),
+            "confirmed" to GeofenceRecovery.isRegistrationConfirmed(this),
+        )
     }
 }

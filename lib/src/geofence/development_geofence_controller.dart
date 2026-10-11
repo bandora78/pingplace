@@ -73,6 +73,7 @@ final class DevelopmentGeofenceController {
   String? lastNotificationVisitId;
   String? currentVisitId;
   List<String> backgroundDiagnostics = const [];
+  GeofenceRecoveryStatus recoveryStatus = const GeofenceRecoveryStatus();
   bool initialized = false;
 
   SmartArrivalConfig get config => _config;
@@ -108,6 +109,7 @@ final class DevelopmentGeofenceController {
     await refreshPermission();
     try {
       registered = await service.registrationStatus;
+      recoveryStatus = await service.recoveryStatus;
       final savedRegistration = await service.registration;
       if (savedRegistration != null) {
         latitude = savedRegistration.latitude;
@@ -128,6 +130,27 @@ final class DevelopmentGeofenceController {
       _notifyListeners();
     } catch (error) {
       _fail('PERMISSION_CHECK_FAILED: $error');
+    }
+  }
+
+  Future<void> restoreGeofence() async {
+    lastError = null;
+    if (permission != GeofencePermissionStatus.backgroundAllowed) {
+      _fail(
+        'GEOFENCE_RECOVERY_FAILED: background location permission is required.',
+      );
+      return;
+    }
+    try {
+      registered = await service.restoreRegistration();
+      recoveryStatus = await service.recoveryStatus;
+      _log(registered ? 'GEOFENCE_RESTORED' : 'BOOT_RECOVERY_FAILED');
+      _notifyListeners();
+    } catch (error) {
+      _fail('BOOT_RECOVERY_FAILED: $error');
+      try {
+        recoveryStatus = await service.recoveryStatus;
+      } catch (_) {}
     }
   }
 

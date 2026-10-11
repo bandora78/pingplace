@@ -280,6 +280,10 @@ final class BackgroundArrivalSession {
       snapshot: snapshot,
     );
     _reminderText = await runtimeStore.loadReminderText();
+    onDiagnostic(
+      'BACKGROUND_SESSION_RESTORED state=${engine!.state.name.toUpperCase()} '
+      'visit=${engine!.visitId ?? 'none'}',
+    );
   }
 
   Future<void> _deliverNotification() async {

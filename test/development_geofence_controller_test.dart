@@ -14,6 +14,8 @@ final class FakeGeofenceService implements GeofenceService {
   GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
   bool registered = false;
   GeofenceRegistration? savedRegistration;
+  GeofenceRecoveryStatus recovery = const GeofenceRecoveryStatus();
+  int restoreCount = 0;
 
   @override
   Stream<GeofenceEvent> get events => eventsController.stream;
@@ -29,6 +31,16 @@ final class FakeGeofenceService implements GeofenceService {
 
   @override
   Future<GeofenceRegistration?> get registration async => savedRegistration;
+
+  @override
+  Future<GeofenceRecoveryStatus> get recoveryStatus async => recovery;
+
+  @override
+  Future<bool> restoreRegistration() async {
+    restoreCount++;
+    registered = recovery.registrationConfirmed;
+    return registered;
+  }
 
   @override
   Future<void> register({
@@ -102,6 +114,45 @@ LocationServiceEvent locationEvent(
 }
 
 void main() {
+  test(
+    'manual recovery is visible and does not alter detection state',
+    () async {
+      final service = FakeGeofenceService()
+        ..recovery = const GeofenceRecoveryStatus(registrationConfirmed: true);
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+      await controller.restoreGeofence();
+
+      expect(service.restoreCount, 1);
+      expect(controller.registered, isTrue);
+      expect(controller.state, DetectionState.disarmed);
+      expect(controller.eventLog, contains(contains('GEOFENCE_RESTORED')));
+      controller.dispose();
+    },
+  );
+
+  test('recovery failure is surfaced without creating an arrival', () async {
+    final service = FakeGeofenceService()
+      ..recovery = const GeofenceRecoveryStatus(
+        registrationConfirmed: false,
+        lastRecoveryFailure: 'Location services are disabled',
+      );
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.restoreGeofence();
+
+    expect(controller.registered, isFalse);
+    expect(controller.state, DetectionState.disarmed);
+    expect(controller.eventLog, contains(contains('BOOT_RECOVERY_FAILED')));
+    controller.dispose();
+  });
+
   test('first initialization keeps default coordinates in sync', () async {
     final controller = DevelopmentGeofenceController(
       service: FakeGeofenceService(),

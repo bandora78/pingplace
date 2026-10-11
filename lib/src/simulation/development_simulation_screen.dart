@@ -183,6 +183,33 @@ final class _RealGeofenceSection extends StatelessWidget {
             ),
             Text('Permission: $permission'),
             Text(
+              'Platform registration confirmed: '
+              '${controller.recoveryStatus.registrationConfirmed ? 'YES' : 'NO / UNKNOWN'}',
+            ),
+            Text(
+              'Last recovery: '
+              'attempt=${controller.recoveryStatus.lastRecoveryAttempt?.toIso8601String() ?? 'none'} '
+              'success=${controller.recoveryStatus.lastRecoverySuccess?.toIso8601String() ?? 'none'}',
+            ),
+            if (controller.recoveryStatus.lastRecoveryFailure != null)
+              Text(
+                'Recovery failure: ${controller.recoveryStatus.lastRecoveryFailure}',
+              ),
+            Text(
+              'Last background event: '
+              '${controller.recoveryStatus.lastBackgroundEvent?.toIso8601String() ?? 'none'}',
+            ),
+            if (controller.recoveryStatus.lastBackgroundFailure != null)
+              Text(
+                'Background failure: ${controller.recoveryStatus.lastBackgroundFailure}',
+              ),
+            if (controller.recoveryStatus.diagnostics.isNotEmpty)
+              SelectableText(
+                controller.recoveryStatus.diagnostics.reversed
+                    .take(6)
+                    .join('\n'),
+              ),
+            Text(
               'Notification readiness: '
               '${controller.notificationPermission.name.toUpperCase()}',
             ),
@@ -243,6 +270,10 @@ final class _RealGeofenceSection extends StatelessWidget {
                 FilledButton(
                   onPressed: controller.requestPermission,
                   child: const Text('REQUEST / CHECK PERMISSION'),
+                ),
+                OutlinedButton(
+                  onPressed: controller.restoreGeofence,
+                  child: const Text('CHECK / RESTORE GEOFENCE'),
                 ),
                 FilledButton(
                   onPressed: controller.requestNotificationPermission,
