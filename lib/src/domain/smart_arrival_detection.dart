@@ -269,8 +269,9 @@ final class SmartArrivalDetectionEngine {
   void _handleLocation(LocationSample sample, List<DetectionEffect> effects) {
     final distance = distanceBetween(config.target, sample);
 
-    if (_state == DetectionState.approaching) {
-      _approachStartedAt ??= sample.timestamp;
+    if (_state == DetectionState.approaching ||
+        _state == DetectionState.cooldown ||
+        _state == DetectionState.waitingForExit) {
       effects.add(
         DetectionEffect(
           DetectionEffectType.locationSample,
@@ -279,7 +280,6 @@ final class SmartArrivalDetectionEngine {
           timestamp: sample.timestamp,
         ),
       );
-
       if (sample.accuracy > config.maxAcceptedAccuracy) {
         effects.add(
           DetectionEffect(
@@ -292,7 +292,10 @@ final class SmartArrivalDetectionEngine {
         );
         return;
       }
+    }
 
+    if (_state == DetectionState.approaching) {
+      _approachStartedAt ??= sample.timestamp;
       if (distance <= config.innerRadius) {
         _setState(DetectionState.arrived, effects);
         effects.add(const DetectionEffect(DetectionEffectType.innerReached));

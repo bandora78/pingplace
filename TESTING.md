@@ -151,4 +151,9 @@ and errors. Confirm `NOTIFICATION_SENT` appears only after the native Android
 notification request succeeds. Automated tests cover the shared engine,
 persistent handoff, and notification deduplication abstractions; they cannot
 prove Android channel behavior, OEM delivery, or cold-process execution without
-a physical device.
+a physical device. A geofence EXIT alone is not treated as crossing the 350 m
+rearm radius: the headless path starts temporary verification and requires an
+accurate GPS sample. Poor accuracy can leave the visit in `WAITING_FOR_EXIT`.
+Xiaomi/HyperOS battery optimization, process eviction, notification settings,
+and Force Stop can still prevent or delay the receiver, foreground service, or
+arrival notification; record those outcomes separately.

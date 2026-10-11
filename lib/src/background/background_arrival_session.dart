@@ -11,26 +11,39 @@ final class BackgroundArrivalSession {
     ArrivalRuntimeStore? runtimeStore,
     NotificationService? notificationService,
     this.config,
+    DateTime Function()? clock,
   }) : runtimeStore = runtimeStore ?? MethodChannelArrivalRuntimeStore(),
        notificationService =
-           notificationService ?? MethodChannelNotificationService();
+           notificationService ?? MethodChannelNotificationService(),
+       _clock = clock ?? DateTime.now;
 
   final void Function(String message) onDiagnostic;
   final Future<void> Function(String command) onCommand;
   final ArrivalRuntimeStore runtimeStore;
   final NotificationService notificationService;
   final SmartArrivalConfig? config;
+  final DateTime Function() _clock;
   SmartArrivalDetectionEngine? engine;
   Timer? _timeoutTimer;
   DateTime? _enteredAt;
   String _reminderText = 'עצור בתחנת דלק יעד';
+  bool _preciseVerificationActive = false;
+  Future<void> _eventTail = Future<void>.value();
 
   void dispose() {
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
+    _preciseVerificationActive = false;
   }
 
-  Future<void> handleEvent(Map<Object?, Object?> payload) async {
+  Future<void> handleEvent(Map<Object?, Object?> payload) {
+    final previous = _eventTail;
+    final next = previous.then((_) => _handleEvent(payload));
+    _eventTail = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _handleEvent(Map<Object?, Object?> payload) async {
     await _ensureEngine();
     final type = payload['type'] as String?;
     if (type == 'error') {
@@ -74,12 +87,19 @@ final class BackgroundArrivalSession {
         await _process(engine!.dispatch(const OuterExit()));
         if (engine!.state == DetectionState.cooldown ||
             engine!.state == DetectionState.waitingForExit) {
+          _preciseVerificationActive = true;
           onDiagnostic('PRECISE_LOCATION_STARTED');
           await onCommand('startVerification');
         }
       }
     } else if (type == 'location' && engine != null) {
-      if (engine!.state != DetectionState.approaching) return;
+      if (!_preciseVerificationActive ||
+          (engine!.state != DetectionState.approaching &&
+              engine!.state != DetectionState.cooldown &&
+              engine!.state != DetectionState.waitingForExit)) {
+        onDiagnostic('LOCATION_IGNORED precise verifier inactive');
+        return;
+      }
       final timestamp = DateTime.tryParse(
         payload['timestamp'] as String? ?? '',
       );
@@ -123,11 +143,14 @@ final class BackgroundArrivalSession {
   }
 
   Future<void> _process(DetectionResult result) async {
+    // Persist before a stop command can destroy the headless Flutter engine.
+    await _saveRuntimeState();
     for (final effect in result.effects) {
       switch (effect.type) {
         case DetectionEffectType.stateChanged:
           onDiagnostic('STATE ${effect.from!.name} -> ${effect.to!.name}');
         case DetectionEffectType.preciseLocationStarted:
+          _preciseVerificationActive = true;
           onDiagnostic('PRECISE_LOCATION_STARTED');
           final start = _enteredAt ?? DateTime.now();
           _timeoutTimer?.cancel();
@@ -139,12 +162,11 @@ final class BackgroundArrivalSession {
             );
           });
         case DetectionEffectType.preciseLocationStopped:
+          _preciseVerificationActive = false;
           _timeoutTimer?.cancel();
           _timeoutTimer = null;
           onDiagnostic('PRECISE_LOCATION_STOPPED');
-          await onCommand(
-            engine!.state == DetectionState.cooldown ? 'stopLocation' : 'stop',
-          );
+          await onCommand('stop');
         case DetectionEffectType.locationSample:
           onDiagnostic(
             'LOCATION distance=${effect.distance!.toStringAsFixed(1)}m '
@@ -165,31 +187,32 @@ final class BackgroundArrivalSession {
           onDiagnostic('APPROACH_TIMEOUT');
       }
     }
-    final rearmed = result.effects.any(
-      (effect) =>
-          effect.type == DetectionEffectType.stateChanged &&
-          effect.to == DetectionState.armed &&
-          effect.from != DetectionState.disarmed,
-    );
     final waitingForExit = result.effects.any(
       (effect) =>
           effect.type == DetectionEffectType.stateChanged &&
           effect.to == DetectionState.waitingForExit,
     );
-    if (rearmed || waitingForExit) await onCommand('stop');
+    if (waitingForExit) await onCommand('stop');
     _scheduleCooldownTimer();
-    await runtimeStore.save(engine!.runtimeSnapshot);
   }
 
   void _scheduleCooldownTimer() {
     final until = engine?.cooldownUntil;
     if (until == null || engine?.state != DetectionState.cooldown) return;
     _timeoutTimer?.cancel();
-    final delay = until.difference(DateTime.now());
+    final delay = until.difference(_clock());
     _timeoutTimer = Timer(
       delay.isNegative ? Duration.zero : delay,
       () => unawaited(_process(engine!.dispatch(CooldownElapsed(until)))),
     );
+  }
+
+  Future<void> _saveRuntimeState() async {
+    try {
+      await runtimeStore.save(engine!.runtimeSnapshot);
+    } catch (error) {
+      onDiagnostic('RUNTIME_STATE_SAVE_FAILED: $error');
+    }
   }
 
   Future<void> _ensureEngine() async {

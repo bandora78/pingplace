@@ -5,6 +5,8 @@ import 'package:pingplace/src/domain/smart_arrival_detection.dart';
 import 'package:pingplace/src/geofence/development_geofence_controller.dart';
 import 'package:pingplace/src/geofence/geofence_service.dart';
 import 'package:pingplace/src/location/location_service.dart';
+import 'package:pingplace/src/notification/notification_service.dart';
+import 'package:pingplace/src/runtime/arrival_runtime_store.dart';
 
 final class FakeGeofenceService implements GeofenceService {
   final StreamController<GeofenceEvent> eventsController =
@@ -282,6 +284,33 @@ void main() {
       controller.dispose();
     },
   );
+
+  test('foreground arrival delivers exactly one notification', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final notifications = InMemoryNotificationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+      notificationService: notifications,
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent(DateTime.utc(2026, 1, 1)));
+    await Future<void>.delayed(Duration.zero);
+    location.eventsController.add(
+      locationEvent(70, at: DateTime.utc(2026, 1, 1, 0, 1)),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.deliveredVisitIds, hasLength(1));
+    expect(
+      controller.eventLog.any((entry) => entry.contains('NOTIFICATION_SENT')),
+      isTrue,
+    );
+    controller.dispose();
+  });
 
   test(
     'poor accuracy inside inner radius is rejected and remains active',

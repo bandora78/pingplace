@@ -42,7 +42,7 @@ void main() {
 
       expect(session.engine?.state, DetectionState.cooldown);
       expect(diagnostics, contains('INNER_REACHED'));
-      expect(commands, contains('stopLocation'));
+      expect(commands, contains('stop'));
       session.dispose();
     },
   );

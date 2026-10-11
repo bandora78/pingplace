@@ -31,13 +31,16 @@ Future<BackgroundArrivalSession> session(
   InMemoryNotificationService notifications,
   List<String> diagnostics, {
   SmartArrivalConfig? config,
+  DateTime? clock,
+  List<String>? commands,
 }) async {
   return BackgroundArrivalSession(
     onDiagnostic: diagnostics.add,
-    onCommand: (_) async {},
+    onCommand: (command) async => commands?.add(command),
     runtimeStore: runtime,
     notificationService: notifications,
     config: config,
+    clock: clock == null ? null : () => clock,
   );
 }
 
@@ -115,6 +118,29 @@ void main() {
   });
 
   test(
+    'overlapping headless callbacks are serialized before persistence',
+    () async {
+      final runtime = InMemoryArrivalRuntimeStore();
+      final notifications = InMemoryNotificationService();
+      final diagnostics = <String>[];
+      final value = await session(runtime, notifications, diagnostics);
+      final at = DateTime.utc(2026, 1, 1);
+      final enter = value.handleEvent({
+        'type': 'enter',
+        'targetLatitude': target.latitude,
+        'targetLongitude': target.longitude,
+        'timestamp': at.toIso8601String(),
+      });
+      final location = value.handleEvent(locationPayload(70, at));
+      await Future.wait([enter, location]);
+
+      expect(value.engine?.state, DetectionState.cooldown);
+      expect(notifications.deliveredVisitIds, hasLength(1));
+      value.dispose();
+    },
+  );
+
+  test(
     'EXIT and ENTER during cooldown do not duplicate notification',
     () async {
       final runtime = InMemoryArrivalRuntimeStore();
@@ -157,6 +183,96 @@ void main() {
     },
   );
 
+  test(
+    'EXIT during cooldown needs an accurate 350m sample before rearm',
+    () async {
+      final runtime = InMemoryArrivalRuntimeStore();
+      final notifications = InMemoryNotificationService();
+      final diagnostics = <String>[];
+      final commands = <String>[];
+      final at = DateTime.utc(2026, 1, 1);
+      final value = await session(
+        runtime,
+        notifications,
+        diagnostics,
+        clock: at,
+        commands: commands,
+      );
+      await enterAndSample(value, at);
+      await value.handleEvent({'type': 'exit'});
+      expect(diagnostics, contains('PRECISE_LOCATION_STARTED'));
+      await value.handleEvent(
+        locationPayload(360, at.add(const Duration(minutes: 1))),
+      );
+      expect(value.engine?.state, DetectionState.cooldown);
+      await value.handleEvent({
+        'type': 'cooldownElapsed',
+        'timestamp': at.add(const Duration(minutes: 11)).toIso8601String(),
+      });
+
+      expect(value.engine?.state, DetectionState.armed);
+      expect(diagnostics, contains('PRECISE_LOCATION_STOPPED'));
+      expect(notifications.deliveredVisitIds, hasLength(1));
+      value.dispose();
+    },
+  );
+
+  test('low-accuracy rearm sample is rejected and cannot rearm', () async {
+    final runtime = InMemoryArrivalRuntimeStore();
+    final notifications = InMemoryNotificationService();
+    final diagnostics = <String>[];
+    final at = DateTime.utc(2026, 1, 1);
+    final value = await session(runtime, notifications, diagnostics, clock: at);
+    await enterAndSample(value, at);
+    await value.handleEvent({'type': 'exit'});
+    await value.handleEvent(
+      locationPayload(360, at.add(const Duration(minutes: 1)), accuracy: 51),
+    );
+    await value.handleEvent({
+      'type': 'cooldownElapsed',
+      'timestamp': at.add(const Duration(minutes: 11)).toIso8601String(),
+    });
+
+    expect(value.engine?.state, DetectionState.waitingForExit);
+    expect(diagnostics, contains('LOCATION_REJECTED reason=LOW_ACCURACY'));
+    value.dispose();
+  });
+
+  test(
+    'WAITING_FOR_EXIT followed by valid rearm stops temporary GPS',
+    () async {
+      final runtime = InMemoryArrivalRuntimeStore();
+      final notifications = InMemoryNotificationService();
+      final diagnostics = <String>[];
+      final commands = <String>[];
+      final at = DateTime.utc(2026, 1, 1);
+      final value = await session(
+        runtime,
+        notifications,
+        diagnostics,
+        clock: at,
+        commands: commands,
+      );
+      await enterAndSample(value, at);
+      await value.handleEvent({
+        'type': 'cooldownElapsed',
+        'timestamp': at.add(const Duration(minutes: 11)).toIso8601String(),
+      });
+      expect(value.engine?.state, DetectionState.waitingForExit);
+      await value.handleEvent({'type': 'exit'});
+      await value.handleEvent(
+        locationPayload(360, at.add(const Duration(minutes: 12))),
+      );
+
+      expect(value.engine?.state, DetectionState.armed);
+      expect(diagnostics, contains('PRECISE_LOCATION_STOPPED'));
+      expect(commands, contains('stop'));
+      expect(commands, contains('startVerification'));
+      expect(commands, contains('stop'));
+      value.dispose();
+    },
+  );
+
   test('a new visit after rearm can notify again', () async {
     final runtime = InMemoryArrivalRuntimeStore();
     final notifications = InMemoryNotificationService();
@@ -170,6 +286,7 @@ void main() {
       notifications,
       diagnostics,
       config: config,
+      clock: DateTime.utc(2026, 1, 1),
     );
     final at = DateTime.utc(2026, 1, 1);
     await enterAndSample(value, at);
