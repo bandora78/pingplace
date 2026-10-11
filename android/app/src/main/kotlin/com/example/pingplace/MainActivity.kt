@@ -224,6 +224,10 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun restoreRegistration() {
+        if (GeofenceRecovery.isRegistrationConfirmed(this)) {
+            GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_RECOVERY_SKIPPED_CONFIRMED")
+            return
+        }
         GeofenceRecovery.restore(this, "ui_startup") { _, _ -> }
     }
 

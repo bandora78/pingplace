@@ -11,6 +11,7 @@ import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import org.json.JSONArray
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 object GeofenceRecovery {
     const val REGISTRATION_PREFS = "pingplace_registration"
@@ -125,6 +126,7 @@ object GeofenceRecovery {
             inFlight = true
         }
         val preferences = recoveryPreferences(context)
+        val previouslyConfirmed = preferences.getBoolean(CONFIRMED, false)
         val startedAt = Instant.now().toString()
         val diagnosticPrefix = if (reason == "boot") "BOOT_RECOVERY" else "GEOFENCE_RECOVERY"
         preferences.edit()
@@ -134,7 +136,9 @@ object GeofenceRecovery {
             .apply()
         recordDiagnostic(context, "${diagnosticPrefix}_STARTED reason=$reason")
 
+        val callbackCompleted = AtomicBoolean(false)
         fun finish(success: Boolean, error: String?) {
+            if (!callbackCompleted.compareAndSet(false, true)) return
             synchronized(lock) { inFlight = false }
             if (success) {
                 val timestamp = Instant.now().toString()
@@ -161,8 +165,9 @@ object GeofenceRecovery {
             .putString("target_latitude", registration.latitude.toString())
             .putString("target_longitude", registration.longitude.toString())
             .apply()
-        if (!hasLocationPermission(context)) {
-            finish(false, "Background location permission is missing")
+        val permissionFailure = locationPermissionFailure(context)
+        if (permissionFailure != null) {
+            finish(false, permissionFailure)
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
@@ -184,10 +189,33 @@ object GeofenceRecovery {
             .build()
         val pendingIntent = GeofencePendingIntent.get(context)
         val client = LocationServices.getGeofencingClient(context)
-        client.removeGeofences(pendingIntent).addOnCompleteListener {
-            client.addGeofences(request, pendingIntent)
-                .addOnSuccessListener { finish(true, null) }
-                .addOnFailureListener { error -> finish(false, error.message ?: error.toString()) }
+        fun addRegistration() {
+            try {
+                client.addGeofences(request, pendingIntent)
+                    .addOnSuccessListener { finish(true, null) }
+                    .addOnFailureListener { error ->
+                        finish(false, "Geofence registration failed: ${error.message ?: error}")
+                    }
+            } catch (error: Exception) {
+                finish(false, "Geofence registration failed: ${error.message ?: error}")
+            }
+        }
+        if (!previouslyConfirmed) {
+            recordDiagnostic(context, "GEOFENCE_REMOVE_SKIPPED_NO_CONFIRMED_REGISTRATION")
+            addRegistration()
+            return
+        }
+        try {
+            client.removeGeofences(pendingIntent).addOnCompleteListener { removalTask ->
+                if (!removalTask.isSuccessful) {
+                    val error = removalTask.exception?.message ?: "Unknown geofence removal failure"
+                    finish(false, "Geofence removal failed; registration was not replaced: $error")
+                    return@addOnCompleteListener
+                }
+                addRegistration()
+            }
+        } catch (error: Exception) {
+            finish(false, "Geofence removal failed; registration was not replaced: ${error.message ?: error}")
         }
     }
 
@@ -205,9 +233,21 @@ object GeofenceRecovery {
         return Registration(latitude, longitude, radius)
     }
 
-    private fun hasLocationPermission(context: Context): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    private fun locationPermissionFailure(context: Context): String? {
+        val hasForeground =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasForeground) return "Location permission is missing; grant foreground location first"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return "Background location permission is missing; enable Allow all the time"
+        }
+        return null
+    }
 
     private fun recoveryPreferences(context: Context) =
         context.getSharedPreferences(RECOVERY_PREFS, Context.MODE_PRIVATE)

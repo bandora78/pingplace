@@ -42,6 +42,7 @@ final class DevelopmentGeofenceController {
   SmartArrivalConfig _config;
   final DateTime Function() _clock;
   final List<GeofenceListener> _listeners = [];
+  Future<void> _recoveryTail = Future<void>.value();
   final List<String> _eventLog = [];
   StreamSubscription<GeofenceEvent>? _geofenceSubscription;
   StreamSubscription<LocationServiceEvent>? _locationSubscription;
@@ -133,7 +134,14 @@ final class DevelopmentGeofenceController {
     }
   }
 
-  Future<void> restoreGeofence() async {
+  Future<void> restoreGeofence() {
+    final previous = _recoveryTail;
+    final next = previous.then((_) => _restoreGeofence());
+    _recoveryTail = next.catchError((Object _) {});
+    return next;
+  }
+
+  Future<void> _restoreGeofence() async {
     lastError = null;
     if (permission != GeofencePermissionStatus.backgroundAllowed) {
       _fail(

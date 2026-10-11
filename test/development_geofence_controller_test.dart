@@ -16,6 +16,9 @@ final class FakeGeofenceService implements GeofenceService {
   GeofenceRegistration? savedRegistration;
   GeofenceRecoveryStatus recovery = const GeofenceRecoveryStatus();
   int restoreCount = 0;
+  int activeRestoreCount = 0;
+  int maxActiveRestoreCount = 0;
+  Duration restoreDelay = Duration.zero;
 
   @override
   Stream<GeofenceEvent> get events => eventsController.stream;
@@ -38,7 +41,13 @@ final class FakeGeofenceService implements GeofenceService {
   @override
   Future<bool> restoreRegistration() async {
     restoreCount++;
+    activeRestoreCount++;
+    if (activeRestoreCount > maxActiveRestoreCount) {
+      maxActiveRestoreCount = activeRestoreCount;
+    }
+    await Future<void>.delayed(restoreDelay);
     registered = recovery.registrationConfirmed;
+    activeRestoreCount--;
     return registered;
   }
 
@@ -150,6 +159,42 @@ void main() {
     expect(controller.registered, isFalse);
     expect(controller.state, DetectionState.disarmed);
     expect(controller.eventLog, contains(contains('BOOT_RECOVERY_FAILED')));
+    controller.dispose();
+  });
+
+  test('recovery requires background location permission', () async {
+    final service = FakeGeofenceService()
+      ..status = GeofencePermissionStatus.foregroundOnly;
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.restoreGeofence();
+
+    expect(service.restoreCount, 0);
+    expect(controller.lastError, contains('background location permission'));
+    expect(controller.state, DetectionState.disarmed);
+    controller.dispose();
+  });
+
+  test('repeated recovery actions are serialized', () async {
+    final service = FakeGeofenceService()
+      ..recovery = const GeofenceRecoveryStatus(registrationConfirmed: true)
+      ..restoreDelay = const Duration(milliseconds: 10);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+
+    await Future.wait([
+      controller.restoreGeofence(),
+      controller.restoreGeofence(),
+    ]);
+
+    expect(service.restoreCount, 2);
+    expect(service.maxActiveRestoreCount, 1);
     controller.dispose();
   });
 
