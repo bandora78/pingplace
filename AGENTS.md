@@ -28,6 +28,17 @@ Before finishing any implementation task:
 
 Do not claim a check passed unless it was actually executed.
 
+## Versioning and Validation
+
+For every future task that changes the installable app:
+
+- Increment the app build number; increment semantic version components when appropriate.
+- Keep Android version metadata synchronized with Flutter configuration.
+- Keep the app version, build number, and source commit visible in the app.
+- Report the app version, build number, and commit SHA in the final validation summary.
+- Do not claim tests or builds passed unless they were actually executed.
+- Keep the working tree clean after committing and pushing.
+
 ## Phase 0 implementation order
 1. Flutter skeleton and platform-independent architecture.
 2. Pure Dart Smart Arrival Detection Engine.

@@ -182,3 +182,23 @@ These checks require physical Android verification for OEM settings intents,
 permission-dialog behavior, and first-launch state restoration. They do not
 change the existing exactly-one-notification-per-visit or background delivery
 test procedure.
+
+## Task 06 versioned APKs
+
+Every push to `main` runs the **Flutter validation and debug APK** workflow in
+GitHub Actions. Open the repository's **Actions** tab, select the completed
+workflow run for the desired commit, and download the artifact named like
+`pingplace-1.0.0+2-39bd810`. The APK filename contains the same version/build
+and short source commit shown in the app's debug screen. GitHub Actions is the
+distribution path; APK binaries are not committed to the repository.
+
+To install a downloaded debug APK with ADB:
+
+```bash
+adb install -r pingplace-1.0.0+2-<commit>.apk
+```
+
+If Android reports a signature conflict, uninstall the previous debug build
+first, then install again. The workflow build receives the exact GitHub commit
+SHA through `--dart-define`; local builds without that define display
+`Commit: unknown` as the intentional fallback.

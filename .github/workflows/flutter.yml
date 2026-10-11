@@ -1,0 +1,68 @@
+name: Flutter validation and debug APK
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Read application version
+        id: version
+        shell: bash
+        run: |
+          version_line="$(sed -n 's/^version: //p' pubspec.yaml)"
+          build_name="${version_line%%+*}"
+          build_number="${version_line##*+}"
+          commit_short="${GITHUB_SHA:0:7}"
+          echo "build_name=$build_name" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "commit_short=$commit_short" >> "$GITHUB_OUTPUT"
+          echo "version=$version_line" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build debug APK
+        run: >-
+          flutter build apk --debug
+          --build-name "${{ steps.version.outputs.build_name }}"
+          --build-number "${{ steps.version.outputs.build_number }}"
+          --dart-define=PINGPLACE_APP_VERSION=${{ steps.version.outputs.build_name }}
+          --dart-define=PINGPLACE_BUILD_NUMBER=${{ steps.version.outputs.build_number }}
+          --dart-define=PINGPLACE_GIT_SHA=${{ steps.version.outputs.commit_short }}
+          --dart-define=PINGPLACE_BUILD_TYPE=debug
+
+      - name: Rename APK with build identity
+        run: >-
+          cp build/app/outputs/flutter-apk/app-debug.apk
+          "build/app/outputs/flutter-apk/pingplace-${{ steps.version.outputs.version }}-${{ steps.version.outputs.commit_short }}.apk"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: pingplace-${{ steps.version.outputs.version }}-${{ steps.version.outputs.commit_short }}
+          path: build/app/outputs/flutter-apk/pingplace-*.apk
+          if-no-files-found: error

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
 import '../geofence/geofence_service.dart';
 import 'development_simulation_controller.dart';
@@ -64,6 +65,10 @@ final class _DevelopmentSimulationScreenState
         padding: const EdgeInsets.all(16),
         children: [
           const Text('Development-only diagnostics and controls.'),
+          const SizedBox(height: 4),
+          Text(BuildInfo.current.versionLabel),
+          Text(BuildInfo.current.commitLabel),
+          Text(BuildInfo.current.buildTypeLabel),
           const SizedBox(height: 12),
           _RealGeofenceSection(
             controller: realGeofence,
