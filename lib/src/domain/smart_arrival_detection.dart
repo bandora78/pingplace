@@ -148,6 +148,24 @@ final class DetectionEffect {
   final LocationRejectionReason? reason;
 }
 
+final class DetectionRuntimeSnapshot {
+  const DetectionRuntimeSnapshot({
+    required this.state,
+    this.target,
+    this.approachStartedAt,
+    this.cooldownUntil,
+    this.exitObservedDuringCooldown = false,
+    this.visitId,
+  });
+
+  final DetectionState state;
+  final TargetLocation? target;
+  final DateTime? approachStartedAt;
+  final DateTime? cooldownUntil;
+  final bool exitObservedDuringCooldown;
+  final String? visitId;
+}
+
 final class DetectionResult {
   const DetectionResult({required this.state, required this.effects});
 
@@ -159,17 +177,35 @@ final class DetectionResult {
 }
 
 final class SmartArrivalDetectionEngine {
-  SmartArrivalDetectionEngine(this.config) : _state = DetectionState.disarmed;
+  SmartArrivalDetectionEngine(this.config, {DetectionRuntimeSnapshot? snapshot})
+    : _state = snapshot?.state ?? DetectionState.disarmed,
+      _approachStartedAt = snapshot?.approachStartedAt,
+      _cooldownUntil = snapshot?.cooldownUntil,
+      _exitObservedDuringCooldown =
+          snapshot?.exitObservedDuringCooldown ?? false,
+      _visitId = snapshot?.visitId;
 
   final SmartArrivalConfig config;
   DetectionState _state;
   DateTime? _approachStartedAt;
   DateTime? _cooldownUntil;
   bool _exitObservedDuringCooldown = false;
+  String? _visitId;
 
   DetectionState get state => _state;
   DateTime? get cooldownUntil => _cooldownUntil;
   bool get exitObservedDuringCooldown => _exitObservedDuringCooldown;
+  DateTime? get approachStartedAt => _approachStartedAt;
+  String? get visitId => _visitId;
+
+  DetectionRuntimeSnapshot get runtimeSnapshot => DetectionRuntimeSnapshot(
+    state: _state,
+    target: config.target,
+    approachStartedAt: _approachStartedAt,
+    cooldownUntil: _cooldownUntil,
+    exitObservedDuringCooldown: _exitObservedDuringCooldown,
+    visitId: _visitId,
+  );
 
   DetectionResult dispatch(DetectionEvent event) {
     final effects = <DetectionEffect>[];
@@ -190,7 +226,9 @@ final class SmartArrivalDetectionEngine {
         }
       case OuterEnter(:final at):
         if (_state == DetectionState.armed) {
-          _approachStartedAt = at;
+          final enteredAt = at ?? DateTime.now();
+          _approachStartedAt = enteredAt;
+          _visitId ??= 'visit-${enteredAt.microsecondsSinceEpoch}';
           _setState(DetectionState.approaching, effects);
           effects.add(
             const DetectionEffect(DetectionEffectType.preciseLocationStarted),
@@ -221,6 +259,7 @@ final class SmartArrivalDetectionEngine {
         _cooldownUntil = null;
         _approachStartedAt = null;
         _exitObservedDuringCooldown = false;
+        _visitId = null;
         _setState(DetectionState.armed, effects);
     }
 
@@ -319,8 +358,12 @@ final class SmartArrivalDetectionEngine {
   }
 
   void _rearm(List<DetectionEffect> effects) {
+    effects.add(
+      const DetectionEffect(DetectionEffectType.preciseLocationStopped),
+    );
     _cooldownUntil = null;
     _exitObservedDuringCooldown = false;
+    _visitId = null;
     _setState(DetectionState.armed, effects);
   }
 

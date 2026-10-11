@@ -78,6 +78,14 @@ class MainActivity : FlutterActivity() {
                     LocationEventBus.detach()
                 }
             })
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformRuntimeBridge.RUNTIME_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                PlatformRuntimeBridge.handleRuntime(this, call, result)
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformRuntimeBridge.NOTIFICATION_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                ArrivalNotificationBridge.handle(this, this, call, result)
+            }
         restoreRegistration()
     }
 

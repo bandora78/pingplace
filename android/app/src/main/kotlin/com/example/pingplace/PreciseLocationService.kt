@@ -68,6 +68,8 @@ class PreciseLocationService : Service() {
                         "error" to intent.getStringExtra(EXTRA_ERROR),
                     ),
                 )
+                startForegroundShell()
+                startBackgroundEngine()
                 flushBackgroundEvents()
             }
             else -> startUpdates()
@@ -111,7 +113,15 @@ class PreciseLocationService : Service() {
                     }
                     "stop" -> {
                         result.success(null)
-                        stopUpdates()
+                        stopUpdates(stopService = true)
+                    }
+                    "stopLocation" -> {
+                        result.success(null)
+                        stopUpdates(stopService = false)
+                    }
+                    "startVerification" -> {
+                        result.success(null)
+                        startUpdates()
                     }
                     "diagnostic" -> {
                         recordDiagnostic(call.arguments as? String ?: "UNKNOWN_BACKGROUND_DIAGNOSTIC")
@@ -119,6 +129,18 @@ class PreciseLocationService : Service() {
                     }
                     else -> result.notImplemented()
                 }
+            }
+            MethodChannel(
+                engine.dartExecutor.binaryMessenger,
+                PlatformRuntimeBridge.RUNTIME_CHANNEL,
+            ).setMethodCallHandler { call, result ->
+                PlatformRuntimeBridge.handleRuntime(this, call, result)
+            }
+            MethodChannel(
+                engine.dartExecutor.binaryMessenger,
+                PlatformRuntimeBridge.NOTIFICATION_CHANNEL,
+            ).setMethodCallHandler { call, result ->
+                ArrivalNotificationBridge.handle(this, null, call, result)
             }
             backgroundEngine = engine
             backgroundControl = channel
@@ -159,20 +181,8 @@ class PreciseLocationService : Service() {
     }
 
     private fun startUpdates() {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("PingPlace")
-            .setContentText("Checking arrival location temporarily")
-            .setSmallIcon(applicationInfo.icon)
-            .setOngoing(true)
-            .build()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-        )
+        startForegroundShell()
         if (locationCallback != null) return
-
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
             .setMinUpdateIntervalMillis(2_000L)
             .setMaxUpdateDelayMillis(0L)
@@ -232,11 +242,26 @@ class PreciseLocationService : Service() {
         }
     }
 
-    private fun stopUpdates() {
+    private fun startForegroundShell() {
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("PingPlace")
+            .setContentText("Checking arrival location temporarily")
+            .setSmallIcon(applicationInfo.icon)
+            .setOngoing(true)
+            .build()
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            notification,
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+        )
+    }
+
+    private fun stopUpdates(stopService: Boolean = true) {
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        if (stopService) stopSelf()
     }
 
     private fun createNotificationChannel() {
@@ -300,7 +325,6 @@ class PreciseLocationService : Service() {
             latitude: Double?,
             longitude: Double?,
         ) {
-            if (!isRunning) return
             val intent = Intent(context, PreciseLocationService::class.java).apply {
                 action = ACTION_BACKGROUND_EVENT
                 putExtra(EXTRA_EVENT_TYPE, type)
@@ -309,7 +333,19 @@ class PreciseLocationService : Service() {
                 if (latitude != null) putExtra("latitude", latitude)
                 if (longitude != null) putExtra("longitude", longitude)
             }
-            context.startService(intent)
+            try {
+                if (isRunning) {
+                    context.startService(intent)
+                } else {
+                    androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                }
+            } catch (error: Exception) {
+                GeofenceEventBus.publish(
+                    context,
+                    "error",
+                    "Unable to start background event processing: ${error.message ?: error}",
+                )
+            }
         }
     }
 

@@ -2,7 +2,7 @@
 
 ## Real Android outer geofence test
 
-This task uses the official Google Play services Location Geofencing API (`play-services-location:21.3.0`) through a native Android implementation behind `GeofenceService`. It supports one non-expiring outer geofence and ENTER/EXIT transitions. Android delivery is best-effort: location services, device power management, Google Play services, permission state, and device movement all affect timing. This task does not implement precise GPS verification, notifications, persistence/database, or final rearm wiring.
+This task uses the official Google Play services Location Geofencing API (`play-services-location:21.3.0`) through a native Android implementation behind `GeofenceService`. It supports one non-expiring outer geofence and ENTER/EXIT transitions. Android delivery is best-effort: location services, device power management, Google Play services, permission state, and device movement all affect timing. The geofence-only procedure below is retained as the registration and outer-wake-up baseline; temporary precise verification and arrival notifications are covered in the Task 04 and Task 05 sections.
 
 1. Install the debug APK on a physical Android device and open PingPlace.
 2. In **REAL GEOFENCE TEST**, set the target latitude and longitude (or use the default test target).
@@ -109,3 +109,46 @@ Retest procedure:
 5. Repeat the cold/background geofence procedure without force-stopping the app and record whether temporary verification starts in the background.
 
 Record the device model, Android version, permission state, registration/removal results, foreground-service notification behavior, and any logcat errors. This fix requires physical Android verification; Dart tests cannot prove OEM geofencing behavior.
+
+## Task 05 real Android arrival notifications
+
+Task 05 adds a separate `Arrival reminders` notification channel. The temporary
+GPS foreground-service notification remains distinct and is expected only while
+precise verification is active. Android 13/API 33 and later require
+`POST_NOTIFICATIONS`; the permission request is available from the visible UI
+only. A denied permission is shown as `DENIED`, logged as
+`NOTIFICATION_PERMISSION_MISSING`, and can be revisited through **NOTIFICATION
+SETTINGS**. Normal Android background/process termination is not the same as
+Force Stop; HyperOS battery management may still delay or suppress delivery.
+
+### Xiaomi 15 notification test
+
+1. Install the current debug APK, open PingPlace, and tap **ALLOW NOTIFICATIONS**.
+2. Confirm the real-geofence diagnostics show notification readiness as
+   `ALLOWED`. If permission was previously denied, use **NOTIFICATION SETTINGS**.
+3. Register one test target while outside its roughly 300 m outer radius.
+4. Background PingPlace without force-stopping it.
+5. Enter the outer radius and then the roughly 80 m inner radius.
+6. Verify exactly one visible notification titled `PingPlace — הגעת ליעד`.
+   Confirm the body is the persisted reminder text and that tapping it opens
+   PingPlace.
+7. Drive or walk past the target and return during the 10-minute cooldown.
+   Confirm there is no second notification and diagnostics contain
+   `NOTIFICATION_SUPPRESSED_DUPLICATE` only if a duplicate delivery was
+   attempted.
+8. After the cooldown and a valid rearm beyond the configured rearm radius,
+   return to the target and verify a new visit can produce one new notification.
+9. Open PingPlace and verify the persisted engine state, current/last visit,
+   last notification result and timestamp, background diagnostics, and event log.
+10. Repeat with the Flutter UI/process not running, without Android Force Stop,
+    to verify cold-background delivery through the headless engine.
+
+Record device model (Xiaomi 15), Android/HyperOS version, notification and
+location permission states, whether the UI was foreground/background/closed,
+approximate outer and inner trigger distances, GPS accuracy, time to
+notification, duplicate callbacks, foreground-service notification visibility,
+and errors. Confirm `NOTIFICATION_SENT` appears only after the native Android
+notification request succeeds. Automated tests cover the shared engine,
+persistent handoff, and notification deduplication abstractions; they cannot
+prove Android channel behavior, OEM delivery, or cold-process execution without
+a physical device.

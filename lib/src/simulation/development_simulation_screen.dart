@@ -19,6 +19,7 @@ final class _DevelopmentSimulationScreenState
       DevelopmentGeofenceController();
   late final TextEditingController latitudeController;
   late final TextEditingController longitudeController;
+  late final TextEditingController reminderController;
 
   @override
   void initState() {
@@ -31,7 +32,12 @@ final class _DevelopmentSimulationScreenState
     longitudeController = TextEditingController(
       text: realGeofence.longitude.toString(),
     );
-    realGeofence.initialize();
+    reminderController = TextEditingController(text: realGeofence.reminderText);
+    realGeofence.initialize().then((_) {
+      if (!mounted) return;
+      reminderController.text = realGeofence.reminderText;
+      setState(() {});
+    });
   }
 
   @override
@@ -42,6 +48,7 @@ final class _DevelopmentSimulationScreenState
     realGeofence.dispose();
     latitudeController.dispose();
     longitudeController.dispose();
+    reminderController.dispose();
     super.dispose();
   }
 
@@ -60,6 +67,7 @@ final class _DevelopmentSimulationScreenState
             controller: realGeofence,
             latitudeController: latitudeController,
             longitudeController: longitudeController,
+            reminderController: reminderController,
           ),
           const SizedBox(height: 12),
           Text(
@@ -97,11 +105,13 @@ final class _RealGeofenceSection extends StatelessWidget {
     required this.controller,
     required this.latitudeController,
     required this.longitudeController,
+    required this.reminderController,
   });
 
   final DevelopmentGeofenceController controller;
   final TextEditingController latitudeController;
   final TextEditingController longitudeController;
+  final TextEditingController reminderController;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +175,17 @@ final class _RealGeofenceSection extends StatelessWidget {
               'Registration: ${controller.registered ? 'REGISTERED' : 'NOT REGISTERED'}',
             ),
             Text('Permission: $permission'),
+            Text(
+              'Notification readiness: '
+              '${controller.notificationPermission.name.toUpperCase()}',
+            ),
+            Text(
+              'Last notification: '
+              '${controller.lastNotificationResult?.name ?? 'none'} '
+              '${controller.lastNotificationAt?.toIso8601String() ?? ''}',
+            ),
+            if (controller.currentVisitId != null)
+              Text('Current visit: ${controller.currentVisitId}'),
             Text('Engine state: ${controller.state.name.toUpperCase()}'),
             Text(
               'Precise location: '
@@ -191,6 +212,11 @@ final class _RealGeofenceSection extends StatelessWidget {
               'Approach timeout: '
               '${controller.approachDeadline?.toIso8601String() ?? 'inactive'}',
             ),
+            TextField(
+              controller: reminderController,
+              decoration: const InputDecoration(labelText: 'Reminder text'),
+              onChanged: (value) => controller.setReminderText(value),
+            ),
             if (controller.arrivalConfirmed)
               const Text('ARRIVED CONFIRMED; precise location stopped.'),
             if (event != null)
@@ -210,6 +236,14 @@ final class _RealGeofenceSection extends StatelessWidget {
                 FilledButton(
                   onPressed: controller.requestPermission,
                   child: const Text('REQUEST / CHECK PERMISSION'),
+                ),
+                FilledButton(
+                  onPressed: controller.requestNotificationPermission,
+                  child: const Text('ALLOW NOTIFICATIONS'),
+                ),
+                OutlinedButton(
+                  onPressed: controller.openNotificationSettings,
+                  child: const Text('NOTIFICATION SETTINGS'),
                 ),
                 FilledButton(
                   onPressed: () {

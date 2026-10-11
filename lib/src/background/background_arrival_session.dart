@@ -1,18 +1,29 @@
 import 'dart:async';
 
 import '../domain/smart_arrival_detection.dart';
+import '../notification/notification_service.dart';
+import '../runtime/arrival_runtime_store.dart';
 
 final class BackgroundArrivalSession {
   BackgroundArrivalSession({
     required this.onDiagnostic,
     required this.onCommand,
-  });
+    ArrivalRuntimeStore? runtimeStore,
+    NotificationService? notificationService,
+    this.config,
+  }) : runtimeStore = runtimeStore ?? MethodChannelArrivalRuntimeStore(),
+       notificationService =
+           notificationService ?? MethodChannelNotificationService();
 
   final void Function(String message) onDiagnostic;
   final Future<void> Function(String command) onCommand;
+  final ArrivalRuntimeStore runtimeStore;
+  final NotificationService notificationService;
+  final SmartArrivalConfig? config;
   SmartArrivalDetectionEngine? engine;
   Timer? _timeoutTimer;
   DateTime? _enteredAt;
+  String _reminderText = 'עצור בתחנת דלק יעד';
 
   void dispose() {
     _timeoutTimer?.cancel();
@@ -20,6 +31,7 @@ final class BackgroundArrivalSession {
   }
 
   Future<void> handleEvent(Map<Object?, Object?> payload) async {
+    await _ensureEngine();
     final type = payload['type'] as String?;
     if (type == 'error') {
       onDiagnostic(
@@ -37,16 +49,35 @@ final class BackgroundArrivalSession {
         await onCommand('stop');
         return;
       }
-      engine = SmartArrivalDetectionEngine(
-        SmartArrivalConfig(
-          target: TargetLocation(latitude: latitude, longitude: longitude),
-        ),
-      );
+      if (engine!.state == DetectionState.disarmed) {
+        engine = SmartArrivalDetectionEngine(
+          (config ??
+                  SmartArrivalConfig(
+                    target: TargetLocation(
+                      latitude: latitude,
+                      longitude: longitude,
+                    ),
+                  ))
+              .copyWith(
+                target: TargetLocation(
+                  latitude: latitude,
+                  longitude: longitude,
+                ),
+              ),
+        );
+      }
       _enteredAt = timestamp;
-      _process(engine!.dispatch(const Arm()));
-      _process(engine!.dispatch(OuterEnter(at: timestamp)));
+      await _process(engine!.dispatch(const Arm()));
+      await _process(engine!.dispatch(OuterEnter(at: timestamp)));
     } else if (type == 'exit') {
-      if (engine != null) _process(engine!.dispatch(const OuterExit()));
+      if (engine != null) {
+        await _process(engine!.dispatch(const OuterExit()));
+        if (engine!.state == DetectionState.cooldown ||
+            engine!.state == DetectionState.waitingForExit) {
+          onDiagnostic('PRECISE_LOCATION_STARTED');
+          await onCommand('startVerification');
+        }
+      }
     } else if (type == 'location' && engine != null) {
       if (engine!.state != DetectionState.approaching) return;
       final timestamp = DateTime.tryParse(
@@ -62,7 +93,7 @@ final class BackgroundArrivalSession {
         onDiagnostic('LOCATION_SERVICE_FAILED: malformed background sample');
         return;
       }
-      _process(
+      await _process(
         engine!.dispatch(
           LocationReceived(
             LocationSample(
@@ -74,10 +105,24 @@ final class BackgroundArrivalSession {
           ),
         ),
       );
+    } else if (type == 'cooldownElapsed' && engine != null) {
+      final timestamp = DateTime.tryParse(
+        payload['timestamp'] as String? ?? '',
+      );
+      if (timestamp != null) {
+        await _process(engine!.dispatch(CooldownElapsed(timestamp)));
+      }
+    } else if (type == 'rearm' && engine != null) {
+      final timestamp = DateTime.tryParse(
+        payload['timestamp'] as String? ?? '',
+      );
+      if (timestamp != null) {
+        await _process(engine!.dispatch(RearmRadiusCrossed(timestamp)));
+      }
     }
   }
 
-  void _process(DetectionResult result) {
+  Future<void> _process(DetectionResult result) async {
     for (final effect in result.effects) {
       switch (effect.type) {
         case DetectionEffectType.stateChanged:
@@ -97,7 +142,9 @@ final class BackgroundArrivalSession {
           _timeoutTimer?.cancel();
           _timeoutTimer = null;
           onDiagnostic('PRECISE_LOCATION_STOPPED');
-          unawaited(onCommand('stop'));
+          await onCommand(
+            engine!.state == DetectionState.cooldown ? 'stopLocation' : 'stop',
+          );
         case DetectionEffectType.locationSample:
           onDiagnostic(
             'LOCATION distance=${effect.distance!.toStringAsFixed(1)}m '
@@ -108,7 +155,8 @@ final class BackgroundArrivalSession {
         case DetectionEffectType.innerReached:
           onDiagnostic('INNER_REACHED');
         case DetectionEffectType.notificationRequested:
-          onDiagnostic('NOTIFICATION_REQUESTED (diagnostic only)');
+          onDiagnostic('NOTIFICATION_REQUESTED');
+          await _deliverNotification();
         case DetectionEffectType.exitObservedDuringCooldown:
           onDiagnostic('EXIT_OBSERVED_DURING_COOLDOWN');
         case DetectionEffectType.approachTimeout:
@@ -116,6 +164,65 @@ final class BackgroundArrivalSession {
           _timeoutTimer = null;
           onDiagnostic('APPROACH_TIMEOUT');
       }
+    }
+    final rearmed = result.effects.any(
+      (effect) =>
+          effect.type == DetectionEffectType.stateChanged &&
+          effect.to == DetectionState.armed &&
+          effect.from != DetectionState.disarmed,
+    );
+    final waitingForExit = result.effects.any(
+      (effect) =>
+          effect.type == DetectionEffectType.stateChanged &&
+          effect.to == DetectionState.waitingForExit,
+    );
+    if (rearmed || waitingForExit) await onCommand('stop');
+    _scheduleCooldownTimer();
+    await runtimeStore.save(engine!.runtimeSnapshot);
+  }
+
+  void _scheduleCooldownTimer() {
+    final until = engine?.cooldownUntil;
+    if (until == null || engine?.state != DetectionState.cooldown) return;
+    _timeoutTimer?.cancel();
+    final delay = until.difference(DateTime.now());
+    _timeoutTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_process(engine!.dispatch(CooldownElapsed(until)))),
+    );
+  }
+
+  Future<void> _ensureEngine() async {
+    if (engine != null) return;
+    final snapshot = await runtimeStore.load();
+    final target =
+        snapshot?.target ?? const TargetLocation(latitude: 32, longitude: 34.8);
+    engine = SmartArrivalDetectionEngine(
+      (config ?? SmartArrivalConfig(target: target)).copyWith(target: target),
+      snapshot: snapshot,
+    );
+    _reminderText = await runtimeStore.loadReminderText();
+  }
+
+  Future<void> _deliverNotification() async {
+    final visitId = engine?.visitId;
+    if (visitId == null) {
+      onDiagnostic('NOTIFICATION_FAILED: missing visit identity');
+      return;
+    }
+    final result = await notificationService.deliver(
+      visitId: visitId,
+      reminderText: _reminderText,
+    );
+    switch (result) {
+      case NotificationDeliveryResult.sent:
+        onDiagnostic('NOTIFICATION_SENT');
+      case NotificationDeliveryResult.duplicate:
+        onDiagnostic('NOTIFICATION_SUPPRESSED_DUPLICATE');
+      case NotificationDeliveryResult.permissionMissing:
+        onDiagnostic('NOTIFICATION_PERMISSION_MISSING');
+      case NotificationDeliveryResult.failed:
+        onDiagnostic('NOTIFICATION_FAILED');
     }
   }
 }

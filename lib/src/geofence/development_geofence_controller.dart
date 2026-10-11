@@ -2,6 +2,8 @@ import 'dart:async';
 
 import '../domain/smart_arrival_detection.dart';
 import '../location/location_service.dart';
+import '../notification/notification_service.dart';
+import '../runtime/arrival_runtime_store.dart';
 import 'geofence_service.dart';
 
 typedef GeofenceListener = void Function();
@@ -10,10 +12,15 @@ final class DevelopmentGeofenceController {
   DevelopmentGeofenceController({
     GeofenceService? service,
     LocationService? locationService,
+    NotificationService? notificationService,
+    ArrivalRuntimeStore? runtimeStore,
     SmartArrivalConfig? config,
     DateTime Function()? clock,
   }) : service = service ?? MethodChannelGeofenceService(),
        locationService = locationService ?? MethodChannelLocationService(),
+       notificationService =
+           notificationService ?? MethodChannelNotificationService(),
+       runtimeStore = runtimeStore ?? MethodChannelArrivalRuntimeStore(),
        _config =
            config ??
            const SmartArrivalConfig(
@@ -29,6 +36,8 @@ final class DevelopmentGeofenceController {
 
   final GeofenceService service;
   final LocationService locationService;
+  final NotificationService notificationService;
+  final ArrivalRuntimeStore runtimeStore;
   SmartArrivalDetectionEngine engine;
   SmartArrivalConfig _config;
   final DateTime Function() _clock;
@@ -37,6 +46,7 @@ final class DevelopmentGeofenceController {
   StreamSubscription<GeofenceEvent>? _geofenceSubscription;
   StreamSubscription<LocationServiceEvent>? _locationSubscription;
   Timer? _approachTimer;
+  Timer? _cooldownTimer;
   int _locationGeneration = 0;
 
   double latitude = 32;
@@ -55,6 +65,14 @@ final class DevelopmentGeofenceController {
   DateTime? latestLocationTimestamp;
   DateTime? approachDeadline;
   DateTime? lastArrivalAt;
+  String reminderText = 'עצור בתחנת דלק יעד';
+  NotificationPermissionStatus notificationPermission =
+      NotificationPermissionStatus.denied;
+  NotificationDeliveryResult? lastNotificationResult;
+  DateTime? lastNotificationAt;
+  String? lastNotificationVisitId;
+  String? currentVisitId;
+  List<String> backgroundDiagnostics = const [];
 
   SmartArrivalConfig get config => _config;
   List<String> get eventLog => List.unmodifiable(_eventLog);
@@ -65,12 +83,24 @@ final class DevelopmentGeofenceController {
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
 
   Future<void> initialize() async {
+    await _restoreRuntime();
+    try {
+      reminderText = await runtimeStore.loadReminderText();
+      final notificationStatus = await notificationService.status();
+      notificationPermission = notificationStatus.permission;
+      lastNotificationResult = notificationStatus.lastResult;
+      lastNotificationAt = notificationStatus.lastTimestamp;
+      lastNotificationVisitId = notificationStatus.lastVisitId;
+      backgroundDiagnostics = notificationStatus.backgroundDiagnostics;
+    } catch (error) {
+      _fail('NOTIFICATION_STATUS_FAILED: $error');
+    }
     _geofenceSubscription = service.events.listen(
       _handleGeofenceEvent,
       onError: (Object error) => _fail('BACKGROUND_EVENT_FAILED: $error'),
     );
     _locationSubscription = locationService.events.listen(
-      _handleLocationEvent,
+      (event) => unawaited(_handleLocationEvent(event)),
       onError: (Object error) => _handleLocationFailure('$error'),
     );
     await refreshPermission();
@@ -104,6 +134,29 @@ final class DevelopmentGeofenceController {
     }
   }
 
+  Future<void> requestNotificationPermission() async {
+    try {
+      await notificationService.requestPermission();
+      final status = await notificationService.status();
+      notificationPermission = status.permission;
+      _notifyListeners();
+    } catch (error) {
+      _fail('NOTIFICATION_PERMISSION_FAILED: $error');
+    }
+  }
+
+  Future<void> openNotificationSettings() => notificationService.openSettings();
+
+  Future<void> setReminderText(String value) async {
+    reminderText = value;
+    try {
+      await runtimeStore.saveReminderText(value);
+    } catch (error) {
+      _fail('REMINDER_SAVE_FAILED: $error');
+    }
+    _notifyListeners();
+  }
+
   Future<void> register() async {
     lastError = null;
     if (!_syncTarget()) return;
@@ -122,7 +175,7 @@ final class DevelopmentGeofenceController {
       );
       registered = true;
       _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
-      _dispatch(const Arm());
+      await _dispatch(const Arm());
     } catch (error) {
       _fail('GEOFENCE_REGISTRATION_FAILED: $error');
     }
@@ -149,13 +202,18 @@ final class DevelopmentGeofenceController {
     latestAccuracy = null;
     latestLocationTimestamp = null;
     approachDeadline = null;
-    _dispatch(const ResetTest());
+    currentVisitId = null;
+    lastNotificationResult = null;
+    lastNotificationAt = null;
+    unawaited(notificationService.resetTest());
+    unawaited(_dispatch(const ResetTest()));
   }
 
   void dispose() {
     _geofenceSubscription?.cancel();
     _locationSubscription?.cancel();
     _approachTimer?.cancel();
+    _cooldownTimer?.cancel();
     _locationGeneration++;
     unawaited(locationService.stop());
     locationService.dispose();
@@ -163,7 +221,7 @@ final class DevelopmentGeofenceController {
     _listeners.clear();
   }
 
-  void _handleGeofenceEvent(GeofenceEvent event) {
+  Future<void> _handleGeofenceEvent(GeofenceEvent event) async {
     lastEvent = event;
     _log('BACKGROUND_EVENT_RECEIVED ${event.type.name.toUpperCase()}');
     final eventType = event.type;
@@ -178,20 +236,29 @@ final class DevelopmentGeofenceController {
           ? 'OUTER_ENTER_RECEIVED'
           : 'OUTER_EXIT_RECEIVED',
     );
-    _dispatch(
+    await _dispatch(
       eventType == GeofenceEventType.enter
           ? OuterEnter(at: event.at)
           : const OuterExit(),
     );
+    if (eventType == GeofenceEventType.exit &&
+        (engine.state == DetectionState.cooldown ||
+            engine.state == DetectionState.waitingForExit) &&
+        !preciseLocationActive) {
+      _startPreciseLocation();
+    }
   }
 
-  void _handleLocationEvent(LocationServiceEvent event) {
+  Future<void> _handleLocationEvent(LocationServiceEvent event) async {
     if (event.isFailure) {
       _handleLocationFailure(event.error!);
       return;
     }
     final sample = event.sample!;
-    if (!preciseLocationActive || engine.state != DetectionState.approaching) {
+    if (!preciseLocationActive ||
+        (engine.state != DetectionState.approaching &&
+            engine.state != DetectionState.cooldown &&
+            engine.state != DetectionState.waitingForExit)) {
       _log('LOCATION_IGNORED precise verifier inactive');
       return;
     }
@@ -199,7 +266,7 @@ final class DevelopmentGeofenceController {
     latestLongitude = sample.longitude;
     latestAccuracy = sample.accuracy;
     latestLocationTimestamp = sample.timestamp;
-    final result = _dispatch(LocationReceived(sample));
+    final result = await _dispatch(LocationReceived(sample));
     final locationEffect = result.effects.firstWhere(
       (effect) => effect.type == DetectionEffectType.locationSample,
       orElse: () => const DetectionEffect(DetectionEffectType.locationSample),
@@ -208,14 +275,17 @@ final class DevelopmentGeofenceController {
     _notifyListeners();
   }
 
-  void _handleLocationFailure(String message) {
+  Future<void> _handleLocationFailure(String message) async {
     _fail('LOCATION_SERVICE_FAILED: $message');
     if (engine.state == DetectionState.approaching) {
-      _dispatch(const Disarm());
+      await _dispatch(const Disarm());
     }
   }
 
-  DetectionResult _dispatch(DetectionEvent event) {
+  Future<DetectionResult> _dispatch(DetectionEvent event) async {
+    if (event is OuterEnter && engine.state == DetectionState.armed) {
+      currentVisitId = engine.visitId;
+    }
     final result = engine.dispatch(event);
     for (final effect in result.effects) {
       switch (effect.type) {
@@ -228,6 +298,7 @@ final class DevelopmentGeofenceController {
           if (effect.to == DetectionState.arrived) {
             arrivalConfirmed = true;
             lastArrivalAt = latestLocationTimestamp ?? _clock();
+            currentVisitId = engine.visitId;
           }
         case DetectionEffectType.locationSample:
           if (effect.distance != null && effect.accuracy != null) {
@@ -243,28 +314,108 @@ final class DevelopmentGeofenceController {
         case DetectionEffectType.innerReached:
           _log('INNER_REACHED');
         case DetectionEffectType.notificationRequested:
-          _log('NOTIFICATION_REQUESTED (diagnostic only)');
+          _log('NOTIFICATION_REQUESTED');
+          await _deliverNotification();
         case DetectionEffectType.exitObservedDuringCooldown:
           _log('EXIT_OBSERVED_DURING_COOLDOWN');
         case DetectionEffectType.approachTimeout:
           _log('APPROACH_TIMEOUT');
       }
     }
+    currentVisitId = engine.visitId;
+    _scheduleCooldownTimer();
+    try {
+      await runtimeStore.save(engine.runtimeSnapshot);
+    } catch (error) {
+      final message = 'RUNTIME_STATE_SAVE_FAILED: $error';
+      if (lastError == null) {
+        _fail(message);
+      } else {
+        _log(message);
+      }
+    }
     _notifyListeners();
     return result;
+  }
+
+  void _scheduleCooldownTimer() {
+    final until = engine.cooldownUntil;
+    if (until == null || engine.state != DetectionState.cooldown) {
+      _cooldownTimer?.cancel();
+      _cooldownTimer = null;
+      return;
+    }
+    _cooldownTimer?.cancel();
+    final delay = until.difference(_clock());
+    _cooldownTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_dispatch(CooldownElapsed(until))),
+    );
+  }
+
+  Future<void> _deliverNotification() async {
+    final visitId = engine.visitId;
+    if (visitId == null) {
+      _fail('NOTIFICATION_FAILED: missing visit identity');
+      return;
+    }
+    try {
+      final result = await notificationService.deliver(
+        visitId: visitId,
+        reminderText: reminderText,
+      );
+      lastNotificationResult = result;
+      lastNotificationAt = _clock();
+      lastNotificationVisitId = visitId;
+      switch (result) {
+        case NotificationDeliveryResult.sent:
+          _log('NOTIFICATION_SENT');
+        case NotificationDeliveryResult.duplicate:
+          _log('NOTIFICATION_SUPPRESSED_DUPLICATE');
+        case NotificationDeliveryResult.permissionMissing:
+          _log('NOTIFICATION_PERMISSION_MISSING');
+        case NotificationDeliveryResult.failed:
+          _fail('NOTIFICATION_FAILED');
+      }
+    } catch (error) {
+      _fail('NOTIFICATION_FAILED: $error');
+    }
+  }
+
+  Future<void> _restoreRuntime() async {
+    try {
+      final snapshot = await runtimeStore.load();
+      if (snapshot == null) return;
+      final target = snapshot.target;
+      if (target != null) _config = _config.copyWith(target: target);
+      engine = SmartArrivalDetectionEngine(_config, snapshot: snapshot);
+      currentVisitId = snapshot.visitId;
+      if (engine.state == DetectionState.approaching) {
+        _startPreciseLocation();
+      }
+      _log('RUNTIME_STATE_RESTORED ${engine.state.name.toUpperCase()}');
+      _notifyListeners();
+    } catch (error) {
+      _fail('RUNTIME_STATE_LOAD_FAILED: $error');
+    }
   }
 
   void _startPreciseLocation() {
     if (preciseLocationActive) return;
     preciseLocationActive = true;
     final enteredAt = latestLocationTimestamp ?? _clock();
-    approachDeadline = enteredAt.add(_config.approachTimeout);
+    final approachStartedAt = engine.approachStartedAt ?? enteredAt;
+    approachDeadline = approachStartedAt.add(_config.approachTimeout);
     _approachTimer?.cancel();
-    _approachTimer = Timer(_config.approachTimeout, () {
-      if (engine.state == DetectionState.approaching) {
-        _dispatch(ApproachTimedOut(approachDeadline ?? _clock()));
-      }
-    });
+    final remaining = approachDeadline!.difference(_clock());
+    _approachTimer = Timer(
+      remaining.isNegative ? Duration.zero : remaining,
+      () {
+        if (engine.state == DetectionState.approaching) {
+          _dispatch(ApproachTimedOut(approachDeadline ?? _clock()));
+        }
+      },
+    );
     _log('PRECISE_LOCATION_STARTED');
     _notifyListeners();
     final generation = ++_locationGeneration;
