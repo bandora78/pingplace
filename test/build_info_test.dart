@@ -18,7 +18,7 @@ void main() {
   test('uses an explicit fallback when Git metadata is unavailable', () {
     const info = BuildInfo(
       version: '1.0.0',
-      buildNumber: '4',
+      buildNumber: '5',
       commit: 'unknown',
       buildType: 'debug',
     );

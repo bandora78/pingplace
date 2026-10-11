@@ -188,14 +188,14 @@ test procedure.
 Every push to `main` runs the **Flutter validation and debug APK** workflow in
 GitHub Actions. Open the repository's **Actions** tab, select the completed
 workflow run for the desired commit, and download the artifact named like
-`pingplace-1.0.0+4-<commit>`. The APK filename contains the same version/build
+`pingplace-1.0.0+5-<commit>`. The APK filename contains the same version/build
 and short source commit shown in the app's debug screen. GitHub Actions is the
 distribution path; APK binaries are not committed to the repository.
 
 To install a downloaded debug APK with ADB:
 
 ```bash
-adb install -r pingplace-1.0.0+4-<commit>.apk
+adb install -r pingplace-1.0.0+5-<commit>.apk
 ```
 
 If Android reports a signature conflict, uninstall the previous debug build
@@ -256,7 +256,7 @@ keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" `
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $apksigner = Get-ChildItem (Join-Path $sdk 'build-tools') -Recurse -Filter apksigner.bat |
   Sort-Object FullName -Descending | Select-Object -First 1
-& $apksigner.FullName verify --print-certs .\pingplace-1.0.0+4-<commit>.apk
+& $apksigner.FullName verify --print-certs .\pingplace-1.0.0+5-<commit>.apk
 ```
 
 The SHA-256 certificate fingerprints must match. Matching fingerprints plus
