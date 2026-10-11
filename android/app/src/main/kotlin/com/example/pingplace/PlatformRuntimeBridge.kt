@@ -5,6 +5,7 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -13,6 +14,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -99,8 +101,10 @@ object ArrivalNotificationBridge {
     private const val LAST_RESULT = "last_result"
     private const val LAST_TIMESTAMP = "last_timestamp"
     private const val LAST_VISIT_ID = "last_visit_id"
+    private const val PERMISSION_REQUESTED = "permission_requested"
     private const val DEFAULT_REMINDER = "הגעת למקום שהגדרת"
     private val lock = Any()
+    private var pendingPermissionResult: MethodChannel.Result? = null
 
     fun handle(
         context: Context,
@@ -112,13 +116,7 @@ object ArrivalNotificationBridge {
             "status" -> result.success(status(context))
             "requestPermission" -> requestPermission(activity, result)
             "openSettings" -> {
-                context.startActivity(
-                    Intent(
-                        Settings.ACTION_APP_NOTIFICATION_SETTINGS,
-                        Uri.parse("package:${context.packageName}"),
-                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-                result.success(null)
+                openSettings(context, result)
             }
             "resetTest" -> {
                 context.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE).edit()
@@ -143,11 +141,47 @@ object ArrivalNotificationBridge {
             result.error("BACKGROUND_PERMISSION_REQUEST", "Notification permission requires the visible UI", null)
             return
         }
+        if (notificationsAllowed(activity)) {
+            result.success(null)
+            return
+        }
+        if (pendingPermissionResult != null) {
+            result.error("PERMISSION_REQUEST_IN_PROGRESS", "Notification permission request is already active", null)
+            return
+        }
+        val preferences = activity.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE)
+        val requestedBefore = preferences.getBoolean(PERMISSION_REQUESTED, false)
+        if (requestedBefore &&
+            !ActivityCompat.shouldShowRequestPermissionRationale(
+                activity,
+                Manifest.permission.POST_NOTIFICATIONS,
+            )
+        ) {
+            result.error(
+                "NOTIFICATION_SETTINGS_REQUIRED",
+                "Notification permission is blocked; open notification settings.",
+                null,
+            )
+            return
+        }
+        preferences.edit().putBoolean(PERMISSION_REQUESTED, true).apply()
+        pendingPermissionResult = result
         ActivityCompat.requestPermissions(
             activity,
             arrayOf(Manifest.permission.POST_NOTIFICATIONS),
             NOTIFICATION_PERMISSION_REQUEST_CODE,
         )
+    }
+
+    fun onRequestPermissionsResult(
+        context: Context,
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (requestCode != NOTIFICATION_PERMISSION_REQUEST_CODE) return
+        val result = pendingPermissionResult ?: return
+        pendingPermissionResult = null
         result.success(null)
     }
 
@@ -206,8 +240,9 @@ object ArrivalNotificationBridge {
     }
 
     private fun notificationsAllowed(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+            NotificationManagerCompat.from(context).areNotificationsEnabled()
 
     private fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -219,12 +254,42 @@ object ArrivalNotificationBridge {
     private fun status(context: Context): Map<String, Any?> {
         val preferences = context.getSharedPreferences(NOTIFICATION_PREFS, Context.MODE_PRIVATE)
         return mapOf(
-            "permission" to if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || notificationsAllowed(context)) "allowed" else "denied",
+            "permission" to if (notificationsAllowed(context)) "allowed" else "denied",
             "lastResult" to preferences.getString(LAST_RESULT, null),
             "lastTimestamp" to preferences.getString(LAST_TIMESTAMP, null),
             "lastVisitId" to preferences.getString(LAST_VISIT_ID, null),
             "backgroundDiagnostics" to backgroundDiagnostics(context),
         )
+    }
+
+    private fun openSettings(context: Context, result: MethodChannel.Result) {
+        val notificationIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            data = Uri.parse("package:${context.packageName}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            context.startActivity(notificationIntent)
+            result.success(null)
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Fall through to application details settings.
+        } catch (_: SecurityException) {
+            // Fall through to application details settings.
+        }
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                },
+            )
+            result.success(null)
+        } catch (error: ActivityNotFoundException) {
+            result.error("NOTIFICATION_SETTINGS_FAILED", error.message, error.toString())
+        } catch (error: SecurityException) {
+            result.error("NOTIFICATION_SETTINGS_FAILED", error.message, error.toString())
+        }
     }
 
     private fun recordResult(context: Context, result: String, visitId: String) {

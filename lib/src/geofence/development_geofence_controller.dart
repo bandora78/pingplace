@@ -73,6 +73,7 @@ final class DevelopmentGeofenceController {
   String? lastNotificationVisitId;
   String? currentVisitId;
   List<String> backgroundDiagnostics = const [];
+  bool initialized = false;
 
   SmartArrivalConfig get config => _config;
   List<String> get eventLog => List.unmodifiable(_eventLog);
@@ -83,6 +84,7 @@ final class DevelopmentGeofenceController {
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
 
   Future<void> initialize() async {
+    initialized = false;
     await _restoreRuntime();
     try {
       reminderText = await runtimeStore.loadReminderText();
@@ -106,10 +108,18 @@ final class DevelopmentGeofenceController {
     await refreshPermission();
     try {
       registered = await service.registrationStatus;
+      final savedRegistration = await service.registration;
+      if (savedRegistration != null) {
+        latitude = savedRegistration.latitude;
+        longitude = savedRegistration.longitude;
+        radius = savedRegistration.radius;
+      }
       _notifyListeners();
     } catch (error) {
       _fail('REGISTRATION_STATUS_FAILED: $error');
     }
+    initialized = true;
+    _notifyListeners();
   }
 
   Future<void> refreshPermission() async {
@@ -159,6 +169,10 @@ final class DevelopmentGeofenceController {
 
   Future<void> register() async {
     lastError = null;
+    if (!initialized) {
+      _fail('INITIALIZATION_INCOMPLETE: wait for PingPlace to finish loading.');
+      return;
+    }
     if (!_syncTarget()) return;
     _log('GEOFENCE_REGISTER_REQUESTED');
     if (permission != GeofencePermissionStatus.backgroundAllowed) {
@@ -454,6 +468,18 @@ final class DevelopmentGeofenceController {
   }
 
   bool _syncTarget() {
+    if (!latitude.isFinite || latitude < -90 || latitude > 90) {
+      _fail('INVALID_COORDINATES: latitude must be between -90 and 90.');
+      return false;
+    }
+    if (!longitude.isFinite || longitude < -180 || longitude > 180) {
+      _fail('INVALID_COORDINATES: longitude must be between -180 and 180.');
+      return false;
+    }
+    if (!radius.isFinite || radius <= 0) {
+      _fail('INVALID_COORDINATES: radius must be greater than zero.');
+      return false;
+    }
     final target = TargetLocation(latitude: latitude, longitude: longitude);
     if (target.latitude == _config.target.latitude &&
         target.longitude == _config.target.longitude) {

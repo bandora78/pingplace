@@ -35,6 +35,7 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "checkPermission" -> result.success(permissionStatus())
                     "registrationStatus" -> result.success(getPreferences(MODE_PRIVATE).contains("geofence_latitude"))
+                    "registrationDetails" -> result.success(registrationDetails())
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
                     "remove" -> remove(result)
@@ -153,6 +154,12 @@ class MainActivity : FlutterActivity() {
             permissionResult?.success(permissionStatus())
             permissionResult = null
         }
+        ArrivalNotificationBridge.onRequestPermissionsResult(
+            this,
+            requestCode,
+            permissions,
+            grantResults,
+        )
     }
 
     private fun register(call: MethodCall, result: MethodChannel.Result) {
@@ -165,6 +172,14 @@ class MainActivity : FlutterActivity() {
         val radius = (call.argument<Number>("radius"))?.toFloat()
         if (latitude == null || longitude == null || radius == null || radius <= 0) {
             result.error("INVALID_ARGUMENT", "Valid latitude, longitude, and radius are required", null)
+            return
+        }
+        if (!latitude.isFinite() || latitude < -90.0 || latitude > 90.0) {
+            result.error("INVALID_COORDINATES", "Latitude must be between -90 and 90", latitude)
+            return
+        }
+        if (!longitude.isFinite() || longitude < -180.0 || longitude > 180.0) {
+            result.error("INVALID_COORDINATES", "Longitude must be between -180 and 180", longitude)
             return
         }
         val pendingIntent = GeofencePendingIntent.get(this)
@@ -215,6 +230,9 @@ class MainActivity : FlutterActivity() {
         val latitude = preferences.getString("geofence_latitude", null)?.toDoubleOrNull() ?: return
         val longitude = preferences.getString("geofence_longitude", null)?.toDoubleOrNull() ?: return
         val radius = preferences.getString("geofence_radius", null)?.toFloatOrNull() ?: return
+        if (!latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
+            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0f
+        ) return
         val geofence = Geofence.Builder()
             .setRequestId(geofenceId)
             .setCircularRegion(latitude, longitude, radius)
@@ -229,5 +247,17 @@ class MainActivity : FlutterActivity() {
         LocationServices.getGeofencingClient(this).removeGeofences(pendingIntent).addOnCompleteListener {
             LocationServices.getGeofencingClient(this).addGeofences(request, pendingIntent)
         }
+    }
+
+    private fun registrationDetails(): Map<String, Any?>? {
+        val preferences = getPreferences(MODE_PRIVATE)
+        val latitude = preferences.getString("geofence_latitude", null)?.toDoubleOrNull()
+        val longitude = preferences.getString("geofence_longitude", null)?.toDoubleOrNull()
+        val radius = preferences.getString("geofence_radius", null)?.toDoubleOrNull()
+        if (latitude == null || longitude == null || radius == null ||
+            !latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
+            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0.0
+        ) return null
+        return mapOf("latitude" to latitude, "longitude" to longitude, "radius" to radius)
     }
 }

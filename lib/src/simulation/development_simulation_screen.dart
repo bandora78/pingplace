@@ -35,6 +35,8 @@ final class _DevelopmentSimulationScreenState
     reminderController = TextEditingController(text: realGeofence.reminderText);
     realGeofence.initialize().then((_) {
       if (!mounted) return;
+      latitudeController.text = realGeofence.latitude.toString();
+      longitudeController.text = realGeofence.longitude.toString();
       reminderController.text = realGeofence.reminderText;
       setState(() {});
     });
@@ -246,14 +248,20 @@ final class _RealGeofenceSection extends StatelessWidget {
                   child: const Text('NOTIFICATION SETTINGS'),
                 ),
                 FilledButton(
-                  onPressed: () {
-                    final latitude = double.tryParse(latitudeController.text);
-                    final longitude = double.tryParse(longitudeController.text);
-                    if (latitude == null || longitude == null) return;
-                    controller.latitude = latitude;
-                    controller.longitude = longitude;
-                    controller.register();
-                  },
+                  onPressed: controller.initialized
+                      ? () {
+                          final latitude = double.tryParse(
+                            latitudeController.text,
+                          );
+                          final longitude = double.tryParse(
+                            longitudeController.text,
+                          );
+                          if (latitude == null || longitude == null) return;
+                          controller.latitude = latitude;
+                          controller.longitude = longitude;
+                          controller.register();
+                        }
+                      : null,
                   child: const Text('REGISTER OUTER GEOFENCE'),
                 ),
                 OutlinedButton(

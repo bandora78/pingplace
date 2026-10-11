@@ -157,3 +157,28 @@ accurate GPS sample. Poor accuracy can leave the visit in `WAITING_FOR_EXIT`.
 Xiaomi/HyperOS battery optimization, process eviction, notification settings,
 and Force Stop can still prevent or delay the receiver, foreground service, or
 arrival notification; record those outcomes separately.
+
+## Task 05.1 UI and registration regressions
+
+1. On Android 13+ tap **ALLOW NOTIFICATIONS** from the visible PingPlace UI.
+   Confirm the system permission prompt appears once, then confirm diagnostics
+   refresh to `ALLOWED` after granting it. On a previously denied permission,
+   confirm the button reports that settings are required and use
+   **NOTIFICATION SETTINGS**.
+2. Tap **NOTIFICATION SETTINGS** and confirm the app's notification settings
+   page opens. On devices without that route, confirm it falls back to the app
+   details page and any failure is visible in the diagnostics.
+3. On a fresh install, wait for initialization to finish before registering.
+   Confirm the latitude and longitude fields show ordinary decimal degrees and
+   registration succeeds for values such as `31.664913` and `34.8`.
+4. Register, close and reopen PingPlace, and confirm the restored fields match
+   the registered coordinates exactly; they must not be scaled (for example,
+   `31.664913` must not become `3.10664913E8`).
+5. Try latitude outside `[-90, 90]`, longitude outside `[-180, 180]`, and
+   malformed text. Confirm registration is rejected before the Android API is
+   called and a short validation error is shown.
+
+These checks require physical Android verification for OEM settings intents,
+permission-dialog behavior, and first-launch state restoration. They do not
+change the existing exactly-one-notification-per-visit or background delivery
+test procedure.

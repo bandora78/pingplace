@@ -13,6 +13,7 @@ final class FakeGeofenceService implements GeofenceService {
       StreamController<GeofenceEvent>.broadcast();
   GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
   bool registered = false;
+  GeofenceRegistration? savedRegistration;
 
   @override
   Stream<GeofenceEvent> get events => eventsController.stream;
@@ -27,12 +28,20 @@ final class FakeGeofenceService implements GeofenceService {
   Future<bool> get registrationStatus async => registered;
 
   @override
+  Future<GeofenceRegistration?> get registration async => savedRegistration;
+
+  @override
   Future<void> register({
     required double latitude,
     required double longitude,
     required double radius,
   }) async {
     registered = true;
+    savedRegistration = GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
   }
 
   @override
@@ -93,6 +102,60 @@ LocationServiceEvent locationEvent(
 }
 
 void main() {
+  test('first initialization keeps default coordinates in sync', () async {
+    final controller = DevelopmentGeofenceController(
+      service: FakeGeofenceService(),
+      locationService: FakeLocationService(),
+    );
+
+    await controller.initialize();
+
+    expect(controller.initialized, isTrue);
+    expect(controller.latitude, 32);
+    expect(controller.longitude, 34.8);
+    controller.dispose();
+  });
+
+  test('restored registration coordinates are exposed consistently', () async {
+    final service = FakeGeofenceService()
+      ..registered = true
+      ..savedRegistration = const GeofenceRegistration(
+        latitude: 31.664913,
+        longitude: 34.8,
+        radius: 300,
+      );
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+
+    await controller.initialize();
+
+    expect(controller.latitude, 31.664913);
+    expect(controller.longitude, 34.8);
+    expect(controller.radius, 300);
+    controller.dispose();
+  });
+
+  test(
+    'invalid coordinates are rejected before geofence registration',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+
+      controller.latitude = 310000000;
+      await controller.register();
+
+      expect(service.registered, isFalse);
+      expect(controller.lastError, contains('latitude must be between'));
+      controller.dispose();
+    },
+  );
+
   test(
     'real ENTER translates to the existing engine OuterEnter path',
     () async {

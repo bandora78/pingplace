@@ -12,6 +12,18 @@ final class GeofenceEvent {
   final String? error;
 }
 
+final class GeofenceRegistration {
+  const GeofenceRegistration({
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+  });
+
+  final double latitude;
+  final double longitude;
+  final double radius;
+}
+
 abstract interface class GeofenceService {
   Stream<GeofenceEvent> get events;
 
@@ -20,6 +32,8 @@ abstract interface class GeofenceService {
   Future<GeofencePermissionStatus> requestPermission();
 
   Future<bool> get registrationStatus;
+
+  Future<GeofenceRegistration?> get registration async => null;
 
   Future<void> register({
     required double latitude,
@@ -68,6 +82,23 @@ final class MethodChannelGeofenceService implements GeofenceService {
   @override
   Future<bool> get registrationStatus async =>
       await _methodChannel.invokeMethod<bool>('registrationStatus') ?? false;
+
+  @override
+  Future<GeofenceRegistration?> get registration async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'registrationDetails',
+    );
+    if (value == null) return null;
+    final latitude = (value['latitude'] as num?)?.toDouble();
+    final longitude = (value['longitude'] as num?)?.toDouble();
+    final radius = (value['radius'] as num?)?.toDouble();
+    if (latitude == null || longitude == null || radius == null) return null;
+    return GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
+  }
 
   @override
   Future<void> register({
