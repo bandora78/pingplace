@@ -45,7 +45,41 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Validate CI signing secrets
+        env:
+          PINGPLACE_DEBUG_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_BASE64 }}
+          PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
+          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
+          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in PINGPLACE_DEBUG_KEYSTORE_BASE64 PINGPLACE_DEBUG_KEYSTORE_PASSWORD PINGPLACE_DEBUG_KEY_ALIAS PINGPLACE_DEBUG_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing required GitHub Actions secret: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Configure the four signing secrets documented in TESTING.md before building the distributable APK."
+            exit 1
+          fi
+
+      - name: Reconstruct CI debug keystore
+        env:
+          PINGPLACE_DEBUG_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-signing
+          printf '%s' "$PINGPLACE_DEBUG_KEYSTORE_BASE64" | base64 --decode > .ci-signing/pingplace-debug.keystore
+          chmod 600 .ci-signing/pingplace-debug.keystore
+
       - name: Build debug APK
+        env:
+          ORG_GRADLE_PROJECT_pingplaceDebugKeystoreFile: ${{ github.workspace }}/.ci-signing/pingplace-debug.keystore
+          ORG_GRADLE_PROJECT_pingplaceDebugKeystorePassword: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
+          ORG_GRADLE_PROJECT_pingplaceDebugKeyAlias: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
+          ORG_GRADLE_PROJECT_pingplaceDebugKeyPassword: ${{ secrets.PINGPLACE_DEBUG_KEY_PASSWORD }}
         run: >-
           flutter build apk --debug
           --build-name "${{ steps.version.outputs.build_name }}"
@@ -54,6 +88,10 @@ jobs:
           --dart-define=PINGPLACE_BUILD_NUMBER=${{ steps.version.outputs.build_number }}
           --dart-define=PINGPLACE_GIT_SHA=${{ steps.version.outputs.commit_short }}
           --dart-define=PINGPLACE_BUILD_TYPE=debug
+
+      - name: Remove reconstructed signing material
+        if: always()
+        run: rm -rf .ci-signing
 
       - name: Rename APK with build identity
         run: >-

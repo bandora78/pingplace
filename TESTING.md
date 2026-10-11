@@ -202,3 +202,65 @@ If Android reports a signature conflict, uninstall the previous debug build
 first, then install again. The workflow build receives the exact GitHub commit
 SHA through `--dart-define`; local builds without that define display
 `Commit: unknown` as the intentional fallback.
+
+## Task 06.1 consistent debug signing
+
+The CI artifact is intentionally signed with the same local debug keystore so
+it can update the locally installed `com.example.pingplace` app and preserve
+its data. The keystore and passwords are never committed. The workflow fails
+before building if any required secret is missing.
+
+One-time Windows PowerShell setup, using GitHub CLI:
+
+```powershell
+$keystorePath = Join-Path $env:USERPROFILE '.android\debug.keystore'
+if (-not (Test-Path -LiteralPath $keystorePath)) { throw "Missing $keystorePath" }
+$alias = 'androiddebugkey'
+$storePassword = 'android'
+$keyPassword = 'android'
+keytool -list -v -keystore $keystorePath -alias $alias -storepass $storePassword |
+  Select-String 'Alias name:|SHA256:'
+
+function Set-GitHubSecretFromText([string] $name, [string] $value) {
+  $temp = [IO.Path]::GetTempFileName()
+  try {
+    [IO.File]::WriteAllText($temp, $value)
+    Get-Content -LiteralPath $temp -Raw | gh secret set $name --body-file -
+  } finally {
+    Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue
+  }
+}
+
+$keystoreBase64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($keystorePath))
+Set-GitHubSecretFromText 'PINGPLACE_DEBUG_KEYSTORE_BASE64' $keystoreBase64
+Set-GitHubSecretFromText 'PINGPLACE_DEBUG_KEYSTORE_PASSWORD' $storePassword
+Set-GitHubSecretFromText 'PINGPLACE_DEBUG_KEY_ALIAS' $alias
+Set-GitHubSecretFromText 'PINGPLACE_DEBUG_KEY_PASSWORD' $keyPassword
+```
+
+The commands assume the standard Android debug keystore values. If the local
+keystore uses different credentials, determine the alias with `keytool -list`
+and enter the credentials in memory instead; never print them or commit them.
+The four required repository secrets are
+`PINGPLACE_DEBUG_KEYSTORE_BASE64`, `PINGPLACE_DEBUG_KEYSTORE_PASSWORD`,
+`PINGPLACE_DEBUG_KEY_ALIAS`, and `PINGPLACE_DEBUG_KEY_PASSWORD`. The workflow
+reconstructs the keystore only in the ephemeral runner workspace and removes it
+after the build.
+
+To compare certificates, obtain the local fingerprint without exposing private
+material:
+
+```powershell
+keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" `
+  -alias androiddebugkey -storepass android | Select-String 'SHA256:'
+$sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
+$apksigner = Get-ChildItem (Join-Path $sdk 'build-tools') -Recurse -Filter apksigner.bat |
+  Sort-Object FullName -Descending | Select-Object -First 1
+& $apksigner.FullName verify --print-certs .\pingplace-1.0.0+3-<commit>.apk
+```
+
+The SHA-256 certificate fingerprints must match. Matching fingerprints plus
+the unchanged application ID allow an update install and preserve app data;
+the CI signing setup is not considered verified until the user creates the
+secrets, downloads the artifact, and confirms the fingerprints and update on a
+device.

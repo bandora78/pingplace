@@ -4,6 +4,17 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val ciDebugKeystoreFile = providers.gradleProperty("pingplaceDebugKeystoreFile").orNull
+val ciDebugStorePassword = providers.gradleProperty("pingplaceDebugKeystorePassword").orNull
+val ciDebugKeyAlias = providers.gradleProperty("pingplaceDebugKeyAlias").orNull
+val ciDebugKeyPassword = providers.gradleProperty("pingplaceDebugKeyPassword").orNull
+val hasCiDebugSigning = listOf(
+    ciDebugKeystoreFile,
+    ciDebugStorePassword,
+    ciDebugKeyAlias,
+    ciDebugKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.example.pingplace"
     compileSdk = flutter.compileSdkVersion
@@ -29,7 +40,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasCiDebugSigning) {
+            create("ciDebug") {
+                storeFile = file(ciDebugKeystoreFile!!)
+                storePassword = ciDebugStorePassword!!
+                keyAlias = ciDebugKeyAlias!!
+                keyPassword = ciDebugKeyPassword!!
+            }
+        }
+    }
+
     buildTypes {
+        getByName("debug") {
+            if (hasCiDebugSigning) {
+                signingConfig = signingConfigs.getByName("ciDebug")
+            }
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
