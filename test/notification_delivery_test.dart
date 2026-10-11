@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pingplace/src/background/background_arrival_session.dart';
 import 'package:pingplace/src/domain/smart_arrival_detection.dart';
@@ -28,7 +30,7 @@ Map<String, Object?> locationPayload(
 
 Future<BackgroundArrivalSession> session(
   InMemoryArrivalRuntimeStore runtime,
-  InMemoryNotificationService notifications,
+  NotificationService notifications,
   List<String> diagnostics, {
   SmartArrivalConfig? config,
   DateTime? clock,
@@ -42,6 +44,40 @@ Future<BackgroundArrivalSession> session(
     config: config,
     clock: clock == null ? null : () => clock,
   );
+}
+
+final class BlockingNotificationService implements NotificationService {
+  BlockingNotificationService(this.operations);
+
+  final List<String> operations;
+  final started = Completer<void>();
+  final release = Completer<void>();
+
+  @override
+  Future<NotificationStatus> status() async => const NotificationStatus(
+    permission: NotificationPermissionStatus.allowed,
+  );
+
+  @override
+  Future<void> requestPermission() async {}
+
+  @override
+  Future<void> openSettings() async {}
+
+  @override
+  Future<void> resetTest() async {}
+
+  @override
+  Future<NotificationDeliveryResult> deliver({
+    required String visitId,
+    required String reminderText,
+  }) async {
+    operations.add('notification-started');
+    started.complete();
+    await release.future;
+    operations.add('notification-completed');
+    return NotificationDeliveryResult.sent;
+  }
 }
 
 Future<void> enterAndSample(
@@ -60,6 +96,59 @@ Future<void> enterAndSample(
 }
 
 void main() {
+  test('notification completes before headless service stop', () async {
+    final runtime = InMemoryArrivalRuntimeStore();
+    final operations = <String>[];
+    final notifications = BlockingNotificationService(operations);
+    final diagnostics = <String>[];
+    final value = await session(
+      runtime,
+      notifications,
+      diagnostics,
+      commands: operations,
+    );
+
+    final arrival = enterAndSample(value, DateTime.now());
+    await notifications.started.future;
+    expect(operations, contains('notification-started'));
+    expect(operations, isNot(contains('stop')));
+    notifications.release.complete();
+    await arrival;
+
+    expect(
+      operations.indexOf('notification-completed'),
+      lessThan(operations.indexOf('stop')),
+    );
+    value.dispose();
+  });
+
+  test('rearm verification timeout stops temporary GPS', () async {
+    final runtime = InMemoryArrivalRuntimeStore();
+    final commands = <String>[];
+    final diagnostics = <String>[];
+    final value = await session(
+      runtime,
+      InMemoryNotificationService(),
+      diagnostics,
+      commands: commands,
+      config: SmartArrivalConfig(
+        target: target,
+        approachTimeout: const Duration(milliseconds: 20),
+      ),
+    );
+
+    await enterAndSample(value, DateTime.now());
+    await value.handleEvent({'type': 'exit'});
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+
+    expect(diagnostics, contains('REARM_VERIFICATION_TIMEOUT'));
+    expect(
+      commands.where((command) => command == 'stop').length,
+      greaterThanOrEqualTo(2),
+    );
+    value.dispose();
+  });
+
   test('valid arrival sends exactly one notification', () async {
     final runtime = InMemoryArrivalRuntimeStore();
     final notifications = InMemoryNotificationService();

@@ -25,6 +25,7 @@ final class BackgroundArrivalSession {
   final DateTime Function() _clock;
   SmartArrivalDetectionEngine? engine;
   Timer? _timeoutTimer;
+  Timer? _rearmTimer;
   DateTime? _enteredAt;
   String _reminderText = 'עצור בתחנת דלק יעד';
   bool _preciseVerificationActive = false;
@@ -33,6 +34,8 @@ final class BackgroundArrivalSession {
   void dispose() {
     _timeoutTimer?.cancel();
     _timeoutTimer = null;
+    _rearmTimer?.cancel();
+    _rearmTimer = null;
     _preciseVerificationActive = false;
   }
 
@@ -87,8 +90,7 @@ final class BackgroundArrivalSession {
         await _process(engine!.dispatch(const OuterExit()));
         if (engine!.state == DetectionState.cooldown ||
             engine!.state == DetectionState.waitingForExit) {
-          _preciseVerificationActive = true;
-          onDiagnostic('PRECISE_LOCATION_STARTED');
+          _startRearmVerification();
           await onCommand('startVerification');
         }
       }
@@ -145,46 +147,69 @@ final class BackgroundArrivalSession {
   Future<void> _process(DetectionResult result) async {
     // Persist before a stop command can destroy the headless Flutter engine.
     await _saveRuntimeState();
-    for (final effect in result.effects) {
-      switch (effect.type) {
-        case DetectionEffectType.stateChanged:
-          onDiagnostic('STATE ${effect.from!.name} -> ${effect.to!.name}');
-        case DetectionEffectType.preciseLocationStarted:
-          _preciseVerificationActive = true;
-          onDiagnostic('PRECISE_LOCATION_STARTED');
-          final start = _enteredAt ?? DateTime.now();
-          _timeoutTimer?.cancel();
-          _timeoutTimer = Timer(engine!.config.approachTimeout, () {
-            _process(
-              engine!.dispatch(
-                ApproachTimedOut(start.add(engine!.config.approachTimeout)),
-              ),
+    var stopRequested = false;
+    try {
+      for (final effect in result.effects) {
+        if (effect.type == DetectionEffectType.preciseLocationStopped) {
+          // Arrival effects contain this before notificationRequested. Defer
+          // the native stop until notification delivery has completed.
+          stopRequested = true;
+          continue;
+        }
+        switch (effect.type) {
+          case DetectionEffectType.stateChanged:
+            onDiagnostic('STATE ${effect.from!.name} -> ${effect.to!.name}');
+          case DetectionEffectType.preciseLocationStarted:
+            _preciseVerificationActive = true;
+            onDiagnostic('PRECISE_LOCATION_STARTED');
+            final start = _enteredAt ?? _clock();
+            _timeoutTimer?.cancel();
+            _timeoutTimer = Timer(engine!.config.approachTimeout, () {
+              unawaited(
+                _process(
+                  engine!.dispatch(
+                    ApproachTimedOut(start.add(engine!.config.approachTimeout)),
+                  ),
+                ),
+              );
+            });
+          case DetectionEffectType.preciseLocationStopped:
+            // Handled before the switch so it can be ordered after the
+            // notification request.
+            break;
+          case DetectionEffectType.locationSample:
+            onDiagnostic(
+              'LOCATION distance=${effect.distance!.toStringAsFixed(1)}m '
+              'accuracy=${effect.accuracy!.toStringAsFixed(1)}m',
             );
-          });
-        case DetectionEffectType.preciseLocationStopped:
-          _preciseVerificationActive = false;
-          _timeoutTimer?.cancel();
-          _timeoutTimer = null;
-          onDiagnostic('PRECISE_LOCATION_STOPPED');
-          await onCommand('stop');
-        case DetectionEffectType.locationSample:
-          onDiagnostic(
-            'LOCATION distance=${effect.distance!.toStringAsFixed(1)}m '
-            'accuracy=${effect.accuracy!.toStringAsFixed(1)}m',
-          );
-        case DetectionEffectType.locationRejected:
-          onDiagnostic('LOCATION_REJECTED reason=LOW_ACCURACY');
-        case DetectionEffectType.innerReached:
-          onDiagnostic('INNER_REACHED');
-        case DetectionEffectType.notificationRequested:
-          onDiagnostic('NOTIFICATION_REQUESTED');
-          await _deliverNotification();
-        case DetectionEffectType.exitObservedDuringCooldown:
-          onDiagnostic('EXIT_OBSERVED_DURING_COOLDOWN');
-        case DetectionEffectType.approachTimeout:
-          _timeoutTimer?.cancel();
-          _timeoutTimer = null;
-          onDiagnostic('APPROACH_TIMEOUT');
+          case DetectionEffectType.locationRejected:
+            onDiagnostic('LOCATION_REJECTED reason=LOW_ACCURACY');
+          case DetectionEffectType.innerReached:
+            onDiagnostic('INNER_REACHED');
+          case DetectionEffectType.notificationRequested:
+            onDiagnostic('NOTIFICATION_REQUESTED');
+            try {
+              await _deliverNotification();
+            } catch (error) {
+              onDiagnostic('NOTIFICATION_FAILED: $error');
+            }
+          case DetectionEffectType.exitObservedDuringCooldown:
+            onDiagnostic('EXIT_OBSERVED_DURING_COOLDOWN');
+          case DetectionEffectType.approachTimeout:
+            _timeoutTimer?.cancel();
+            _timeoutTimer = null;
+            onDiagnostic('APPROACH_TIMEOUT');
+        }
+      }
+    } finally {
+      if (stopRequested) {
+        _preciseVerificationActive = false;
+        _timeoutTimer?.cancel();
+        _timeoutTimer = null;
+        _rearmTimer?.cancel();
+        _rearmTimer = null;
+        onDiagnostic('PRECISE_LOCATION_STOPPED');
+        await _stopService();
       }
     }
     final waitingForExit = result.effects.any(
@@ -192,8 +217,38 @@ final class BackgroundArrivalSession {
           effect.type == DetectionEffectType.stateChanged &&
           effect.to == DetectionState.waitingForExit,
     );
-    if (waitingForExit) await onCommand('stop');
+    if (waitingForExit) await _stopService();
     _scheduleCooldownTimer();
+  }
+
+  void _startRearmVerification() {
+    if (_preciseVerificationActive) return;
+    _preciseVerificationActive = true;
+    _rearmTimer?.cancel();
+    _rearmTimer = Timer(engine!.config.approachTimeout, () {
+      unawaited(_handleRearmTimeout());
+    });
+    onDiagnostic('PRECISE_LOCATION_STARTED');
+  }
+
+  Future<void> _handleRearmTimeout() async {
+    if (!_preciseVerificationActive ||
+        (engine?.state != DetectionState.cooldown &&
+            engine?.state != DetectionState.waitingForExit)) {
+      return;
+    }
+    _preciseVerificationActive = false;
+    _rearmTimer = null;
+    onDiagnostic('REARM_VERIFICATION_TIMEOUT');
+    await _stopService();
+  }
+
+  Future<void> _stopService() async {
+    try {
+      await onCommand('stop');
+    } catch (error) {
+      onDiagnostic('LOCATION_SERVICE_FAILED while stopping: $error');
+    }
   }
 
   void _scheduleCooldownTimer() {

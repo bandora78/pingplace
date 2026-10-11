@@ -69,6 +69,7 @@ class PreciseLocationService : Service() {
                     ),
                 )
                 startForegroundShell()
+                armWatchdog(REARM_WATCHDOG_MS)
                 startBackgroundEngine()
                 flushBackgroundEvents()
             }
@@ -121,6 +122,7 @@ class PreciseLocationService : Service() {
                     }
                     "startVerification" -> {
                         result.success(null)
+                        armWatchdog(REARM_WATCHDOG_MS)
                         startUpdates()
                     }
                     "diagnostic" -> {
@@ -242,6 +244,11 @@ class PreciseLocationService : Service() {
         }
     }
 
+    private fun armWatchdog(delayMillis: Long) {
+        watchdog.removeCallbacks(watchdogStop)
+        watchdog.postDelayed(watchdogStop, delayMillis)
+    }
+
     private fun startForegroundShell() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("PingPlace")
@@ -289,6 +296,7 @@ class PreciseLocationService : Service() {
         private const val BACKGROUND_DIAGNOSTICS = "diagnostics"
         private const val MAX_DIAGNOSTICS = 200
         private const val BACKGROUND_WATCHDOG_MS = 11 * 60 * 1000L
+        private const val REARM_WATCHDOG_MS = 2 * 60 * 1000L
         private const val CHANNEL_ID = "pingplace_precise_location"
         private const val NOTIFICATION_ID = 4203
         @Volatile
