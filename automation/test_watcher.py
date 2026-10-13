@@ -8,6 +8,9 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime, timezone
+from unittest.mock import patch
+from urllib.error import HTTPError
 from pathlib import Path
 
 from watcher import (
@@ -23,6 +26,9 @@ from watcher import (
     MAX_LOG_LINES,
     parse_front_matter,
     referenced_tasks,
+    GitHubFetcher,
+    RateLimited,
+    iso_timestamp,
 )
 
 
@@ -49,8 +55,16 @@ class MappingFetcher:
 class SnapshotMappingFetcher(MappingFetcher):
     snapshot = "0123456789abcdef0123456789abcdef01234567"
 
+    def __init__(self, files: dict[str, str | tuple[str, str]]):
+        super().__init__(files)
+        self.fetch_count = 0
+
     def begin_read_cycle(self) -> str:
         return self.snapshot
+
+    def fetch(self, path: str) -> RemoteFile:
+        self.fetch_count += 1
+        return super().fetch(path)
 
 
 class WatcherTests(unittest.TestCase):
@@ -201,6 +215,112 @@ class WatcherTests(unittest.TestCase):
         self.watcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()}).check(dry_run=True)
         self.assertFalse(self.store.state_path.exists())
         self.assertIn("dry_run_completed", self.store.log_path.read_text(encoding="utf-8"))
+
+    def test_unchanged_revision_reuses_bounded_cache(self) -> None:
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        Watcher(self.config, self.store, fetcher).check()
+        first_count = fetcher.fetch_count
+        Watcher(self.config, self.store, fetcher).check()
+        self.assertEqual(fetcher.fetch_count, first_count)
+        self.assertEqual(self.store.read_state()["last_result"], "ok_cached")
+
+    def test_changed_revision_refreshes_cache(self) -> None:
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        Watcher(self.config, self.store, fetcher).check()
+        fetcher.snapshot = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
+        Watcher(self.config, self.store, fetcher).check()
+        self.assertGreater(fetcher.fetch_count, 2)
+        self.assertEqual(self.store.read_state()["last_successful_revision"], fetcher.snapshot)
+
+    def test_corrupt_cache_fails_closed_for_same_revision(self) -> None:
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        Watcher(self.config, self.store, fetcher).check()
+        self.store.cache_path.write_text("{broken", encoding="utf-8")
+        with self.assertRaises(WatcherError):
+            Watcher(self.config, self.store, fetcher).check()
+        self.assertEqual(self.store.read_state()["last_result"], "error")
+
+    def test_rate_limit_cooldown_persists_and_blocks_manual_check(self) -> None:
+        now = time.time() + 600
+        self.store.write_state({"state_version": 1, "detected_tasks": [], "retry_not_before": iso_timestamp(datetime.fromtimestamp(now, timezone.utc))})
+        with self.assertRaises(WatcherError):
+            self.watcher({CURRENT_PATH: "# Queue\n"}).check()
+        self.assertEqual(self.store.read_state()["retry_not_before"], iso_timestamp(datetime.fromtimestamp(now, timezone.utc)))
+
+    def test_configured_token_is_not_logged_or_used_as_anonymous(self) -> None:
+        original = os.environ.get("PINGPLACE_GITHUB_TOKEN")
+        os.environ["PINGPLACE_GITHUB_TOKEN"] = "secret-token-value"
+        try:
+            fetcher = GitHubFetcher("bandora78/pingplace", "main")
+            self.assertEqual(fetcher.auth_mode, "bearer")
+            self.assertEqual(fetcher.token, "secret-token-value")
+            self.assertNotIn("secret-token-value", json.dumps(self.store.read_state()))
+        finally:
+            if original is None:
+                os.environ.pop("PINGPLACE_GITHUB_TOKEN", None)
+            else:
+                os.environ["PINGPLACE_GITHUB_TOKEN"] = original
+
+    def test_empty_configured_token_fails_closed(self) -> None:
+        original = os.environ.get("PINGPLACE_GITHUB_TOKEN")
+        os.environ["PINGPLACE_GITHUB_TOKEN"] = ""
+        try:
+            with self.assertRaises(WatcherError):
+                GitHubFetcher("bandora78/pingplace", "main")
+        finally:
+            if original is None:
+                os.environ.pop("PINGPLACE_GITHUB_TOKEN", None)
+            else:
+                os.environ["PINGPLACE_GITHUB_TOKEN"] = original
+
+    def test_invalid_configured_token_fails_without_anonymous_fallback(self) -> None:
+        original = os.environ.get("PINGPLACE_GITHUB_TOKEN")
+        os.environ["PINGPLACE_GITHUB_TOKEN"] = "invalid-token"
+        error = HTTPError("https://api.github.com", 401, "bad credentials", {}, None)
+        try:
+            fetcher = GitHubFetcher("bandora78/pingplace", "main")
+            with patch("watcher.urlopen", side_effect=error):
+                with self.assertRaises(WatcherError) as raised:
+                    fetcher._get_json("https://api.github.com/test", "test")
+            self.assertIn("authentication", str(raised.exception))
+            self.assertEqual(fetcher.auth_mode, "bearer")
+            self.assertEqual(fetcher.request_count, 1)
+        finally:
+            error.close()
+            if original is None:
+                os.environ.pop("PINGPLACE_GITHUB_TOKEN", None)
+            else:
+                os.environ["PINGPLACE_GITHUB_TOKEN"] = original
+
+    def test_primary_rate_limit_uses_reset_header(self) -> None:
+        fetcher = GitHubFetcher("bandora78/pingplace", "main")
+        error = HTTPError("https://api.github.com", 403, "forbidden", {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(int(time.time()) + 120)}, None)
+        try:
+            with self.assertRaises(RateLimited) as raised:
+                fetcher._raise_http_error(error, "main")
+            self.assertEqual(raised.exception.kind, "primary")
+        finally:
+            error.close()
+
+    def test_secondary_rate_limit_uses_retry_after(self) -> None:
+        fetcher = GitHubFetcher("bandora78/pingplace", "main")
+        error = HTTPError("https://api.github.com", 403, "secondary rate limit", {"Retry-After": "7"}, None)
+        try:
+            with self.assertRaises(RateLimited) as raised:
+                fetcher._raise_http_error(error, "main")
+            self.assertEqual(raised.exception.kind, "secondary")
+        finally:
+            error.close()
+
+    def test_malformed_rate_limit_reset_uses_bounded_fallback(self) -> None:
+        fetcher = GitHubFetcher("bandora78/pingplace", "main")
+        error = HTTPError("https://api.github.com", 403, "forbidden", {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "not-a-timestamp"}, None)
+        try:
+            with self.assertRaises(RateLimited) as raised:
+                fetcher._raise_http_error(error, "main")
+            self.assertGreater(raised.exception.retry_not_before.timestamp(), time.time() + 14 * 60)
+        finally:
+            error.close()
 
 
 if __name__ == "__main__":
