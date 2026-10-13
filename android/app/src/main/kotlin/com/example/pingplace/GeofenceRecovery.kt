@@ -38,6 +38,7 @@ object GeofenceRecovery {
         context.getSharedPreferences(REGISTRATION_PREFS, Context.MODE_PRIVATE)
 
     fun readRegistration(context: Context): Registration? {
+        RegistrationRecordStore.read(context)?.let { return it.registration }
         val current = registrationPreferences(context)
         val currentRegistration = parseRegistration(current)
         if (currentRegistration != null) return currentRegistration
@@ -57,31 +58,36 @@ object GeofenceRecovery {
     }
 
     fun writeRegistration(context: Context, registration: Registration) {
-        registrationPreferences(context).edit()
-            .putString("latitude", registration.latitude.toString())
-            .putString("longitude", registration.longitude.toString())
-            .putString("radius", registration.radius.toString())
-            .apply()
+        RegistrationRecordStore.configure(context, registration, "עצור בתחנת דלק יעד")
     }
 
     fun clearRegistration(context: Context) {
-        registrationPreferences(context).edit().clear().apply()
-        context.getSharedPreferences("MainActivity_preferences", Context.MODE_PRIVATE).edit().clear().apply()
+        registrationPreferences(context).edit().clear().commit()
+        context.getSharedPreferences("MainActivity_preferences", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     fun markRegistrationConfirmed(context: Context, confirmed: Boolean) {
-        val editor = recoveryPreferences(context).edit().putBoolean(CONFIRMED, confirmed)
-        if (confirmed) editor.putString(LAST_SUCCESS, Instant.now().toString())
-        editor.apply()
+        RegistrationRecordStore.updateState(
+            context,
+            if (confirmed) RegistrationRecordStore.State.REGISTRATION_CONFIRMED
+            else RegistrationRecordStore.State.CONFIGURED,
+        )
+        recoveryPreferences(context).edit().putBoolean(CONFIRMED, confirmed).commit()
+        if (confirmed) recoveryPreferences(context).edit().putString(LAST_SUCCESS, Instant.now().toString()).commit()
     }
 
     fun isRegistrationConfirmed(context: Context): Boolean =
-        recoveryPreferences(context).getBoolean(CONFIRMED, false)
+        RegistrationRecordStore.read(context)?.state == RegistrationRecordStore.State.REGISTRATION_CONFIRMED
 
     fun status(context: Context): Map<String, Any?> {
         val preferences = recoveryPreferences(context)
         return mapOf(
-            "registrationConfirmed" to preferences.getBoolean(CONFIRMED, false),
+            "registrationConfirmed" to isRegistrationConfirmed(context),
+            "registrationState" to RegistrationRecordStore.read(context)?.state?.name,
+            "desiredMonitoring" to (RegistrationRecordStore.read(context)?.desiredMonitoring == true),
+            "recoveryGeneration" to RegistrationRecordStore.read(context)?.recoveryGeneration,
+            "schemaVersion" to RegistrationRecordStore.read(context)?.let { RegistrationRecordStore.SCHEMA_VERSION },
+            "reminderText" to RegistrationRecordStore.read(context)?.reminderText,
             "lastRecoveryAttempt" to preferences.getString(LAST_ATTEMPT, null),
             "lastRecoverySuccess" to preferences.getString(LAST_SUCCESS, null),
             "lastRecoveryFailure" to preferences.getString(LAST_FAILURE, null),
@@ -126,45 +132,64 @@ object GeofenceRecovery {
             inFlight = true
         }
         val preferences = recoveryPreferences(context)
-        val previouslyConfirmed = preferences.getBoolean(CONFIRMED, false)
         val startedAt = Instant.now().toString()
         val diagnosticPrefix = if (reason == "boot") "BOOT_RECOVERY" else "GEOFENCE_RECOVERY"
-        preferences.edit()
-            .putString(LAST_ATTEMPT, startedAt)
-            .remove(LAST_FAILURE)
-            .putBoolean(CONFIRMED, false)
-            .apply()
-        recordDiagnostic(context, "${diagnosticPrefix}_STARTED reason=$reason")
-
         val callbackCompleted = AtomicBoolean(false)
         fun finish(success: Boolean, error: String?) {
             if (!callbackCompleted.compareAndSet(false, true)) return
             synchronized(lock) { inFlight = false }
+            val record = RegistrationRecordStore.read(context)
             if (success) {
                 val timestamp = Instant.now().toString()
-                preferences.edit()
-                    .putBoolean(CONFIRMED, true)
-                    .putString(LAST_SUCCESS, timestamp)
-                    .apply()
+                if (record != null) {
+                    RegistrationRecordStore.persist(
+                        context,
+                        record.copy(state = RegistrationRecordStore.State.REGISTRATION_CONFIRMED),
+                    )
+                }
+                preferences.edit().putBoolean(CONFIRMED, true).putString(LAST_SUCCESS, timestamp).commit()
                 recordDiagnostic(context, "${diagnosticPrefix}_COMPLETED reason=$reason")
                 recordDiagnostic(context, "GEOFENCE_RESTORED")
             } else {
                 val message = error ?: "Unknown geofence recovery failure"
-                preferences.edit().putString(LAST_FAILURE, "${Instant.now()} $message").apply()
+                val blocked = message.contains("permission", ignoreCase = true) ||
+                    message.contains("disabled", ignoreCase = true)
+                if (record != null) {
+                    RegistrationRecordStore.persist(
+                        context,
+                        record.copy(
+                            state = if (blocked) RegistrationRecordStore.State.RECOVERY_BLOCKED
+                            else RegistrationRecordStore.State.RECOVERY_REQUIRED,
+                        ),
+                    )
+                }
+                preferences.edit().putBoolean(CONFIRMED, false)
+                    .putString(LAST_FAILURE, "${Instant.now()} $message").commit()
                 recordDiagnostic(context, "${diagnosticPrefix}_FAILED $message")
             }
             callback(success, error)
         }
 
-        val registration = readRegistration(context)
-        if (registration == null) {
+        val saved = RegistrationRecordStore.read(context) ?: readRegistration(context)?.let {
+            RegistrationRecordStore.configure(context, it, "עצור בתחנת דלק יעד")
+        }
+        if (saved == null || !saved.desiredMonitoring) {
             finish(false, "No saved geofence configuration")
             return
         }
+        val pending = saved.copy(
+            state = RegistrationRecordStore.State.REGISTRATION_PENDING,
+            recoveryGeneration = saved.recoveryGeneration + 1L,
+        )
+        // The desired state is committed before any platform API call.
+        RegistrationRecordStore.persist(context, pending)
+        preferences.edit().putString(LAST_ATTEMPT, startedAt).remove(LAST_FAILURE).putBoolean(CONFIRMED, false).commit()
+        recordDiagnostic(context, "${diagnosticPrefix}_STARTED reason=$reason")
+        val registration = pending.registration
         context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE).edit()
             .putString("target_latitude", registration.latitude.toString())
             .putString("target_longitude", registration.longitude.toString())
-            .apply()
+            .commit()
         val permissionFailure = locationPermissionFailure(context)
         if (permissionFailure != null) {
             finish(false, permissionFailure)
@@ -189,33 +214,32 @@ object GeofenceRecovery {
             .build()
         val pendingIntent = GeofencePendingIntent.get(context)
         val client = LocationServices.getGeofencingClient(context)
-        fun addRegistration() {
+        fun addRegistration(removalError: String? = null) {
             try {
                 client.addGeofences(request, pendingIntent)
                     .addOnSuccessListener { finish(true, null) }
                     .addOnFailureListener { error ->
-                        finish(false, "Geofence registration failed: ${error.message ?: error}")
+                        finish(false, "Geofence registration failed${if (removalError != null) " after removal failure" else ""}: ${error.message ?: error}")
                     }
             } catch (error: Exception) {
                 finish(false, "Geofence registration failed: ${error.message ?: error}")
             }
         }
-        if (!previouslyConfirmed) {
-            recordDiagnostic(context, "GEOFENCE_REMOVE_SKIPPED_NO_CONFIRMED_REGISTRATION")
-            addRegistration()
-            return
-        }
         try {
             client.removeGeofences(pendingIntent).addOnCompleteListener { removalTask ->
                 if (!removalTask.isSuccessful) {
                     val error = removalTask.exception?.message ?: "Unknown geofence removal failure"
-                    finish(false, "Geofence removal failed; registration was not replaced: $error")
-                    return@addOnCompleteListener
+                    // A missing old registration is normal after reboot. Record
+                    // the failure, but let addGeofences establish the desired state.
+                    recordDiagnostic(context, "GEOFENCE_REMOVE_FAILED_BEFORE_RECONCILE $error")
+                    addRegistration(error)
+                } else {
+                    addRegistration()
                 }
-                addRegistration()
             }
         } catch (error: Exception) {
-            finish(false, "Geofence removal failed; registration was not replaced: ${error.message ?: error}")
+            recordDiagnostic(context, "GEOFENCE_REMOVE_FAILED_BEFORE_RECONCILE ${error.message ?: error}")
+            addRegistration(error.message)
         }
     }
 

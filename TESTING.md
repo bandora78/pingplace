@@ -292,3 +292,51 @@ the user launches the app, and PingPlace does not claim to bypass that state.
 Normal process termination and removal from recents are separate from Force
 Stop. The platform registration status is confirmed only after the geofencing
 API accepts the restored request; saved coordinates alone are not proof.
+## APP-01A durable registration and recovery
+
+APP-01A stores one versioned desired-registration record before calling the
+Android geofencing API. The record includes the target, radius, reminder text,
+desired monitoring flag, registration state, and recovery generation. Runtime
+detection state (including cooldown and visit identity) remains in its separate
+runtime store. `REGISTRATION_CONFIRMED` means only that the last
+`addGeofences` call was accepted; startup and boot recovery reconcile the
+PendingIntent again and do not trust that value as proof after restart.
+
+### APP-01A-01 — Restart and registration reconciliation
+
+1. Register one target while outside the outer radius and record the displayed
+   coordinates, reminder, and `REGISTRATION_CONFIRMED` diagnostic.
+2. Close and reopen PingPlace without removing the target. Confirm the saved
+   coordinates and reminder remain unchanged, and diagnostics show a new
+   startup reconciliation rather than a skipped confirmed state.
+3. Confirm the state returns to `REGISTRATION_CONFIRMED` only after Android
+   accepts the restored geofence. If permission or location services are
+   unavailable, confirm the record remains saved and the state is
+   `RECOVERY_BLOCKED` with an actionable error.
+
+### APP-01A-02 — Process death and reboot
+
+1. Register a target, move outside the outer radius, and remove PingPlace from
+   recents or allow the OS to reclaim the process. Do not use Android Force
+   Stop. Reopen and verify the saved target and reminder are restored.
+2. Reboot the device, unlock it, and wait for `BOOT_RECOVERY_STARTED` and
+   `BOOT_RECOVERY_COMPLETED`/`BOOT_RECOVERY_FAILED`. Verify the reboot alone
+   never generates an arrival notification.
+3. Trigger an actual outer ENTER and verify the existing Task 04/05 arrival
+   flow still works. Confirm cooldown and visit state are unchanged by
+   geofence reconciliation.
+
+### APP-01A-03 — Recovery blockers and preservation
+
+1. Revoke **Allow all the time** or disable device location services.
+2. Run **CHECK / RESTORE GEOFENCE**. Confirm recovery fails visibly, the saved
+   coordinates and reminder remain available, and no stale `REGISTERED` claim
+   is shown.
+3. Restore the prerequisite and run recovery again. Confirm a successful
+   platform registration changes the state to `REGISTRATION_CONFIRMED`.
+
+Repeat these checks on Xiaomi 15/HyperOS with battery optimization and
+autostart restrictions both enabled and disabled. Emulator, unit, and mocked
+Android tests cannot prove reboot delivery, OEM process retention, geofence
+restoration, or notification delivery. Force Stop remains an Android platform
+boundary and is intentionally not bypassed.
