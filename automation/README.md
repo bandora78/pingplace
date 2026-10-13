@@ -67,3 +67,7 @@ Each check first resolves one immutable commit SHA for `main`, then reads
 an OS-backed lock (`msvcrt` on Windows, `flock` elsewhere); a stale PID is never
 used to delete an active lock. If the lock, log, or remote read cannot be
 handled safely, the operation fails visibly.
+
+WATCHER-C1's separate approval verifier is documented in
+[APPROVAL_GATE.md](APPROVAL_GATE.md). It is read-only and disabled for approval
+creation; Stage B polling never invokes it and never dispatches Codex.
