@@ -217,6 +217,7 @@ final class DevelopmentGeofenceController {
         latitude: latitude,
         longitude: longitude,
         radius: radius,
+        reminderText: reminderText,
       );
       registered = true;
       _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');

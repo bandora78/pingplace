@@ -56,6 +56,7 @@ final class FakeGeofenceService implements GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   }) async {
     registered = true;
     savedRegistration = GeofenceRegistration(
