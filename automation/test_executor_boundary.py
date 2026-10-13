@@ -163,6 +163,36 @@ class ExecutorBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditFailure, "AUDIT_ROTATION_RECOVERY_REQUIRED"):
                 AuditLog(path, max_lines=1).append("TWO")
 
+    def test_audit_rejects_same_length_record_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.jsonl"; audit = AuditLog(path)
+            audit.append("ONE", {"value": 1}); audit.append("TWO", {"value": 2}); audit.append("THREE", {"value": 3})
+            lines = path.read_text().splitlines(); lines[0] = lines[0].replace('"ONE"', '"TWO"')
+            path.write_text("\n".join(lines) + "\n")
+            with self.assertRaisesRegex(AuditFailure, "AUDIT_(RECORD_HASH_MISMATCH|LOG_ANCHOR_MISMATCH|CHAIN_BROKEN)"): AuditLog(path).append("NEXT")
+
+    def test_audit_rejects_previous_hash_and_middle_record_corruption(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.jsonl"; audit = AuditLog(path)
+            audit.append("ONE", {"value": 1}); audit.append("TWO", {"value": 2}); audit.append("THREE", {"value": 3})
+            lines = path.read_text().splitlines(); lines[1] = lines[1].replace('"previous_hash":"' + json.loads(lines[1])["previous_hash"] + '"', '"previous_hash":"' + ("0" * 64) + '"')
+            path.write_text("\n".join(lines) + "\n")
+            with self.assertRaisesRegex(AuditFailure, "AUDIT_(RECORD_HASH_MISMATCH|LOG_ANCHOR_MISMATCH|CHAIN_BROKEN)"): AuditLog(path).append("NEXT")
+
+            path.unlink(); Path(str(path) + ".anchor").unlink()
+            audit = AuditLog(path); audit.append("ONE", {"value": 1}); audit.append("TWO", {"value": 2}); audit.append("THREE", {"value": 3})
+            lines = path.read_text().splitlines(); lines[1] = lines[1].replace('"value":2', '"value":9')
+            path.write_text("\n".join(lines) + "\n")
+            with self.assertRaisesRegex(AuditFailure, "AUDIT_(RECORD_HASH_MISMATCH|LOG_ANCHOR_MISMATCH|CHAIN_BROKEN)"): AuditLog(path).append("NEXT")
+
+    def test_restart_after_rotation_and_pruning_verifies_retained_chain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "audit.jsonl"; audit = AuditLog(path, max_lines=1, max_segments=3)
+            for index in range(7): audit.append("NOISE", {"index": index})
+            AuditLog(path, max_lines=1, max_segments=3).append("AFTER_RESTART")
+            anchor = json.loads(Path(str(path) + ".anchor").read_text())
+            self.assertEqual(anchor["sequence"], 8); self.assertIn("pruned_through", anchor); self.assertIn("pruned_hash", anchor)
+
     def test_audit_separate_process_concurrency(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "audit.jsonl"; context = multiprocessing.get_context("spawn")

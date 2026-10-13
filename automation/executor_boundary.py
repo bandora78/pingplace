@@ -295,6 +295,14 @@ class _InterprocessLock:
 
 
 class AuditLog:
+    """Hash-chained audit with a local crash-consistency anchor.
+
+    The anchor is an integrity checkpoint, not an independent trust root: its
+    bytes and every retained record are verified together. Pruning may remove
+    only nonterminal segments; the anchor records the last pruned sequence and
+    hash so the first retained record remains linkable. If that boundary or
+    any retained history cannot be verified, appends fail closed.
+    """
     TERMINAL_EVENTS = {"SUCCEEDED", "FAILED", "ABANDONED", "RESERVATION_SUCCEEDED", "EXECUTION_SUCCEEDED", "EXECUTION_FAILED", "TERMINAL"}
 
     def __init__(self, path: Path, max_bytes: int = 512 * 1024, max_lines: int = 500, max_segments: int = 8):
@@ -310,48 +318,86 @@ class AuditLog:
         return value
 
     def _read_last_record(self, path: Path) -> dict[str, Any] | None:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        if not lines: return None
-        value = json.loads(lines[-1])
-        if not isinstance(value, dict) or not isinstance(value.get("sequence"), int) or not SHA256_RE.fullmatch(str(value.get("record_hash", ""))):
-            raise AuditFailure("AUDIT_RECORD_INVALID")
-        return value
+        records = self._read_records(path)
+        return records[-1] if records else None
+
+    @staticmethod
+    def _canonical_hash(record: Mapping[str, Any]) -> str:
+        body = {key: record[key] for key in ("timestamp", "event", "details", "previous_hash", "sequence")}
+        return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode()).hexdigest()
+
+    def _read_records(self, path: Path) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line: raise AuditFailure("AUDIT_RECORD_INVALID")
+            try: value = json.loads(line)
+            except json.JSONDecodeError as exc: raise AuditFailure("AUDIT_RECORD_INVALID") from exc
+            if not isinstance(value, dict) or set(value) != {"timestamp", "event", "details", "previous_hash", "sequence", "record_hash"}:
+                raise AuditFailure("AUDIT_RECORD_INVALID")
+            if not isinstance(value["sequence"], int) or value["sequence"] <= 0 or not SHA256_RE.fullmatch(str(value["previous_hash"])) or not SHA256_RE.fullmatch(str(value["record_hash"])):
+                raise AuditFailure("AUDIT_RECORD_INVALID")
+            if self._canonical_hash(value) != value["record_hash"]: raise AuditFailure("AUDIT_RECORD_HASH_MISMATCH")
+            if records and (value["sequence"] != records[-1]["sequence"] + 1 or value["previous_hash"] != records[-1]["record_hash"]):
+                raise AuditFailure("AUDIT_CHAIN_BROKEN")
+            records.append(value)
+        return records
 
     def _segment_paths(self) -> list[Path]:
         return sorted(self.path.parent.glob(self.path.stem + ".*." + self.path.suffix.lstrip(".")))
 
-    def _anchor_value(self) -> tuple[int, str, str, int]:
+    def _anchor_value(self) -> tuple[int, str, str, int, int, str]:
         if not self.anchor.exists():
             if (self.path.exists() and self.path.stat().st_size) or self._segment_paths(): raise AuditFailure("AUDIT_ANCHOR_MISSING")
-            return 0, ZERO_HASH, self.path.name, 0
+            return 0, ZERO_HASH, self.path.name, 0, 0, ZERO_HASH
         try:
             value = json.loads(self.anchor.read_text(encoding="utf-8")); sequence, last_hash = value["sequence"], value["last_hash"]
             segment, size = value["segment"], value["size"]
-            if not isinstance(sequence, int) or sequence < 0 or not SHA256_RE.fullmatch(last_hash) or not isinstance(segment, str) or not isinstance(size, int) or size < 0: raise ValueError
+            pruned_through, pruned_hash = value["pruned_through"], value["pruned_hash"]
+            if not isinstance(sequence, int) or sequence < 0 or not SHA256_RE.fullmatch(last_hash) or not isinstance(segment, str) or Path(segment).name != segment or not isinstance(size, int) or size < 0 or not isinstance(pruned_through, int) or pruned_through < 0 or not SHA256_RE.fullmatch(pruned_hash): raise ValueError
             target = self.path.parent / segment
             if not target.exists(): raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
             if target.stat().st_size != size: raise AuditFailure("AUDIT_LOG_ANCHOR_MISMATCH")
+            if segment != self.path.name and not re.fullmatch(re.escape(self.path.stem) + r"\.\d{20}" + re.escape(self.path.suffix), segment): raise AuditFailure("AUDIT_ANCHOR_INVALID")
             record = self._read_last_record(target)
             if not record or record.get("sequence") != sequence or record.get("record_hash") != last_hash: raise AuditFailure("AUDIT_LOG_ANCHOR_MISMATCH")
             for archived in self._segment_paths():
                 match = re.search(r"\.(\d{20})\." + re.escape(self.path.suffix.lstrip(".")) + r"$", archived.name)
                 if match and int(match.group(1)) > sequence: raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
-            if segment == self.path.name:
-                pass
-            elif self.path.exists() and self.path.stat().st_size: raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
-            return sequence, last_hash, segment, size
+            if segment != self.path.name and self.path.exists() and self.path.stat().st_size: raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
+            self._verify_retained(sequence, last_hash, pruned_through, pruned_hash)
+            return sequence, last_hash, segment, size, pruned_through, pruned_hash
         except AuditFailure: raise
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc: raise AuditFailure("AUDIT_ANCHOR_INVALID") from exc
 
-    def _write_anchor(self, sequence: int, last_hash: str, segment: str, size: int) -> None:
+    def _verify_retained(self, anchor_sequence: int, anchor_hash: str, pruned_through: int, pruned_hash: str) -> None:
+        files = self._segment_paths()
+        if self.path.exists() and self.path.stat().st_size: files.append(self.path)
+        records: list[dict[str, Any]] = []
+        for file in files: records.extend(self._read_records(file))
+        records.sort(key=lambda record: record["sequence"])
+        if not records: raise AuditFailure("AUDIT_RECORDS_MISSING")
+        for previous, current in zip(records, records[1:]):
+            if current["sequence"] == previous["sequence"] + 1:
+                if current["previous_hash"] != previous["record_hash"]: raise AuditFailure("AUDIT_CHAIN_BROKEN")
+            elif not (current["sequence"] == pruned_through + 1 and current["previous_hash"] == pruned_hash):
+                raise AuditFailure("AUDIT_CHAIN_GAP")
+        first = records[0]
+        if first["sequence"] == 1:
+            if first["previous_hash"] != ZERO_HASH: raise AuditFailure("AUDIT_CHAIN_BROKEN")
+        elif not (pruned_through == first["sequence"] - 1 and first["previous_hash"] == pruned_hash):
+            raise AuditFailure("AUDIT_CHAIN_GAP")
+        tail = records[-1]
+        if tail["sequence"] != anchor_sequence or tail["record_hash"] != anchor_hash: raise AuditFailure("AUDIT_LOG_ANCHOR_MISMATCH")
+
+    def _write_anchor(self, sequence: int, last_hash: str, segment: str, size: int, pruned_through: int, pruned_hash: str) -> None:
         temp = self.anchor.with_name(self.anchor.name + ".tmp")
         try:
-            temp.write_text(json.dumps({"sequence": sequence, "last_hash": last_hash, "segment": segment, "size": size}, sort_keys=True) + "\n", encoding="utf-8")
+            temp.write_text(json.dumps({"sequence": sequence, "last_hash": last_hash, "segment": segment, "size": size, "pruned_through": pruned_through, "pruned_hash": pruned_hash}, sort_keys=True) + "\n", encoding="utf-8")
             with temp.open("r+b") as stream: stream.flush(); os.fsync(stream.fileno())
             os.replace(temp, self.anchor)
         except Exception as exc: raise AuditFailure("AUDIT_DURABILITY_UNKNOWN") from exc
 
-    def _rotate_and_prune(self, sequence: int) -> None:
+    def _rotate_and_prune(self, sequence: int, pruned_through: int, pruned_hash: str) -> tuple[int, str]:
         rotated = self.path.with_name(f"{self.path.stem}.{sequence:020d}{self.path.suffix}")
         try: os.replace(self.path, rotated)
         except OSError as exc: raise AuditFailure("AUDIT_ROTATION_FAILED") from exc
@@ -359,18 +405,21 @@ class AuditLog:
         while len(segments) > self.max_segments:
             segment = segments[0]
             try:
-                events = {json.loads(line).get("event") for line in segment.read_text(encoding="utf-8").splitlines() if line.strip()}
+                old_records = self._read_records(segment)
+                events = {record["event"] for record in old_records}
                 if events.intersection(self.TERMINAL_EVENTS): raise AuditFailure("AUDIT_TERMINAL_RETENTION_BLOCKED")
+                pruned_through, pruned_hash = old_records[-1]["sequence"], old_records[-1]["record_hash"]
                 segment.unlink()
                 segments = self._segment_paths()
             except AuditFailure: raise
             except Exception as exc: raise AuditFailure("AUDIT_RETENTION_FAILED") from exc
+        return pruned_through, pruned_hash
 
     def append(self, event: str, details: Mapping[str, Any] | None = None) -> None:
         if not isinstance(event, str) or not event or len(event) > 128: raise AuditFailure("AUDIT_EVENT_INVALID")
         try:
             with _InterprocessLock(self.lock):
-                sequence, previous_hash, _, _ = self._anchor_value()
+                sequence, previous_hash, _, _, pruned_through, pruned_hash = self._anchor_value()
                 record = {"timestamp": utc_now(), "event": event, "details": self._safe(details or {}), "previous_hash": previous_hash, "sequence": sequence + 1}
                 encoded = json.dumps(record, sort_keys=True, ensure_ascii=True, separators=(",", ":")); record["record_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
                 line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
@@ -378,11 +427,11 @@ class AuditLog:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8", newline="\n") as stream: stream.write(line); stream.flush(); os.fsync(stream.fileno())
                 active_size = self.path.stat().st_size
-                self._write_anchor(sequence + 1, record["record_hash"], self.path.name, active_size)
+                self._write_anchor(sequence + 1, record["record_hash"], self.path.name, active_size, pruned_through, pruned_hash)
                 active_lines = len(self.path.read_text(encoding="utf-8").splitlines())
                 if active_size > self.max_bytes or active_lines > self.max_lines:
-                    self._rotate_and_prune(sequence + 1)
-                    self._write_anchor(sequence + 1, record["record_hash"], self.path.with_name(f"{self.path.stem}.{sequence + 1:020d}{self.path.suffix}").name, active_size)
+                    pruned_through, pruned_hash = self._rotate_and_prune(sequence + 1, pruned_through, pruned_hash)
+                    self._write_anchor(sequence + 1, record["record_hash"], self.path.with_name(f"{self.path.stem}.{sequence + 1:020d}{self.path.suffix}").name, active_size, pruned_through, pruned_hash)
         except AuditFailure: raise
         except Exception as exc: raise AuditFailure("AUDIT_DURABILITY_UNKNOWN") from exc
 
