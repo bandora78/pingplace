@@ -1,0 +1,7 @@
+{
+  "repo": "bandora78/pingplace",
+  "branch": "main",
+  "interval_minutes": 15,
+  "dispatch_enabled": false,
+  "state_directory_name": "PingPlaceWatcher"
+}
