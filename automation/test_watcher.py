@@ -242,10 +242,30 @@ class WatcherTests(unittest.TestCase):
 
     def test_rate_limit_cooldown_persists_and_blocks_manual_check(self) -> None:
         now = time.time() + 600
-        self.store.write_state({"state_version": 1, "detected_tasks": [], "retry_not_before": iso_timestamp(datetime.fromtimestamp(now, timezone.utc))})
+        retry_not_before = iso_timestamp(datetime.fromtimestamp(now, timezone.utc))
+        self.store.write_state({
+            "state_version": 1,
+            "detected_tasks": [],
+            "retry_not_before": retry_not_before,
+            "last_successful_revision": "0123456789abcdef0123456789abcdef01234567",
+        })
         with self.assertRaises(WatcherError):
             self.watcher({CURRENT_PATH: "# Queue\n"}).check()
-        self.assertEqual(self.store.read_state()["retry_not_before"], iso_timestamp(datetime.fromtimestamp(now, timezone.utc)))
+        state = self.store.read_state()
+        self.assertEqual(state["retry_not_before"], retry_not_before)
+        self.assertEqual(state["last_successful_revision"], "0123456789abcdef0123456789abcdef01234567")
+        self.assertEqual(state["last_result"], "rate_limit_cooldown")
+        self.assertIsNotNone(state["last_check_finished"])
+
+    def test_permission_403_with_retry_after_is_not_rate_limited(self) -> None:
+        fetcher = GitHubFetcher("bandora78/pingplace", "main")
+        error = HTTPError("https://api.github.com", 403, "forbidden", {"Retry-After": "7"}, None)
+        try:
+            with self.assertRaises(WatcherError) as raised:
+                fetcher._raise_http_error(error, "main")
+            self.assertIn("permission", str(raised.exception))
+        finally:
+            error.close()
 
     def test_configured_token_is_not_logged_or_used_as_anonymous(self) -> None:
         original = os.environ.get("PINGPLACE_GITHUB_TOKEN")

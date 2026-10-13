@@ -375,8 +375,22 @@ class GitHubFetcher:
         body_hint = ""
         with contextlib.suppress(OSError, UnicodeDecodeError):
             body_hint = error.read(4096).decode("utf-8", errors="ignore").lower()
-        secondary = bool(retry_after) or "secondary rate" in reason or "secondary rate" in body_hint or "abuse" in reason or "abuse" in body_hint
-        primary = status in (403, 429) and (remaining == "0" or status == 429 or "rate limit" in reason or "rate limit" in body_hint)
+        rate_limit_hint = (
+            "secondary rate" in reason
+            or "secondary rate" in body_hint
+            or "abuse detection" in reason
+            or "abuse detection" in body_hint
+            or "rate limit" in reason
+            or "rate limit" in body_hint
+        )
+        secondary = status in (403, 429) and (
+            "secondary rate" in reason
+            or "secondary rate" in body_hint
+            or "abuse detection" in reason
+            or "abuse detection" in body_hint
+            or (status == 429 and bool(retry_after))
+        )
+        primary = status in (403, 429) and (remaining == "0" or status == 429 or rate_limit_hint)
         if primary or secondary:
             kind = "secondary" if secondary else "primary"
             delay = self._retry_delay(retry_after, headers.get("X-RateLimit-Reset"))
@@ -510,6 +524,15 @@ class Watcher:
             cooldown = parse_timestamp(state.get("retry_not_before"))
             if cooldown and cooldown > utc_now() and not dry_run:
                 message = f"Rate-limit cooldown active until {iso_timestamp(cooldown)}"
+                state.update({
+                    "state_version": 1,
+                    "last_check_started": started,
+                    "last_check_finished": iso_timestamp(),
+                    "last_result": "rate_limit_cooldown",
+                    "last_error": message,
+                    "dispatch_enabled": False,
+                })
+                self.store.write_state(state)
                 self.store.log("check_skipped_rate_limit_cooldown", {"retry_not_before": iso_timestamp(cooldown)})
                 raise WatcherError(message)
             try:
