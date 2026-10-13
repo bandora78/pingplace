@@ -3,5 +3,7 @@
   "branch": "main",
   "interval_minutes": 15,
   "dispatch_enabled": false,
-  "state_directory_name": "PingPlaceWatcher"
+  "state_directory_name": "PingPlaceWatcher",
+  "credential_env": "PINGPLACE_GITHUB_TOKEN",
+  "allow_anonymous": true
 }

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import email.utils
 import json
 import os
 import re
@@ -39,6 +40,9 @@ ALLOWED_STATUSES = {"DRAFT", "MANUAL_READY", "APPROVED", "BLOCKED", "FAILED", "I
 ALLOWED_EXECUTION = {"manual_bootstrap_only", "automatic_after_verified_approval"}
 MAX_LOG_BYTES = 512 * 1024
 MAX_LOG_LINES = 500
+MAX_CACHE_BYTES = 512 * 1024
+DEFAULT_CREDENTIAL_ENV = "PINGPLACE_GITHUB_TOKEN"
+DEFAULT_RATE_LIMIT_COOLDOWN_MINUTES = 15
 
 
 class WatcherError(Exception):
@@ -47,6 +51,19 @@ class WatcherError(Exception):
 
 class LockBusy(WatcherError):
     """Another watcher operation owns the local lock."""
+
+
+class RateLimited(WatcherError):
+    """GitHub asked the watcher to wait before making another request."""
+
+    def __init__(self, message: str, retry_not_before: datetime, kind: str):
+        super().__init__(message)
+        self.retry_not_before = retry_not_before
+        self.kind = kind
+
+
+class CacheError(WatcherError):
+    """The immutable-revision cache is present but cannot be trusted."""
 
 
 @dataclass(frozen=True)
@@ -95,10 +112,17 @@ def parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
-def redacted_error(error: BaseException) -> str:
+def valid_commit_sha(value: object) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-fA-F]{40}", value))
+
+
+def redacted_error(error: BaseException, extra_secrets: Iterable[str] = ()) -> str:
     message = str(error)
-    for secret_name in ("GITHUB_TOKEN", "GH_TOKEN"):
+    for secret_name in ("GITHUB_TOKEN", "GH_TOKEN", DEFAULT_CREDENTIAL_ENV):
         secret = os.environ.get(secret_name)
+        if secret:
+            message = message.replace(secret, "<redacted>")
+    for secret in extra_secrets:
         if secret:
             message = message.replace(secret, "<redacted>")
     message = re.sub(r"(?i)(authorization|token|password)=?[^\s,;]+", r"\1=<redacted>", message)
@@ -130,6 +154,11 @@ def load_config(path: Path) -> dict[str, Any]:
         raise WatcherError("Config interval_minutes must be a positive integer")
     if config.get("dispatch_enabled") is not False:
         raise WatcherError("Stage B requires dispatch_enabled: false")
+    credential_env = config.get("credential_env", DEFAULT_CREDENTIAL_ENV)
+    if not isinstance(credential_env, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", credential_env):
+        raise WatcherError("Config credential_env must be a valid environment variable name")
+    if config.get("allow_anonymous", True) is not True:
+        raise WatcherError("Stage B requires allow_anonymous: true")
     return config
 
 
@@ -137,6 +166,7 @@ class LocalStore:
     def __init__(self, directory: Path):
         self.directory = directory
         self.state_path = directory / "state.json"
+        self.cache_path = directory / "cache.json"
         self.log_path = directory / "watcher.log"
         self.lock_path = directory / "watcher.lock"
 
@@ -163,6 +193,43 @@ class LocalStore:
         temporary = self.state_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         os.replace(temporary, self.state_path)
+
+    def read_cache(self) -> dict[str, Any] | None:
+        if not self.cache_path.exists():
+            return None
+        try:
+            if self.cache_path.stat().st_size > MAX_CACHE_BYTES:
+                raise CacheError("Immutable revision cache exceeds its size limit")
+            value = json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except CacheError:
+            raise
+        except (OSError, json.JSONDecodeError) as error:
+            raise CacheError(f"Immutable revision cache is corrupt: {redacted_error(error)}") from error
+        if not isinstance(value, dict) or value.get("state_version") != 1:
+            raise CacheError("Immutable revision cache has an unsupported format")
+        if not valid_commit_sha(value.get("remote_revision")):
+            raise CacheError("Immutable revision cache has an invalid revision")
+        current = value.get("current")
+        if not isinstance(current, dict) or set(current) != {"sha", "text"} or not valid_commit_sha(current.get("sha")) or not isinstance(current.get("text"), str):
+            raise CacheError("Immutable revision cache is missing CURRENT.md")
+        tasks = value.get("tasks")
+        if not isinstance(tasks, dict):
+            raise CacheError("Immutable revision cache is missing task files")
+        for path, task in tasks.items():
+            if not isinstance(path, str) or not valid_task_path(path) or path == CURRENT_PATH:
+                raise CacheError("Immutable revision cache contains an invalid task path")
+            if not isinstance(task, dict) or set(task) != {"sha", "text"} or not valid_commit_sha(task.get("sha")) or not isinstance(task.get("text"), str):
+                raise CacheError("Immutable revision cache contains malformed task metadata")
+        return value
+
+    def write_cache(self, value: dict[str, Any]) -> None:
+        self.ensure_directory()
+        encoded = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+        if len(encoded.encode("utf-8")) > MAX_CACHE_BYTES:
+            raise CacheError("Immutable revision cache exceeds its size limit")
+        temporary = self.cache_path.with_suffix(".tmp")
+        temporary.write_text(encoded, encoding="utf-8")
+        os.replace(temporary, self.cache_path)
 
     def log(self, event: str, details: dict[str, Any] | None = None) -> None:
         self.ensure_directory()
@@ -260,13 +327,24 @@ class FileLock:
 
 
 class GitHubFetcher:
-    def __init__(self, repo: str, branch: str, timeout: float = 20.0):
+    def __init__(self, repo: str, branch: str, credential_env: str = DEFAULT_CREDENTIAL_ENV,
+                 timeout: float = 20.0):
         self.repo = repo
         self.branch = branch
+        self.credential_env = credential_env
         self.timeout = timeout
         self.api_root = f"https://api.github.com/repos/{repo}/contents"
         self.git_root = f"https://api.github.com/repos/{repo}/git"
         self.snapshot_sha: str | None = None
+        self.request_count = 0
+        self.auth_mode = "anonymous"
+        self.token: str | None = None
+        configured = os.environ.get(self.credential_env)
+        if configured is not None:
+            if not configured.strip():
+                raise WatcherError(f"Configured credential {self.credential_env} is empty")
+            self.token = configured.strip()
+            self.auth_mode = "bearer"
 
     def begin_read_cycle(self) -> str:
         url = f"{self.git_root}/ref/heads/{quote(self.branch, safe='')}"
@@ -284,17 +362,78 @@ class GitHubFetcher:
 
     def _get_json(self, url: str, description: str) -> dict[str, Any]:
         request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "PingPlaceWatcher/StageB"})
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        if token:
-            request.add_header("Authorization", f"Bearer {token}")
+        if self.token:
+            request.add_header("Authorization", f"Bearer {self.token}")
+        self.request_count += 1
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
-            raise WatcherError(f"GitHub read failed for {description}: {redacted_error(error)}") from error
+        except HTTPError as error:
+            self._raise_http_error(error, description)
+            raise AssertionError("unreachable")
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+            raise WatcherError(f"GitHub read failed for {description}: {redacted_error(error, (self.token or '',))}") from error
         if not isinstance(payload, dict):
             raise WatcherError(f"GitHub response for {description} was malformed")
         return payload
+
+    def _raise_http_error(self, error: HTTPError, description: str) -> None:
+        headers = error.headers or {}
+        status = int(getattr(error, "code", 0) or 0)
+        remaining = headers.get("X-RateLimit-Remaining")
+        retry_after = headers.get("Retry-After")
+        reason = str(getattr(error, "reason", "")).lower()
+        body_hint = ""
+        with contextlib.suppress(OSError, UnicodeDecodeError):
+            body_hint = error.read(4096).decode("utf-8", errors="ignore").lower()
+        rate_limit_hint = (
+            "secondary rate" in reason
+            or "secondary rate" in body_hint
+            or "abuse detection" in reason
+            or "abuse detection" in body_hint
+            or "rate limit" in reason
+            or "rate limit" in body_hint
+        )
+        secondary = status in (403, 429) and (
+            "secondary rate" in reason
+            or "secondary rate" in body_hint
+            or "abuse detection" in reason
+            or "abuse detection" in body_hint
+            or (status == 429 and bool(retry_after))
+        )
+        primary = status in (403, 429) and (remaining == "0" or status == 429 or rate_limit_hint)
+        if primary or secondary:
+            kind = "secondary" if secondary else "primary"
+            delay = self._retry_delay(retry_after, headers.get("X-RateLimit-Reset"))
+            raise RateLimited(
+                f"GitHub {kind} rate limit while reading {description}; retry after {iso_timestamp(utc_now() + delay)}",
+                utc_now() + delay,
+                kind,
+            ) from error
+        if status in (401, 403):
+            raise WatcherError(f"GitHub authentication or permission failure for {description} (HTTP {status})") from error
+        raise WatcherError(f"GitHub read failed for {description} (HTTP {status})") from error
+
+    @staticmethod
+    def _retry_delay(retry_after: str | None, reset: str | None) -> timedelta:
+        now = utc_now()
+        if retry_after:
+            try:
+                seconds = max(1, min(int(retry_after), 24 * 60 * 60))
+                return timedelta(seconds=seconds)
+            except ValueError:
+                with contextlib.suppress(TypeError, ValueError):
+                    retry_time = email.utils.parsedate_to_datetime(retry_after)
+                    if retry_time.tzinfo is None:
+                        retry_time = retry_time.replace(tzinfo=timezone.utc)
+                    return max(timedelta(seconds=1), retry_time.astimezone(timezone.utc) - now)
+        if reset:
+            try:
+                reset_time = datetime.fromtimestamp(int(reset), tz=timezone.utc)
+                return max(timedelta(seconds=1), reset_time - now)
+            except (TypeError, ValueError, OSError, OverflowError):
+                pass
+        return timedelta(minutes=DEFAULT_RATE_LIMIT_COOLDOWN_MINUTES)
 
     def fetch(self, path: str) -> RemoteFile:
         if not valid_task_path(path) and path != CURRENT_PATH:
@@ -392,38 +531,108 @@ class Watcher:
     def check(self, dry_run: bool = False) -> list[TaskRecord]:
         with self.store.acquire():
             started = iso_timestamp()
+            state = self.store.read_state()
+            cooldown = parse_timestamp(state.get("retry_not_before"))
+            if cooldown and cooldown > utc_now() and not dry_run:
+                message = f"Rate-limit cooldown active until {iso_timestamp(cooldown)}"
+                state.update({
+                    "state_version": 1,
+                    "last_check_started": started,
+                    "last_check_finished": iso_timestamp(),
+                    "last_result": "rate_limit_cooldown",
+                    "last_error": message,
+                    "dispatch_enabled": False,
+                })
+                self.store.write_state(state)
+                self.store.log("check_skipped_rate_limit_cooldown", {"retry_not_before": iso_timestamp(cooldown)})
+                raise WatcherError(message)
             try:
                 snapshot_sha = None
                 begin_cycle = getattr(self.fetcher, "begin_read_cycle", None)
                 if begin_cycle is not None:
                     snapshot_sha = begin_cycle()
-                current = self.fetcher.fetch(CURRENT_PATH)
+                cached = None
+                if snapshot_sha and snapshot_sha == state.get("last_successful_revision"):
+                    cached = self.store.read_cache()
+                    if cached is not None and cached.get("remote_revision") != snapshot_sha:
+                        raise CacheError("Immutable revision cache does not match the persisted revision")
+                if cached is not None:
+                    current = RemoteFile(CURRENT_PATH, cached["current"].get("sha", "cached"), cached["current"]["text"])
+                    task_files = {
+                        path: RemoteFile(path, value["sha"], value["text"])
+                        for path, value in cached["tasks"].items()
+                    }
+                    cache_used = True
+                else:
+                    current = self.fetcher.fetch(CURRENT_PATH)
+                    task_files = {}
+                    cache_used = False
+                    for linked_id, path in referenced_tasks(current):
+                        task_files[path] = self.fetcher.fetch(path)
                 records: list[TaskRecord] = []
-                for linked_id, path in referenced_tasks(current):
-                    remote_task = self.fetcher.fetch(path)
+                links = referenced_tasks(current)
+                if cached is not None and set(task_files) != {path for _, path in links}:
+                    raise CacheError("Immutable revision cache task set does not match CURRENT.md")
+                for linked_id, path in links:
+                    if path not in task_files:
+                        raise WatcherError(f"{path}: task file was not available")
+                    remote_task = task_files[path]
                     metadata = parse_front_matter(remote_task)
                     if metadata["task_id"] != linked_id:
                         raise WatcherError(f"{path}: link ID does not match task metadata")
                     records.append(classify_task(metadata, remote_task.sha, path))
-                state = self.store.read_state()
+                revision = snapshot_sha or current.sha
                 state.update({
                     "state_version": 1,
                     "last_check_started": started,
                     "last_check_finished": iso_timestamp(),
-                    "last_result": "dry_run" if dry_run else "ok",
+                    "last_result": "dry_run" if dry_run else ("ok_cached" if cache_used else "ok"),
                     "last_error": None,
-                    "remote_revision": snapshot_sha or current.sha,
+                    "remote_revision": revision,
+                    "last_successful_revision": revision,
                     "detected_tasks": [record.as_dict() for record in records],
                     "dispatch_enabled": False,
                     "next_check_basis": "estimate_from_last_check_plus_interval",
+                    "auth_mode": getattr(self.fetcher, "auth_mode", state.get("auth_mode", "unknown")),
+                    "request_count": getattr(self.fetcher, "request_count", 0),
+                    "retry_not_before": None,
+                    "rate_limit_kind": None,
+                    "cache_used": cache_used,
                 })
                 if not dry_run:
+                    if not cache_used and valid_commit_sha(snapshot_sha):
+                        self.store.write_cache({
+                            "state_version": 1,
+                            "remote_revision": revision,
+                            "current": {"sha": current.sha, "text": current.text},
+                            "tasks": {
+                                path: {"sha": task_file.sha, "text": task_file.text}
+                                for path, task_file in task_files.items()
+                            },
+                        })
                     self.store.write_state(state)
                 self.store.log("dry_run_completed" if dry_run else "check_completed", {"task_count": len(records), "eligible_count": 0})
                 return records
+            except RateLimited as error:
+                message = redacted_error(error)
+                state.update({
+                    "state_version": 1,
+                    "last_check_started": started,
+                    "last_check_finished": iso_timestamp(),
+                    "last_result": "rate_limited",
+                    "last_error": message,
+                    "dispatch_enabled": False,
+                    "auth_mode": getattr(self.fetcher, "auth_mode", state.get("auth_mode", "unknown")),
+                    "request_count": getattr(self.fetcher, "request_count", 0),
+                    "retry_not_before": iso_timestamp(error.retry_not_before),
+                    "rate_limit_kind": error.kind,
+                })
+                if not dry_run:
+                    self.store.write_state(state)
+                self.store.log("rate_limit_detected", {"kind": error.kind, "retry_not_before": iso_timestamp(error.retry_not_before)})
+                raise WatcherError(message) from error
             except Exception as error:
                 message = redacted_error(error)
-                state = self.store.read_state()
                 state.update({
                     "state_version": 1,
                     "last_check_started": started,
@@ -431,6 +640,8 @@ class Watcher:
                     "last_result": "error",
                     "last_error": message,
                     "dispatch_enabled": False,
+                    "auth_mode": getattr(self.fetcher, "auth_mode", state.get("auth_mode", "unknown")),
+                    "request_count": getattr(self.fetcher, "request_count", 0),
                 })
                 if not dry_run:
                     self.store.write_state(state)
@@ -460,6 +671,8 @@ def print_status(value: dict[str, Any]) -> None:
     for key in (
         "last_check_finished", "next_scheduled_check", "next_check_basis",
         "last_result", "last_error", "remote_revision", "dispatch_enabled",
+        "last_successful_revision", "retry_not_before", "rate_limit_kind",
+        "auth_mode", "request_count", "cache_used",
     ):
         print(f"{key}: {value.get(key)}")
     tasks = value.get("detected_tasks") or []
@@ -484,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "status":
             print_status(Watcher(config, store, None).status())
             return 0
-        fetcher = GitHubFetcher(config["repo"], config["branch"])
+        fetcher = GitHubFetcher(config["repo"], config["branch"], config.get("credential_env", DEFAULT_CREDENTIAL_ENV))
         watcher = Watcher(config, store, fetcher)
         records = watcher.check(dry_run=args.command == "dry-run")
         print_records(records, prefix="DRY RUN: " if args.command == "dry-run" else "")

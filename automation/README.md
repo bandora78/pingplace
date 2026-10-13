@@ -9,9 +9,11 @@ statuses, push code, create a PR, or dispatch implementation work.
 
 - Windows 11
 - Python 3.11+ on `PATH`
-- Network access to GitHub; an optional `GITHUB_TOKEN` or `GH_TOKEN` may reduce
-  API rate-limit pressure. Tokens are read from the environment and redacted
-  from errors; do not put them in this repository.
+- Network access to GitHub. Anonymous reads are supported. Optional
+  authenticated reads use the configured `PINGPLACE_GITHUB_TOKEN` environment
+  variable; the token is never written to repository files, state, logs, or
+  command output. The token only needs GitHub fine-grained repository access
+  of Contents: Read-only and Metadata: Read-only for `bandora78/pingplace`.
 - PowerShell for the optional Task Scheduler scripts
 
 Run a single read-only check from the repository root:
@@ -30,6 +32,44 @@ interval; it is not a guarantee of Task Scheduler execution.
 `dry-run` performs the same read-only GitHub validation but does not create or
 update `state.json`. It intentionally appends one bounded diagnostic log entry
 so a manual dry run is visible in local diagnostics.
+
+## Optional authenticated reads and rate limits
+
+The checked-in configuration uses `credential_env: PINGPLACE_GITHUB_TOKEN` and
+keeps `allow_anonymous: true`. If that variable is absent, the watcher uses
+anonymous public API reads. If it is present but empty or rejected by GitHub,
+the watcher fails closed and never silently retries anonymously. Do not use a
+token in a command-line argument or commit it to a file. On Windows, a user
+environment variable can be provisioned without putting the token in shell
+history by entering it interactively:
+
+```powershell
+$token = Read-Host 'GitHub fine-grained read-only token' -AsSecureString
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+try { [Environment]::SetEnvironmentVariable('PINGPLACE_GITHUB_TOKEN', [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr), 'User') }
+finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+```
+
+Restart the scheduled task process (or sign out and back in) after changing
+the user environment. Rotate or remove the variable using Windows environment
+settings when it is no longer needed.
+
+The watcher records only `anonymous` or `bearer` as `auth_mode`. It recognizes
+primary limits through `X-RateLimit-Remaining`/`X-RateLimit-Reset`, secondary
+limits through `Retry-After` and GitHub response hints, and persists a bounded
+`retry_not_before` cooldown. Normal checks, including manual `check`, make no
+outbound request during that cooldown; the explicit `dry-run` diagnostic may
+probe GitHub and does not change `state.json`.
+
+Each successful read cycle pins one immutable commit SHA. If that SHA is the
+last successful revision, the watcher validates a bounded local cache instead
+of refetching every file. A changed revision fetches fresh content. Corrupt or
+oversized cache data fails closed and is visible in status/logs; cached content
+never authorizes dispatch, which remains disabled.
+
+`status` is offline and shows the last successful revision, auth mode, request
+count, rate-limit cooldown, cache use, and last error. It does not claim that
+the remote queue is currently reachable.
 
 ## Optional safe installation
 
