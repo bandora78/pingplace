@@ -355,3 +355,38 @@ reconciles newer configuration after a stale callback. Removal persists a
 disabled record and tombstone before the platform call; pending removal is
 retried during startup/boot recovery without manual re-registration. Legacy
 preferences are not migrated when the removal tombstone is present.
+
+## APP-01A Geofence Diagnostics — Xiaomi 15 / HyperOS
+
+Open **REAL GEOFENCE TEST → GEOFENCE DIAGNOSTICS**. The screen is developer-only
+and read-only with respect to geofences. Use **REFRESH** after each platform
+operation. **COPY REPORT** copies a redacted text report; **SHARE REPORT** uses
+the Android share sheet. **CLEAR EVENT HISTORY** clears only the bounded
+diagnostic log after confirmation and does not remove a reminder.
+
+Record the device model, Android/HyperOS version, permission state, location
+services state, battery optimization state, and the complete copied report for
+each run.
+
+1. Create a reminder. Confirm `Desired geofences: 1`, a new configuration
+   generation, an add request/callback event, and a successful reconciliation.
+2. Remove the app from recents or allow ordinary process death. Do not use
+   Android **Force stop**. Reopen the app and confirm the persisted desired
+   state and event history remain available.
+3. Reboot, unlock, reopen diagnostics, and verify boot recovery/reconciliation
+   events. A reboot alone must not produce an arrival notification.
+4. Revoke location permission or disable location services. Refresh and confirm
+   the permission/prerequisite state and failure event are visible. Restore the
+   permission and confirm the subsequent reconciliation result.
+5. Delete the reminder and confirm removal request/callback events, tombstone
+   creation and cleanup, and zero desired geofences. The old removal callback
+   must not overwrite a rapid newer add.
+6. Repeat rapid add/remove operations and inspect generations and `stale` event
+   results. No precise coordinates or addresses should appear in the report.
+
+Force-stop is different from ordinary process death: Android may suppress
+`BOOT_COMPLETED`, geofence delivery, and background work until the user opens
+the app again. The diagnostics screen reports persisted evidence and confirmed
+callbacks only; it does not prove that Android currently holds a geofence when
+only local desired state exists. OEM battery, autostart, process-kill, and
+locked-device behavior remain physical-device checks.

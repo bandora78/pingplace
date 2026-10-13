@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
+import '../geofence/geofence_diagnostics_screen.dart';
 import '../geofence/geofence_service.dart';
 import 'development_simulation_controller.dart';
 
@@ -282,6 +283,18 @@ final class _RealGeofenceSection extends StatelessWidget {
                 OutlinedButton(
                   onPressed: controller.openNotificationSettings,
                   child: const Text('NOTIFICATION SETTINGS'),
+                ),
+                OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => GeofenceDiagnosticsScreen(
+                          service: controller.service,
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('GEOFENCE DIAGNOSTICS'),
                 ),
                 FilledButton(
                   onPressed: controller.initialized

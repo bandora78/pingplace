@@ -39,6 +39,16 @@ final class FakeGeofenceService implements GeofenceService {
   Future<GeofenceRecoveryStatus> get recoveryStatus async => recovery;
 
   @override
+  Future<GeofenceDiagnosticsSnapshot> get diagnostics async =>
+      const GeofenceDiagnosticsSnapshot();
+
+  @override
+  Future<void> clearDiagnostics() async {}
+
+  @override
+  Future<void> shareDiagnostics(String report) async {}
+
+  @override
   Future<bool> restoreRegistration() async {
     restoreCount++;
     activeRestoreCount++;

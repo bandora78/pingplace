@@ -158,6 +158,10 @@ object GeofenceRecovery {
         return committed
     }
 
+    /** Clears only the bounded diagnostic history; registration state is untouched. */
+    fun clearDiagnostics(context: Context): Boolean =
+        recoveryPreferences(context).edit().remove(DIAGNOSTICS).commit()
+
     fun restore(
         context: Context,
         reason: String,
@@ -437,9 +441,14 @@ object GeofenceRecovery {
                 return
             }
             try {
+                recordDiagnostic(context, "GEOFENCE_ADD_REQUESTED generation=${pending.recoveryGeneration}")
                 client.addGeofences(request, pendingIntent)
-                    .addOnSuccessListener { finish(true, null) }
+                    .addOnSuccessListener {
+                        recordDiagnostic(context, "GEOFENCE_ADD_CALLBACK_SUCCEEDED generation=${pending.recoveryGeneration}")
+                        finish(true, null)
+                    }
                     .addOnFailureListener { error ->
+                        recordDiagnostic(context, "GEOFENCE_ADD_CALLBACK_FAILED generation=${pending.recoveryGeneration} error=${error.message ?: error}")
                         finish(false, "Geofence registration failed${if (removalError != null) " after removal failure" else ""}: ${error.message ?: error}")
                     }
             } catch (error: Exception) {
@@ -447,6 +456,7 @@ object GeofenceRecovery {
             }
         }
         try {
+            recordDiagnostic(context, "GEOFENCE_REMOVE_REQUESTED generation=${pending.recoveryGeneration}")
             client.removeGeofences(pendingIntent).addOnCompleteListener { removalTask ->
                 if (!removalTask.isSuccessful) {
                     val error = removalTask.exception?.message ?: "Unknown geofence removal failure"
@@ -455,6 +465,7 @@ object GeofenceRecovery {
                     recordDiagnostic(context, "GEOFENCE_REMOVE_FAILED_BEFORE_RECONCILE $error")
                     addRegistration(error)
                 } else {
+                    recordDiagnostic(context, "GEOFENCE_REMOVE_CALLBACK_SUCCEEDED generation=${pending.recoveryGeneration}")
                     addRegistration()
                 }
             }
@@ -529,11 +540,19 @@ object GeofenceRecovery {
             if (retry) restore(context, "latest_desired") { _, _ -> }
         }
         try {
+            recordDiagnostic(context, "GEOFENCE_REMOVE_REQUESTED generation=${removalRecord?.recoveryGeneration ?: "none"}")
             LocationServices.getGeofencingClient(context)
                 .removeGeofences(GeofencePendingIntent.get(context))
-                .addOnSuccessListener { finishRemoval(true, null) }
-                .addOnFailureListener { error -> finishRemoval(false, error.message ?: error.toString()) }
+                .addOnSuccessListener {
+                    recordDiagnostic(context, "GEOFENCE_REMOVE_CALLBACK_SUCCEEDED generation=${removalRecord?.recoveryGeneration ?: "none"}")
+                    finishRemoval(true, null)
+                }
+                .addOnFailureListener { error ->
+                    recordDiagnostic(context, "GEOFENCE_REMOVE_CALLBACK_FAILED generation=${removalRecord?.recoveryGeneration ?: "none"} error=${error.message ?: error}")
+                    finishRemoval(false, error.message ?: error.toString())
+                }
         } catch (error: Exception) {
+            recordDiagnostic(context, "GEOFENCE_REMOVE_CALLBACK_FAILED generation=${removalRecord?.recoveryGeneration ?: "none"} error=${error.message ?: error}")
             finishRemoval(false, error.message ?: error.toString())
         }
     }

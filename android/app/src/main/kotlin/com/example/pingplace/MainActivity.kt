@@ -1,10 +1,13 @@
 package com.example.pingplace
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -33,6 +36,12 @@ class MainActivity : FlutterActivity() {
                     "registrationStatus" -> result.success(GeofenceRecovery.isRegistrationConfirmed(this))
                     "registrationDetails" -> result.success(registrationDetails())
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
+                    "diagnosticSnapshot" -> result.success(diagnosticSnapshot())
+                    "clearDiagnostics" -> {
+                        GeofenceRecovery.clearDiagnostics(this)
+                        result.success(null)
+                    }
+                    "shareDiagnostics" -> shareDiagnostics(call, result)
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
@@ -242,5 +251,72 @@ class MainActivity : FlutterActivity() {
             "recoveryGeneration" to GeofenceRecovery.status(this)["recoveryGeneration"],
             "reminderText" to GeofenceRecovery.status(this)["reminderText"],
         )
+    }
+
+    private fun diagnosticSnapshot(): Map<String, Any?> {
+        val recovery = GeofenceRecovery.status(this)
+        val diagnostics = (recovery["diagnostics"] as? List<*>)
+            ?.filterIsInstance<String>()
+            ?: emptyList()
+        fun lastMatching(vararg terms: String): String? = diagnostics.asReversed().firstOrNull { line ->
+            terms.any { term -> line.contains(term, ignoreCase = true) }
+        }
+        val record = GeofenceRecovery.readRegistration(this)
+        val desired = recovery["desiredMonitoring"] == true
+        val confirmed = recovery["registrationState"] == RegistrationRecordStore.State.REGISTRATION_CONFIRMED.name
+        val locationManager = getSystemService(LocationManager::class.java)
+        val locationEnabled = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) locationManager?.isLocationEnabled
+            else locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        } catch (_: Exception) {
+            null
+        }
+        val powerManager = getSystemService(PowerManager::class.java)
+        val batteryOptimizationIgnored = try {
+            powerManager?.isIgnoringBatteryOptimizations(packageName)
+        } catch (_: Exception) {
+            null
+        }
+        val bootAttempt = lastMatching("BOOT_RECOVERY_STARTED", "BOOT_RECOVERY_")
+        val bootResult = lastMatching("BOOT_RECOVERY_COMPLETED", "BOOT_RECOVERY_FAILED")
+        return mapOf(
+            "androidVersion" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "locationServicesEnabled" to locationEnabled,
+            "batteryOptimizationIgnored" to batteryOptimizationIgnored,
+            "desiredGeofenceCount" to if (desired && record != null) 1 else 0,
+            "trackedGeofenceCount" to if (confirmed) 1 else 0,
+            "pendingRemovalTombstoneCount" to if (RegistrationRecordStore.hasRemovalTombstone(this)) 1 else 0,
+            "persistedConfigurationGeneration" to recovery["recoveryGeneration"],
+            "lastReconciliationAttempt" to recovery["lastRecoveryAttempt"],
+            "lastReconciliationResult" to (recovery["lastRecoverySuccess"] ?: recovery["lastRecoveryFailure"]),
+            "lastBootRecoveryAttempt" to bootAttempt,
+            "lastBootRecoveryResult" to bootResult,
+            "lastRegistrationError" to lastMatching("REGISTRATION_FAILED", "RECOVERY_FAILED"),
+            "lastRemovalError" to lastMatching("REMOVE_FAILED", "REMOVAL_FAILED"),
+            "events" to diagnostics,
+        )
+    }
+
+    private fun shareDiagnostics(call: MethodCall, result: MethodChannel.Result) {
+        val report = call.arguments as? String
+        if (report.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Diagnostic report is required", null)
+            return
+        }
+        try {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, report)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }, "Share PingPlace diagnostics"))
+            result.success(null)
+        } catch (error: ActivityNotFoundException) {
+            result.error("DIAGNOSTICS_SHARE_FAILED", error.message, null)
+        } catch (error: SecurityException) {
+            result.error("DIAGNOSTICS_SHARE_FAILED", error.message, null)
+        }
     }
 }

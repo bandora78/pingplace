@@ -54,6 +54,44 @@ final class GeofenceRecoveryStatus {
   final List<String> diagnostics;
 }
 
+final class GeofenceDiagnosticsSnapshot {
+  const GeofenceDiagnosticsSnapshot({
+    this.androidVersion,
+    this.manufacturer,
+    this.model,
+    this.locationServicesEnabled,
+    this.batteryOptimizationIgnored,
+    this.desiredGeofenceCount = 0,
+    this.trackedGeofenceCount = 0,
+    this.pendingRemovalTombstoneCount = 0,
+    this.persistedConfigurationGeneration,
+    this.lastReconciliationAttempt,
+    this.lastReconciliationResult,
+    this.lastBootRecoveryAttempt,
+    this.lastBootRecoveryResult,
+    this.lastRegistrationError,
+    this.lastRemovalError,
+    this.events = const [],
+  });
+
+  final String? androidVersion;
+  final String? manufacturer;
+  final String? model;
+  final bool? locationServicesEnabled;
+  final bool? batteryOptimizationIgnored;
+  final int desiredGeofenceCount;
+  final int trackedGeofenceCount;
+  final int pendingRemovalTombstoneCount;
+  final int? persistedConfigurationGeneration;
+  final DateTime? lastReconciliationAttempt;
+  final String? lastReconciliationResult;
+  final DateTime? lastBootRecoveryAttempt;
+  final String? lastBootRecoveryResult;
+  final String? lastRegistrationError;
+  final String? lastRemovalError;
+  final List<String> events;
+}
+
 abstract interface class GeofenceService {
   Stream<GeofenceEvent> get events;
 
@@ -67,6 +105,13 @@ abstract interface class GeofenceService {
 
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
+
+  Future<GeofenceDiagnosticsSnapshot> get diagnostics async =>
+      const GeofenceDiagnosticsSnapshot();
+
+  Future<void> clearDiagnostics() async {}
+
+  Future<void> shareDiagnostics(String report) async {}
 
   Future<bool> restoreRegistration() async => false;
 
@@ -161,6 +206,46 @@ final class MethodChannelGeofenceService implements GeofenceService {
           .toList(growable: false),
     );
   }
+
+  @override
+  Future<GeofenceDiagnosticsSnapshot> get diagnostics async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'diagnosticSnapshot',
+    );
+    final map = value ?? const {};
+    DateTime? parseDate(Object? raw) =>
+        raw is String ? DateTime.tryParse(raw) : null;
+    return GeofenceDiagnosticsSnapshot(
+      androidVersion: map['androidVersion'] as String?,
+      manufacturer: map['manufacturer'] as String?,
+      model: map['model'] as String?,
+      locationServicesEnabled: map['locationServicesEnabled'] as bool?,
+      batteryOptimizationIgnored: map['batteryOptimizationIgnored'] as bool?,
+      desiredGeofenceCount: (map['desiredGeofenceCount'] as num?)?.toInt() ?? 0,
+      trackedGeofenceCount: (map['trackedGeofenceCount'] as num?)?.toInt() ?? 0,
+      pendingRemovalTombstoneCount:
+          (map['pendingRemovalTombstoneCount'] as num?)?.toInt() ?? 0,
+      persistedConfigurationGeneration:
+          (map['persistedConfigurationGeneration'] as num?)?.toInt(),
+      lastReconciliationAttempt: parseDate(map['lastReconciliationAttempt']),
+      lastReconciliationResult: map['lastReconciliationResult'] as String?,
+      lastBootRecoveryAttempt: parseDate(map['lastBootRecoveryAttempt']),
+      lastBootRecoveryResult: map['lastBootRecoveryResult'] as String?,
+      lastRegistrationError: map['lastRegistrationError'] as String?,
+      lastRemovalError: map['lastRemovalError'] as String?,
+      events: (map['events'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<void> clearDiagnostics() =>
+      _methodChannel.invokeMethod<void>('clearDiagnostics');
+
+  @override
+  Future<void> shareDiagnostics(String report) =>
+      _methodChannel.invokeMethod<void>('shareDiagnostics', report);
 
   @override
   Future<bool> restoreRegistration() async =>
