@@ -340,3 +340,11 @@ autostart restrictions both enabled and disabled. Emulator, unit, and mocked
 Android tests cannot prove reboot delivery, OEM process retention, geofence
 restoration, or notification delivery. Force Stop remains an Android platform
 boundary and is intentionally not bypassed.
+
+APP-01A correctness regression coverage also verifies that failed preference
+commits fail closed before geofence API mutation, corrupted/unsupported records
+are diagnosed distinctly from missing records, stale recovery callbacks cannot
+confirm a newer generation, and removal persists `desiredMonitoring=false`
+before asynchronous removal. These are JVM/source-level checks; physical
+Xiaomi/HyperOS behavior, power-loss durability of SharedPreferences, and
+cross-process races still require device testing.

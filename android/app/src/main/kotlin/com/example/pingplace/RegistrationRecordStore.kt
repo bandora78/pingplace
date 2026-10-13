@@ -25,9 +25,35 @@ object RegistrationRecordStore {
         val recoveryGeneration: Long,
     )
 
-    fun read(context: Context): Record? {
-        val serialized = GeofenceRecovery.registrationPreferences(context).getString(KEY, null) ?: return null
-        return parse(serialized)
+    enum class ReadFailure { MISSING, CORRUPT, UNSUPPORTED_SCHEMA }
+
+    data class ReadResult(
+        val record: Record?,
+        val failure: ReadFailure? = null,
+    )
+
+    fun readResult(context: Context): ReadResult {
+        val serialized = GeofenceRecovery.registrationPreferences(context).getString(KEY, null)
+            ?: return ReadResult(null, ReadFailure.MISSING)
+        return parseResult(serialized)
+    }
+
+    fun read(context: Context): Record? = readResult(context).record
+
+    fun readFailure(context: Context): ReadFailure? = readResult(context).failure
+
+    fun recordKeyPresent(context: Context): Boolean =
+        GeofenceRecovery.registrationPreferences(context).contains(KEY)
+
+    fun defaultReminder(): String = DEFAULT_REMINDER
+
+    fun desiredDisabled(context: Context): Record? {
+        val current = read(context) ?: return null
+        return current.copy(
+            desiredMonitoring = false,
+            state = State.CONFIGURED,
+            recoveryGeneration = current.recoveryGeneration + 1L,
+        ).also { persist(context, it) }
     }
 
     fun configure(
@@ -67,7 +93,11 @@ object RegistrationRecordStore {
             put("recoveryGeneration", record.recoveryGeneration)
         }
         // commit makes the desired record durable before add/remove is called.
-        GeofenceRecovery.registrationPreferences(context).edit().putString(KEY, json.toString()).commit()
+        check(
+            GeofenceRecovery.registrationPreferences(context).edit()
+                .putString(KEY, json.toString())
+                .commit(),
+        ) { "Unable to commit persisted geofence registration record" }
     }
 
     fun validate(registration: GeofenceRecovery.Registration) {
@@ -76,23 +106,26 @@ object RegistrationRecordStore {
         require(registration.radius.isFinite() && registration.radius > 0f)
     }
 
-    private fun parse(serialized: String): Record? = try {
+    private fun parseResult(serialized: String): ReadResult = try {
         val json = JSONObject(serialized)
-        if (json.optInt("schemaVersion", -1) != SCHEMA_VERSION) return null
+        val schema = json.optInt("schemaVersion", -1)
+        if (schema != SCHEMA_VERSION) return ReadResult(null, ReadFailure.UNSUPPORTED_SCHEMA)
         val registration = GeofenceRecovery.Registration(
             json.getDouble("latitude"),
             json.getDouble("longitude"),
             json.getDouble("radius").toFloat(),
         )
         validate(registration)
-        Record(
-            registration = registration,
-            reminderText = json.optString("reminderText", DEFAULT_REMINDER).ifBlank { DEFAULT_REMINDER },
-            desiredMonitoring = json.optBoolean("desiredMonitoring", false),
-            state = State.valueOf(json.getString("state")),
-            recoveryGeneration = json.getLong("recoveryGeneration"),
+        ReadResult(
+            Record(
+                registration = registration,
+                reminderText = json.optString("reminderText", DEFAULT_REMINDER).ifBlank { DEFAULT_REMINDER },
+                desiredMonitoring = json.getBoolean("desiredMonitoring"),
+                state = State.valueOf(json.getString("state")),
+                recoveryGeneration = json.getLong("recoveryGeneration"),
+            ),
         )
     } catch (_: Exception) {
-        null
+        ReadResult(null, ReadFailure.CORRUPT)
     }
 }

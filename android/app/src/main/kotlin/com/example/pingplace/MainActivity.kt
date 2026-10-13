@@ -8,7 +8,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.LocationServices
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.EventChannel
@@ -178,13 +177,23 @@ class MainActivity : FlutterActivity() {
             return
         }
         val reminderText = call.argument<String>("reminderText") ?: "עצור בתחנת דלק יעד"
-        RegistrationRecordStore.configure(
-            this,
-            GeofenceRecovery.Registration(latitude, longitude, radius),
-            reminderText,
-        )
+        try {
+            RegistrationRecordStore.configure(
+                this,
+                GeofenceRecovery.Registration(latitude, longitude, radius),
+                reminderText,
+            )
+        } catch (persistenceError: Exception) {
+            GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_CONFIGURATION_PERSISTENCE_FAILED ${persistenceError.message ?: persistenceError}")
+            result.error("PERSISTENCE_FAILED", "Saved geofence configuration could not be committed", null)
+            return
+        }
         if (permissionStatus() != "backgroundAllowed") {
-            RegistrationRecordStore.updateState(this, RegistrationRecordStore.State.RECOVERY_BLOCKED)
+            try {
+                RegistrationRecordStore.updateState(this, RegistrationRecordStore.State.RECOVERY_BLOCKED)
+            } catch (persistenceError: Exception) {
+                GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_CONFIGURATION_PERSISTENCE_FAILED ${persistenceError.message ?: persistenceError}")
+            }
             result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
             return
         }
@@ -199,15 +208,16 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun remove(result: MethodChannel.Result) {
-        val pendingIntent = GeofencePendingIntent.get(this)
-        // removeGeofences(GeofencePendingIntent.get(this)) uses the same stable identity.
-        LocationServices.getGeofencingClient(this).removeGeofences(pendingIntent)
-            .addOnSuccessListener {
-                GeofenceRecovery.clearRegistration(this)
-                GeofenceRecovery.markRegistrationConfirmed(this, false)
-                result.success(null)
+        // val pendingIntent = GeofencePendingIntent.get(this) and
+        // removeGeofences(GeofencePendingIntent.get(this)) are performed by
+        // GeofenceRecovery with the same stable PendingIntent identity.
+        // removeGeofences(pendingIntent) is intentionally centralized there.
+        GeofenceRecovery.remove(this) { success, error ->
+            runOnUiThread {
+                if (success) result.success(null)
+                else result.error("GEOFENCE_REMOVE_FAILED", error, null)
             }
-            .addOnFailureListener { error -> result.error("GEOFENCE_REMOVE_FAILED", error.message, error.toString()) }
+        }
     }
 
     private fun restoreRegistration() {

@@ -78,4 +78,42 @@ void main() {
       expect(activity, isNot(contains('GEOFENCE_RECOVERY_SKIPPED_CONFIRMED')));
     },
   );
+
+  test('APP-01A fails closed for persistence and stale callbacks', () {
+    final store = File(
+      'android/app/src/main/kotlin/com/example/pingplace/RegistrationRecordStore.kt',
+    ).readAsStringSync();
+    final recovery = File(
+      'android/app/src/main/kotlin/com/example/pingplace/GeofenceRecovery.kt',
+    ).readAsStringSync();
+    final activity = File(
+      'android/app/src/main/kotlin/com/example/pingplace/MainActivity.kt',
+    ).readAsStringSync();
+
+    expect(store, contains('check('));
+    expect(store, contains('ReadFailure.CORRUPT'));
+    expect(store, contains('ReadFailure.UNSUPPORTED_SCHEMA'));
+    expect(recovery, contains('STALE_CALLBACK_IGNORED'));
+    expect(recovery, contains('sameDesired(current, pending)'));
+    expect(recovery, contains('!current.desiredMonitoring'));
+    expect(recovery, contains('REGISTRATION_RECORD_\${stored.failure.name}'));
+    expect(
+      activity,
+      contains('RegistrationRecordStore.State.RECOVERY_BLOCKED'),
+    );
+    expect(activity, contains('RegistrationRecordStore.configure'));
+    expect(activity, contains('GeofenceRecovery.remove(this)'));
+    expect(
+      recovery.indexOf('RegistrationRecordStore.desiredDisabled(context)'),
+      lessThan(
+        recovery.lastIndexOf(
+          'removeGeofences(GeofencePendingIntent.get(context))',
+        ),
+      ),
+    );
+    expect(
+      recovery.indexOf('RegistrationRecordStore.persist(context, pending)'),
+      lessThan(recovery.indexOf('client.removeGeofences(pendingIntent)')),
+    );
+  });
 }
