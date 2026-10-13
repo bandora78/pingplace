@@ -93,6 +93,8 @@ void main() {
     expect(store, contains('check('));
     expect(store, contains('ReadFailure.CORRUPT'));
     expect(store, contains('ReadFailure.UNSUPPORTED_SCHEMA'));
+    expect(store, contains('remove(KEY)'));
+    expect(store, contains('REMOVAL_TOMBSTONE'));
     expect(recovery, contains('STALE_CALLBACK_IGNORED'));
     expect(recovery, contains('sameDesired(current, pending)'));
     expect(recovery, contains('!current.desiredMonitoring'));
@@ -101,7 +103,7 @@ void main() {
       activity,
       contains('RegistrationRecordStore.State.RECOVERY_BLOCKED'),
     );
-    expect(activity, contains('RegistrationRecordStore.configure'));
+    expect(activity, contains('GeofenceRecovery.configureDesiredRegistration'));
     expect(activity, contains('GeofenceRecovery.remove(this)'));
     expect(
       recovery.indexOf('RegistrationRecordStore.desiredDisabled(context)'),

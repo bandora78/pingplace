@@ -348,3 +348,10 @@ confirm a newer generation, and removal persists `desiredMonitoring=false`
 before asynchronous removal. These are JVM/source-level checks; physical
 Xiaomi/HyperOS behavior, power-loss durability of SharedPreferences, and
 cross-process races still require device testing.
+
+The corrected recovery path serializes desired-record mutations, binds
+asynchronous callbacks to the persisted recovery generation, and automatically
+reconciles newer configuration after a stale callback. Removal persists a
+disabled record and tombstone before the platform call; pending removal is
+retried during startup/boot recovery without manual re-registration. Legacy
+preferences are not migrated when the removal tombstone is present.

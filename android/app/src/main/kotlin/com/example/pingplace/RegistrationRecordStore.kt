@@ -7,6 +7,7 @@ import org.json.JSONObject
 object RegistrationRecordStore {
     const val SCHEMA_VERSION = 1
     private const val KEY = "registration_record"
+    private const val REMOVAL_TOMBSTONE = "removal_tombstone"
     private const val DEFAULT_REMINDER = "עצור בתחנת דלק יעד"
 
     enum class State {
@@ -45,6 +46,9 @@ object RegistrationRecordStore {
     fun recordKeyPresent(context: Context): Boolean =
         GeofenceRecovery.registrationPreferences(context).contains(KEY)
 
+    fun hasRemovalTombstone(context: Context): Boolean =
+        GeofenceRecovery.registrationPreferences(context).getBoolean(REMOVAL_TOMBSTONE, false)
+
     fun defaultReminder(): String = DEFAULT_REMINDER
 
     fun desiredDisabled(context: Context): Record? {
@@ -53,7 +57,10 @@ object RegistrationRecordStore {
             desiredMonitoring = false,
             state = State.CONFIGURED,
             recoveryGeneration = current.recoveryGeneration + 1L,
-        ).also { persist(context, it) }
+        ).also {
+            persist(context, it)
+            persistRemovalTombstone(context)
+        }
     }
 
     fun configure(
@@ -63,9 +70,15 @@ object RegistrationRecordStore {
     ): Record {
         validate(registration)
         val previous = read(context)
+        val normalizedReminder = reminderText.trim().ifEmpty { DEFAULT_REMINDER }
+        if (previous != null && previous.registration == registration &&
+            previous.reminderText == normalizedReminder && previous.desiredMonitoring
+        ) {
+            return previous
+        }
         return Record(
             registration = registration,
-            reminderText = reminderText.trim().ifEmpty { DEFAULT_REMINDER },
+            reminderText = normalizedReminder,
             desiredMonitoring = true,
             state = State.CONFIGURED,
             recoveryGeneration = (previous?.recoveryGeneration ?: 0L) + 1L,
@@ -95,9 +108,26 @@ object RegistrationRecordStore {
         // commit makes the desired record durable before add/remove is called.
         check(
             GeofenceRecovery.registrationPreferences(context).edit()
+                .remove(REMOVAL_TOMBSTONE)
                 .putString(KEY, json.toString())
                 .commit(),
         ) { "Unable to commit persisted geofence registration record" }
+    }
+
+    fun persistRemovalTombstone(context: Context) {
+        check(
+            GeofenceRecovery.registrationPreferences(context).edit()
+                .putBoolean(REMOVAL_TOMBSTONE, true)
+                .commit(),
+        ) { "Unable to commit geofence removal tombstone" }
+    }
+
+    fun clearRecord(context: Context) {
+        check(
+            GeofenceRecovery.registrationPreferences(context).edit()
+                .remove(KEY)
+                .commit(),
+        ) { "Unable to clear persisted geofence registration record" }
     }
 
     fun validate(registration: GeofenceRecovery.Registration) {

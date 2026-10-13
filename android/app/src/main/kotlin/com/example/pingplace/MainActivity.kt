@@ -178,7 +178,7 @@ class MainActivity : FlutterActivity() {
         }
         val reminderText = call.argument<String>("reminderText") ?: "עצור בתחנת דלק יעד"
         try {
-            RegistrationRecordStore.configure(
+            GeofenceRecovery.configureDesiredRegistration(
                 this,
                 GeofenceRecovery.Registration(latitude, longitude, radius),
                 reminderText,
