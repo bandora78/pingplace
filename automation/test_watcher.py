@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -29,6 +31,7 @@ from watcher import (
     GitHubFetcher,
     RateLimited,
     iso_timestamp,
+    main,
 )
 
 
@@ -217,7 +220,7 @@ class WatcherTests(unittest.TestCase):
         self.assertIn("dry_run_completed", self.store.log_path.read_text(encoding="utf-8"))
 
     def test_unchanged_revision_reuses_bounded_cache(self) -> None:
-        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: ("1111111111111111111111111111111111111111", CURRENT), "tasks/WATCHER-01B.md": ("2222222222222222222222222222222222222222", task())})
         Watcher(self.config, self.store, fetcher).check()
         first_count = fetcher.fetch_count
         Watcher(self.config, self.store, fetcher).check()
@@ -225,7 +228,7 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.store.read_state()["last_result"], "ok_cached")
 
     def test_changed_revision_refreshes_cache(self) -> None:
-        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: ("1111111111111111111111111111111111111111", CURRENT), "tasks/WATCHER-01B.md": ("2222222222222222222222222222222222222222", task())})
         Watcher(self.config, self.store, fetcher).check()
         fetcher.snapshot = "abcdefabcdefabcdefabcdefabcdefabcdefabcd"
         Watcher(self.config, self.store, fetcher).check()
@@ -233,7 +236,7 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(self.store.read_state()["last_successful_revision"], fetcher.snapshot)
 
     def test_corrupt_cache_fails_closed_for_same_revision(self) -> None:
-        fetcher = SnapshotMappingFetcher({CURRENT_PATH: CURRENT, "tasks/WATCHER-01B.md": task()})
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: ("1111111111111111111111111111111111111111", CURRENT), "tasks/WATCHER-01B.md": ("2222222222222222222222222222222222222222", task())})
         Watcher(self.config, self.store, fetcher).check()
         self.store.cache_path.write_text("{broken", encoding="utf-8")
         with self.assertRaises(WatcherError):
@@ -311,6 +314,60 @@ class WatcherTests(unittest.TestCase):
                 os.environ.pop("PINGPLACE_GITHUB_TOKEN", None)
             else:
                 os.environ["PINGPLACE_GITHUB_TOKEN"] = original
+
+    def test_token_is_redacted_end_to_end_from_cli_state_and_log(self) -> None:
+        secret = "configured-secret-token"
+        original = os.environ.get("PINGPLACE_GITHUB_TOKEN")
+        os.environ["PINGPLACE_GITHUB_TOKEN"] = secret
+        config_path = Path(self.temp.name) / "config.json"
+        config_path.write_text(json.dumps({
+            "repo": "bandora78/pingplace",
+            "branch": "main",
+            "interval_minutes": 15,
+            "dispatch_enabled": False,
+            "credential_env": "PINGPLACE_GITHUB_TOKEN",
+            "allow_anonymous": True,
+        }), encoding="utf-8")
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        def fail_with_secret(request: object, timeout: float) -> object:
+            self.assertEqual(getattr(request, "headers")["Authorization"], f"Bearer {secret}")
+            raise OSError(f"proxy rejected Authorization Bearer {secret}")
+
+        try:
+            with patch("watcher.urlopen", side_effect=fail_with_secret):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main(["check", "--config", str(config_path), "--state-dir", self.temp.name]), 2)
+            state_text = self.store.state_path.read_text(encoding="utf-8")
+            log_text = self.store.log_path.read_text(encoding="utf-8")
+            cli_text = stdout.getvalue() + stderr.getvalue()
+            for value in (state_text, log_text, cli_text):
+                self.assertNotIn(secret, value)
+            self.assertIn("<redacted>", cli_text)
+        finally:
+            if original is None:
+                os.environ.pop("PINGPLACE_GITHUB_TOKEN", None)
+            else:
+                os.environ["PINGPLACE_GITHUB_TOKEN"] = original
+
+    def test_malformed_extra_cache_entry_fails_closed(self) -> None:
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: ("1111111111111111111111111111111111111111", CURRENT), "tasks/WATCHER-01B.md": ("2222222222222222222222222222222222222222", task())})
+        Watcher(self.config, self.store, fetcher).check()
+        cache = json.loads(self.store.cache_path.read_text(encoding="utf-8"))
+        cache["tasks"]["tasks/EXTRA.md"] = {"text": "malformed"}
+        self.store.cache_path.write_text(json.dumps(cache), encoding="utf-8")
+        with self.assertRaises(WatcherError):
+            Watcher(self.config, self.store, fetcher).check()
+
+    def test_inconsistent_cache_task_key_set_fails_closed(self) -> None:
+        fetcher = SnapshotMappingFetcher({CURRENT_PATH: ("1111111111111111111111111111111111111111", CURRENT), "tasks/WATCHER-01B.md": ("2222222222222222222222222222222222222222", task())})
+        Watcher(self.config, self.store, fetcher).check()
+        cache = json.loads(self.store.cache_path.read_text(encoding="utf-8"))
+        del cache["tasks"]["tasks/WATCHER-01B.md"]
+        self.store.cache_path.write_text(json.dumps(cache), encoding="utf-8")
+        with self.assertRaises(WatcherError):
+            Watcher(self.config, self.store, fetcher).check()
 
     def test_primary_rate_limit_uses_reset_header(self) -> None:
         fetcher = GitHubFetcher("bandora78/pingplace", "main")

@@ -112,6 +112,10 @@ def parse_timestamp(value: str | None) -> datetime | None:
         return None
 
 
+def valid_commit_sha(value: object) -> bool:
+    return isinstance(value, str) and bool(re.fullmatch(r"[0-9a-fA-F]{40}", value))
+
+
 def redacted_error(error: BaseException, extra_secrets: Iterable[str] = ()) -> str:
     message = str(error)
     for secret_name in ("GITHUB_TOKEN", "GH_TOKEN", DEFAULT_CREDENTIAL_ENV):
@@ -203,12 +207,19 @@ class LocalStore:
             raise CacheError(f"Immutable revision cache is corrupt: {redacted_error(error)}") from error
         if not isinstance(value, dict) or value.get("state_version") != 1:
             raise CacheError("Immutable revision cache has an unsupported format")
-        if not isinstance(value.get("remote_revision"), str) or not re.fullmatch(r"[0-9a-fA-F]{40}", value["remote_revision"]):
+        if not valid_commit_sha(value.get("remote_revision")):
             raise CacheError("Immutable revision cache has an invalid revision")
-        if not isinstance(value.get("current"), dict) or not isinstance(value["current"].get("text"), str):
+        current = value.get("current")
+        if not isinstance(current, dict) or set(current) != {"sha", "text"} or not valid_commit_sha(current.get("sha")) or not isinstance(current.get("text"), str):
             raise CacheError("Immutable revision cache is missing CURRENT.md")
-        if not isinstance(value.get("tasks"), dict):
+        tasks = value.get("tasks")
+        if not isinstance(tasks, dict):
             raise CacheError("Immutable revision cache is missing task files")
+        for path, task in tasks.items():
+            if not isinstance(path, str) or not valid_task_path(path) or path == CURRENT_PATH:
+                raise CacheError("Immutable revision cache contains an invalid task path")
+            if not isinstance(task, dict) or set(task) != {"sha", "text"} or not valid_commit_sha(task.get("sha")) or not isinstance(task.get("text"), str):
+                raise CacheError("Immutable revision cache contains malformed task metadata")
         return value
 
     def write_cache(self, value: dict[str, Any]) -> None:
@@ -548,9 +559,8 @@ class Watcher:
                 if cached is not None:
                     current = RemoteFile(CURRENT_PATH, cached["current"].get("sha", "cached"), cached["current"]["text"])
                     task_files = {
-                        path: RemoteFile(path, value.get("sha", "cached"), value["text"])
+                        path: RemoteFile(path, value["sha"], value["text"])
                         for path, value in cached["tasks"].items()
-                        if isinstance(value, dict) and isinstance(value.get("text"), str)
                     }
                     cache_used = True
                 else:
@@ -561,6 +571,8 @@ class Watcher:
                         task_files[path] = self.fetcher.fetch(path)
                 records: list[TaskRecord] = []
                 links = referenced_tasks(current)
+                if cached is not None and set(task_files) != {path for _, path in links}:
+                    raise CacheError("Immutable revision cache task set does not match CURRENT.md")
                 for linked_id, path in links:
                     if path not in task_files:
                         raise WatcherError(f"{path}: task file was not available")
@@ -588,7 +600,7 @@ class Watcher:
                     "cache_used": cache_used,
                 })
                 if not dry_run:
-                    if not cache_used:
+                    if not cache_used and valid_commit_sha(snapshot_sha):
                         self.store.write_cache({
                             "state_version": 1,
                             "remote_revision": revision,
