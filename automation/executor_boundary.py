@@ -1,9 +1,7 @@
-"""Disabled WATCHER-C2B preflight, source, reservation, and audit interfaces.
+"""Disabled WATCHER-C2B broker boundary primitives.
 
-This module is intentionally not imported by the Stage B watcher or scheduler.
-It provides a fail-closed library for a future isolated broker. No Codex
-process, publisher, GitHub write, account, ACL, or approval-creation path is
-implemented here.
+No executor, Codex, scheduler, GitHub-write, account, ACL, or approval
+creation path is implemented here.  Production attestation is deny-by-default.
 """
 
 from __future__ import annotations
@@ -22,10 +20,10 @@ from typing import Any, Mapping, Protocol, Sequence
 
 from approval_gate import ApprovalVerifier, GitHubCommitResolver, VerifiedApproval
 
-
 COMMIT_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 REPOSITORY_RE = re.compile(r"^[^/\s]+/[^/\s]+$")
+ZERO_HASH = "0" * 64
 
 
 def utc_now() -> str:
@@ -34,35 +32,7 @@ def utc_now() -> str:
 
 def valid_repo_path(path: str) -> bool:
     pure = PurePosixPath(path)
-    return (
-        isinstance(path, str)
-        and path
-        and not path.startswith("/")
-        and "\\" not in path
-        and ".." not in pure.parts
-        and all(part not in ("", ".") for part in pure.parts)
-    )
-
-
-@dataclass(frozen=True)
-class BoundaryEvidence:
-    """Evidence supplied by a separately provisioned Windows preflight.
-
-    The production default is all false. Tests may inject disposable fixture
-    evidence, but that does not constitute physical Windows proof.
-    """
-
-    activation_enabled: bool = False
-    identity_separated: bool = False
-    acl_verified: bool = False
-    local_ntfs_verified: bool = False
-    sandbox_verified: bool = False
-    network_disabled: bool = False
-    trust_store_external: bool = False
-    audit_storage_verified: bool = False
-    executor_sid: str | None = None
-    broker_sid: str | None = None
-    supervisor_sid: str | None = None
+    return isinstance(path, str) and bool(path) and not path.startswith("/") and "\\" not in path and ".." not in pure.parts and all(part not in ("", ".") for part in pure.parts)
 
 
 @dataclass(frozen=True)
@@ -70,39 +40,43 @@ class PreflightResult:
     passed: bool
     reason: str
     missing: tuple[str, ...] = ()
+    executor_sid: str | None = None
+    broker_sid: str | None = None
+    supervisor_sid: str | None = None
+
+
+class BoundaryAttestationProvider(Protocol):
+    def attest(self) -> PreflightResult: ...
+
+
+class WindowsBoundaryAttestationProvider:
+    """Production provider; independent Windows attestation is not active."""
+
+    def attest(self) -> PreflightResult:
+        return PreflightResult(False, "EXECUTOR_NOT_ACTIVATED", (
+            "activation_enabled", "identity_separated", "acl_verified", "local_ntfs_verified",
+            "sandbox_verified", "network_disabled", "trust_store_external", "audit_storage_verified",
+            "executor_sid", "broker_sid", "supervisor_sid"))
 
 
 class BoundaryPreflight:
-    """Default-deny security boundary preflight; never provisions controls."""
-
-    REQUIRED = (
-        "activation_enabled",
-        "identity_separated",
-        "acl_verified",
-        "local_ntfs_verified",
-        "sandbox_verified",
-        "network_disabled",
-        "trust_store_external",
-        "audit_storage_verified",
-    )
-
-    def __init__(self, evidence: BoundaryEvidence | None = None):
-        self.evidence = evidence or BoundaryEvidence()
+    def __init__(self, provider: BoundaryAttestationProvider | None = None):
+        self.provider = provider or WindowsBoundaryAttestationProvider()
 
     def check(self) -> PreflightResult:
-        missing = tuple(name for name in self.REQUIRED if not getattr(self.evidence, name))
-        for name, value in (
-            ("executor_sid", self.evidence.executor_sid),
-            ("broker_sid", self.evidence.broker_sid),
-            ("supervisor_sid", self.evidence.supervisor_sid),
-        ):
-            if not value:
-                missing += (name,)
-        if missing:
-            return PreflightResult(False, "EXECUTOR_NOT_ACTIVATED", missing)
-        if len({self.evidence.executor_sid, self.evidence.broker_sid, self.evidence.supervisor_sid}) != 3:
+        if not isinstance(self.provider, WindowsBoundaryAttestationProvider) and not getattr(self.provider, "fixture_only", False):
+            return PreflightResult(False, "ATTESTATION_PROVIDER_UNTRUSTED", ("independent_attestor",))
+        result = self.provider.attest()
+        if not isinstance(result, PreflightResult):
+            return PreflightResult(False, "ATTESTATION_RESULT_INVALID", ("attestation_result",))
+        if not result.passed:
+            return result
+        sids = (result.executor_sid, result.broker_sid, result.supervisor_sid)
+        if any(not isinstance(sid, str) or not sid.startswith("S-") for sid in sids):
+            return PreflightResult(False, "IDENTITY_FORMAT_INVALID", ("service_sids",))
+        if len(set(sids)) != 3:
             return PreflightResult(False, "IDENTITY_SEPARATION_INVALID", ("distinct_service_sids",))
-        return PreflightResult(True, "BOUNDARY_PREFLIGHT_PASSED")
+        return result
 
 
 @dataclass(frozen=True)
@@ -120,27 +94,29 @@ class SourceManifest:
     digest: str
 
     @staticmethod
+    def _digest(tree_sha: str, entries: Sequence[SourceEntry]) -> str:
+        return hashlib.sha256(json.dumps({"tree_sha": tree_sha, "entries": [e.__dict__ for e in entries]}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+    @staticmethod
     def create(tree_sha: str, files: Mapping[str, bytes], allowed_paths: Sequence[str]) -> "SourceManifest":
-        if not COMMIT_SHA_RE.fullmatch(tree_sha):
-            raise ValueError("source tree SHA is invalid")
         expected = set(allowed_paths)
-        if len(expected) != len(allowed_paths) or not expected or any(not valid_repo_path(path) for path in expected):
-            raise ValueError("source allowlist is invalid")
-        if set(files) != expected:
-            raise ValueError("source file set does not match the allowlist")
-        entries: list[SourceEntry] = []
+        if not COMMIT_SHA_RE.fullmatch(tree_sha) or not expected or len(expected) != len(allowed_paths) or any(not valid_repo_path(p) for p in expected) or set(files) != expected:
+            raise ValueError("source manifest scope is invalid")
+        entries = []
         for path in sorted(expected):
             content = files[path]
             if not isinstance(content, bytes):
                 raise ValueError("source content must be exact bytes")
-            blob_sha = hashlib.sha1(b"blob " + str(len(content)).encode("ascii") + b"\0" + content).hexdigest()
-            digest = hashlib.sha256(content).hexdigest()
-            entries.append(SourceEntry(path, blob_sha, len(content), digest))
-        canonical = [entry.__dict__ for entry in entries]
-        manifest_digest = hashlib.sha256(
-            json.dumps({"tree_sha": tree_sha, "entries": canonical}, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        return SourceManifest(tree_sha, tuple(entries), manifest_digest)
+            entries.append(SourceEntry(path, hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest(), len(content), hashlib.sha256(content).hexdigest()))
+        return SourceManifest(tree_sha, tuple(entries), SourceManifest._digest(tree_sha, entries))
+
+    def validate(self, allowed_paths: Sequence[str] | None = None) -> bool:
+        paths = [e.path for e in self.entries]
+        if not COMMIT_SHA_RE.fullmatch(self.tree_sha) or paths != sorted(paths) or len(paths) != len(set(paths)):
+            return False
+        if any(not valid_repo_path(e.path) or e.byte_length < 0 or not SHA256_RE.fullmatch(e.sha256) or not re.fullmatch(r"[0-9a-f]{40}", e.blob_sha) for e in self.entries):
+            return False
+        return (allowed_paths is None or set(paths) == set(allowed_paths)) and self.digest == self._digest(self.tree_sha, self.entries)
 
     def entry(self, path: str) -> SourceEntry | None:
         return next((entry for entry in self.entries if entry.path == path), None)
@@ -156,8 +132,7 @@ class SourceSnapshot:
 
 
 class SourceSnapshotProvider(Protocol):
-    def resolve(self, repository: str, commit_sha: str, allowed_paths: Sequence[str]) -> SourceSnapshot:
-        """Resolve exact files and tree identity from an immutable source."""
+    def resolve(self, repository: str, commit_sha: str, allowed_paths: Sequence[str]) -> SourceSnapshot: ...
 
 
 @dataclass(frozen=True)
@@ -182,159 +157,187 @@ class ReservationResult:
     record: ReservationRecord | None = None
 
 
+class ReservationStoreError(RuntimeError):
+    pass
+
+
 class DurableReservationJournal:
-    """SQLite single-use journal; it is inert until verified evidence is supplied."""
-
+    SCHEMA_VERSION = 1
     STATES = {"RESERVED", "RUNNING", "SUCCEEDED", "FAILED", "ABANDONED"}
+    COLUMNS = ("approval_id", "reservation_id", "repository", "task_id", "path", "commit_sha", "task_sha256", "tree_sha", "manifest_digest", "executor_sid", "state")
+    TRANSITIONS = {("RESERVED", "RUNNING", "executor"), ("RUNNING", "SUCCEEDED", "executor"), ("RUNNING", "FAILED", "executor"), ("RESERVED", "ABANDONED", "human_recovery"), ("RUNNING", "ABANDONED", "human_recovery")}
 
-    def __init__(self, path: Path, evidence: BoundaryEvidence | None = None, connection_factory: Any = sqlite3.connect):
-        self.path = path
-        self.preflight = BoundaryPreflight(evidence)
-        self.connection_factory = connection_factory
+    def __init__(self, path: Path, preflight: BoundaryPreflight | None = None, connection_factory: Any = sqlite3.connect):
+        self.path, self.preflight, self.connection_factory = path, preflight or BoundaryPreflight(), connection_factory
 
     def _connect_checked(self) -> sqlite3.Connection:
         result = self.preflight.check()
         if not result.passed:
-            raise RuntimeError(result.reason)
+            raise ReservationStoreError(result.reason)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = self.connection_factory(str(self.path), timeout=2.0)
+        new_file = not self.path.exists()
+        connection = None
         try:
-            connection.execute("PRAGMA journal_mode=DELETE")
+            connection = self.connection_factory(str(self.path), timeout=5.0)
+            connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA synchronous=FULL")
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS reservations (
-                  approval_id TEXT PRIMARY KEY,
-                  reservation_id TEXT NOT NULL UNIQUE,
-                  repository TEXT NOT NULL,
-                  task_id TEXT NOT NULL,
-                  path TEXT NOT NULL,
-                  commit_sha TEXT NOT NULL,
-                  task_sha256 TEXT NOT NULL,
-                  tree_sha TEXT NOT NULL,
-                  manifest_digest TEXT NOT NULL,
-                  executor_sid TEXT NOT NULL,
-                  state TEXT NOT NULL,
-                  created_at TEXT NOT NULL,
-                  updated_at TEXT NOT NULL
-                );
-                """
-            )
-            integrity = connection.execute("PRAGMA integrity_check").fetchone()
-            if not integrity or integrity[0] != "ok":
-                raise RuntimeError("RESERVATION_DATABASE_INTEGRITY_FAILED")
+            if new_file:
+                connection.executescript("""CREATE TABLE IF NOT EXISTS reservations (approval_id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL UNIQUE, repository TEXT NOT NULL, task_id TEXT NOT NULL, path TEXT NOT NULL, commit_sha TEXT NOT NULL, task_sha256 TEXT NOT NULL, tree_sha TEXT NOT NULL, manifest_digest TEXT NOT NULL, executor_sid TEXT NOT NULL, state TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL); PRAGMA user_version=1;""")
+                connection.commit()
+            version = connection.execute("PRAGMA user_version").fetchone()
+            table = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='reservations'").fetchone()
+            if not version or version[0] != self.SCHEMA_VERSION or not table or any(c not in table[0] for c in self.COLUMNS):
+                raise ReservationStoreError("RESERVATION_SCHEMA_INVALID")
+            if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise ReservationStoreError("RESERVATION_DATABASE_INTEGRITY_FAILED")
             return connection
         except Exception:
             with contextlib.suppress(Exception):
-                connection.close()
+                connection.close()  # type: ignore[union-attr]
             raise
 
-    def reserve(self, capability: VerifiedApproval, task_id: str, manifest: SourceManifest, executor_sid: str) -> ReservationResult:
+    @staticmethod
+    def _row(row: Sequence[Any]) -> ReservationRecord:
+        if len(row) != 11:
+            raise ReservationStoreError("RESERVATION_ROW_INVALID")
+        record = ReservationRecord(*row)
+        if (not record.approval_id or not record.reservation_id or not REPOSITORY_RE.fullmatch(record.repository) or not valid_repo_path(record.path) or
+                not COMMIT_SHA_RE.fullmatch(record.commit_sha) or not SHA256_RE.fullmatch(record.task_sha256) or not COMMIT_SHA_RE.fullmatch(record.tree_sha) or
+                not SHA256_RE.fullmatch(record.manifest_digest) or not record.executor_sid.startswith("S-") or record.state not in DurableReservationJournal.STATES):
+            raise ReservationStoreError("RESERVATION_ROW_INVALID")
+        return record
+
+    def reserve(self, capability: VerifiedApproval, manifest: SourceManifest) -> ReservationResult:
         if not isinstance(capability, VerifiedApproval):
             return ReservationResult(False, "APPROVAL_CAPABILITY_INVALID")
-        if capability.task_sha256 != (manifest.entry(capability.path).sha256 if manifest.entry(capability.path) else None):
+        task_id = PurePosixPath(capability.path).stem
+        entry = manifest.entry(capability.path)
+        if not valid_repo_path(capability.path) or not task_id or not manifest.validate() or entry is None:
+            return ReservationResult(False, "SOURCE_MANIFEST_INVALID")
+        if entry.sha256 != capability.task_sha256:
             return ReservationResult(False, "SOURCE_MANIFEST_TASK_MISMATCH")
-        if not executor_sid:
-            return ReservationResult(False, "EXECUTOR_IDENTITY_MISSING")
+        result = self.preflight.check()
+        if not result.passed or not result.executor_sid:
+            return ReservationResult(False, "RESERVATION_DURABILITY_UNKNOWN")
         try:
             connection = self._connect_checked()
-        except (OSError, RuntimeError, sqlite3.Error):
+        except (OSError, sqlite3.Error, ReservationStoreError):
             return ReservationResult(False, "RESERVATION_DURABILITY_UNKNOWN")
-        reservation_id = str(uuid.uuid4())
-        timestamp = utc_now()
+        reservation_id, timestamp = str(uuid.uuid4()), utc_now()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            existing = connection.execute("SELECT 1 FROM reservations WHERE approval_id = ?", (capability.approval_id,)).fetchone()
-            if existing:
-                connection.rollback()
-                connection.close()
+            if connection.execute("SELECT 1 FROM reservations WHERE approval_id=?", (capability.approval_id,)).fetchone():
+                connection.rollback(); connection.close()
                 return ReservationResult(False, "APPROVAL_ALREADY_RESERVED")
-            connection.execute(
-                "INSERT INTO reservations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    capability.approval_id, reservation_id, capability.repository, task_id,
-                    capability.path, capability.commit_sha, capability.task_sha256,
-                    manifest.tree_sha, manifest.digest, executor_sid, "RESERVED", timestamp, timestamp,
-                ),
-            )
+            connection.execute("INSERT INTO reservations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (capability.approval_id, reservation_id, capability.repository, task_id, capability.path, capability.commit_sha, capability.task_sha256, manifest.tree_sha, manifest.digest, result.executor_sid, "RESERVED", timestamp, timestamp))
             connection.commit()
+            record = ReservationRecord(capability.approval_id, reservation_id, capability.repository, task_id, capability.path, capability.commit_sha, capability.task_sha256, manifest.tree_sha, manifest.digest, result.executor_sid, "RESERVED")
             connection.close()
+            return ReservationResult(True, "APPROVAL_RESERVED", record)
         except Exception:
-            with contextlib.suppress(Exception):
-                connection.rollback()
-            with contextlib.suppress(Exception):
-                connection.close()
+            with contextlib.suppress(Exception): connection.rollback()
+            with contextlib.suppress(Exception): connection.close()
             return ReservationResult(False, "RESERVATION_DURABILITY_UNKNOWN")
-        return ReservationResult(True, "APPROVAL_RESERVED", self.get(capability.approval_id))
 
     def get(self, approval_id: str) -> ReservationRecord | None:
+        connection = self._connect_checked()
         try:
-            connection = self._connect_checked()
-            row = connection.execute("SELECT approval_id, reservation_id, repository, task_id, path, commit_sha, task_sha256, tree_sha, manifest_digest, executor_sid, state FROM reservations WHERE approval_id = ?", (approval_id,)).fetchone()
+            row = connection.execute("SELECT approval_id,reservation_id,repository,task_id,path,commit_sha,task_sha256,tree_sha,manifest_digest,executor_sid,state FROM reservations WHERE approval_id=?", (approval_id,)).fetchone()
+            return self._row(row) if row else None
+        finally:
             connection.close()
-        except (OSError, RuntimeError, sqlite3.Error):
-            return None
-        return ReservationRecord(*row) if row else None
 
     def recoverable(self) -> list[ReservationRecord]:
+        connection = self._connect_checked()
         try:
-            connection = self._connect_checked()
-            rows = connection.execute("SELECT approval_id, reservation_id, repository, task_id, path, commit_sha, task_sha256, tree_sha, manifest_digest, executor_sid, state FROM reservations WHERE state IN ('RESERVED', 'RUNNING')").fetchall()
+            rows = connection.execute("SELECT approval_id,reservation_id,repository,task_id,path,commit_sha,task_sha256,tree_sha,manifest_digest,executor_sid,state FROM reservations WHERE state IN ('RESERVED','RUNNING')").fetchall()
+            return [self._row(row) for row in rows]
+        finally:
             connection.close()
-        except (OSError, RuntimeError, sqlite3.Error):
-            return []
-        return [ReservationRecord(*row) for row in rows]
 
-    def transition(self, approval_id: str, state: str) -> bool:
-        if state not in self.STATES or state == "RESERVED":
-            return False
+    def transition(self, approval_id: str, state: str, actor: str, recovery_confirmation: str | None = None) -> bool:
+        if state not in self.STATES or actor not in {"executor", "human_recovery"}:
+            raise ReservationStoreError("RESERVATION_TRANSITION_INVALID")
+        if actor == "human_recovery" and recovery_confirmation != "HUMAN_REVIEW_CONFIRMED":
+            raise ReservationStoreError("HUMAN_RECOVERY_GUARD_REQUIRED")
+        connection = self._connect_checked()
         try:
-            connection = self._connect_checked()
             connection.execute("BEGIN IMMEDIATE")
-            changed = connection.execute("UPDATE reservations SET state = ?, updated_at = ? WHERE approval_id = ? AND state IN ('RESERVED', 'RUNNING')", (state, utc_now(), approval_id)).rowcount
-            connection.commit()
+            row = connection.execute("SELECT approval_id,reservation_id,repository,task_id,path,commit_sha,task_sha256,tree_sha,manifest_digest,executor_sid,state FROM reservations WHERE approval_id=?", (approval_id,)).fetchone()
+            if not row: connection.rollback(); return False
+            current = self._row(row).state
+            if (current, state, actor) not in self.TRANSITIONS:
+                connection.rollback(); raise ReservationStoreError("RESERVATION_TRANSITION_INVALID")
+            changed = connection.execute("UPDATE reservations SET state=?,updated_at=? WHERE approval_id=? AND state=?", (state, utc_now(), approval_id, current)).rowcount
+            connection.commit(); return changed == 1
+        except Exception:
+            with contextlib.suppress(Exception): connection.rollback()
+            raise
+        finally:
             connection.close()
-            return changed == 1
-        except (OSError, RuntimeError, sqlite3.Error):
-            return False
+
+
+class _InterprocessLock:
+    def __init__(self, path: Path): self.path, self.stream = path, None
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True); self.stream = self.path.open("a+b")
+        if os.name == "nt":
+            import msvcrt; msvcrt.locking(self.stream.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl; fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX)
+        return self
+    def __exit__(self, *_):
+        if self.stream is None: return
+        if os.name == "nt":
+            import msvcrt; self.stream.seek(0); msvcrt.locking(self.stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl; fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
+        self.stream.close()
 
 
 class AuditLog:
-    """Bounded hash-chained audit records with conservative secret redaction."""
-
     def __init__(self, path: Path, max_bytes: int = 512 * 1024, max_lines: int = 500):
-        self.path = path
-        self.max_bytes = max_bytes
-        self.max_lines = max_lines
-        self.previous_hash = "0" * 64
+        self.path, self.anchor, self.lock = path, path.with_name(path.name + ".anchor"), path.with_name(path.name + ".lock")
+        self.max_bytes, self.max_lines = max_bytes, max_lines
 
     @staticmethod
     def _safe(value: Any) -> Any:
-        if isinstance(value, Mapping):
-            return {str(key): ("<redacted>" if re.search(r"token|secret|password|signature|private|proof", str(key), re.I) else AuditLog._safe(item)) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [AuditLog._safe(item) for item in value]
-        if isinstance(value, str) and re.search(r"bearer\s+\S+|gh[pousr]_[A-Za-z0-9_]+", value, re.I):
-            return "<redacted>"
+        if isinstance(value, Mapping): return {str(k): ("<redacted>" if re.search(r"token|secret|password|signature|private|proof", str(k), re.I) else AuditLog._safe(v)) for k, v in value.items()}
+        if isinstance(value, (list, tuple)): return [AuditLog._safe(v) for v in value]
+        if isinstance(value, str) and re.search(r"bearer\s+\S+|gh[pousr]_[A-Za-z0-9_]+", value, re.I): return "<redacted>"
         return value
 
+    def _anchor_value(self) -> tuple[int, str]:
+        if not self.anchor.exists():
+            if self.path.exists() and self.path.stat().st_size: raise RuntimeError("AUDIT_ANCHOR_MISSING")
+            return 0, ZERO_HASH
+        try:
+            value = json.loads(self.anchor.read_text(encoding="utf-8")); sequence, last_hash = value["sequence"], value["last_hash"]
+            if not isinstance(sequence, int) or sequence < 0 or not SHA256_RE.fullmatch(last_hash): raise ValueError
+            return sequence, last_hash
+        except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            raise RuntimeError("AUDIT_ANCHOR_INVALID") from exc
+
+    def _write_anchor(self, sequence: int, last_hash: str) -> None:
+        temp = self.anchor.with_name(self.anchor.name + ".tmp")
+        temp.write_text(json.dumps({"sequence": sequence, "last_hash": last_hash}, sort_keys=True) + "\n", encoding="utf-8")
+        with temp.open("r+b") as stream: os.fsync(stream.fileno())
+        os.replace(temp, self.anchor)
+
     def append(self, event: str, details: Mapping[str, Any] | None = None) -> None:
-        record = {"timestamp": utc_now(), "event": event, "details": self._safe(details or {}), "previous_hash": self.previous_hash}
-        encoded = json.dumps(record, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
-        record["record_hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-        line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
-        if len(line.encode("utf-8")) > self.max_bytes:
-            raise RuntimeError("AUDIT_RECORD_TOO_LARGE")
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8", newline="\n") as stream:
-            stream.write(line)
-            stream.flush()
-            os.fsync(stream.fileno())
-        self.previous_hash = record["record_hash"]
-        lines = self.path.read_text(encoding="utf-8").splitlines()[-self.max_lines:]
-        while len(("\n".join(lines) + "\n").encode("utf-8")) > self.max_bytes:
-            lines.pop(0)
-        self.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with _InterprocessLock(self.lock):
+            sequence, previous_hash = self._anchor_value()
+            record = {"timestamp": utc_now(), "event": event, "details": self._safe(details or {}), "previous_hash": previous_hash, "sequence": sequence + 1}
+            encoded = json.dumps(record, sort_keys=True, ensure_ascii=True, separators=(",", ":")); record["record_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
+            line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
+            if len(line.encode()) > self.max_bytes: raise RuntimeError("AUDIT_RECORD_TOO_LARGE")
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8", newline="\n") as stream:
+                stream.write(line); stream.flush(); os.fsync(stream.fileno())
+            try: self._write_anchor(sequence + 1, record["record_hash"])
+            except Exception as exc: raise RuntimeError("AUDIT_DURABILITY_UNKNOWN") from exc
+            if self.path.stat().st_size > self.max_bytes or sequence + 1 > self.max_lines:
+                os.replace(self.path, self.path.with_name(f"{self.path.stem}.{sequence + 1:020d}{self.path.suffix}"))
 
 
 @dataclass(frozen=True)
@@ -345,49 +348,32 @@ class BrokerResult:
 
 
 class ApprovalBroker:
-    """Broker-side re-verification and reservation interface.
+    def __init__(self, verifier: ApprovalVerifier, resolver: GitHubCommitResolver, source_provider: SourceSnapshotProvider, journal: DurableReservationJournal, preflight: BoundaryPreflight, audit: AuditLog, repository: str, allowed_paths: Sequence[str]):
+        if not REPOSITORY_RE.fullmatch(repository) or not allowed_paths or len(set(allowed_paths)) != len(allowed_paths) or any(not valid_repo_path(p) for p in allowed_paths): raise ValueError("broker policy is invalid")
+        self.verifier, self.resolver, self.source_provider, self.journal, self.preflight, self.audit = verifier, resolver, source_provider, journal, preflight, audit
+        self.repository, self.allowed_paths = repository, tuple(sorted(allowed_paths))
 
-    It accepts a proof and source scope, never a caller-created allowed flag.
-    It does not execute a process or publish anything.
-    """
-
-    def __init__(self, verifier: ApprovalVerifier, resolver: GitHubCommitResolver, source_provider: SourceSnapshotProvider, journal: DurableReservationJournal, preflight: BoundaryPreflight, audit: AuditLog):
-        self.verifier = verifier
-        self.resolver = resolver
-        self.source_provider = source_provider
-        self.journal = journal
-        self.preflight = preflight
-        self.audit = audit
-
-    def reserve(self, proof: Any, repository: str, path: str, commit_sha: str, task_id: str, allowed_paths: Sequence[str], executor_sid: str, now: datetime | None = None) -> BrokerResult:
+    def reserve(self, proof: Any, path: str, commit_sha: str, now: datetime | None = None) -> BrokerResult:
         preflight = self.preflight.check()
         if not preflight.passed:
-            self.audit.append("EXECUTOR_BLOCKED", {"reason": preflight.reason, "missing": preflight.missing})
-            return BrokerResult(False, preflight.reason)
-        if not REPOSITORY_RE.fullmatch(repository) or not COMMIT_SHA_RE.fullmatch(commit_sha) or not valid_repo_path(path) or path not in allowed_paths:
-            return BrokerResult(False, "SOURCE_SCOPE_INVALID")
-        result = self.verifier.verify_from_github(self.resolver, repository, path, commit_sha, proof, now)
+            self.audit.append("EXECUTOR_BLOCKED", {"reason": preflight.reason, "missing": preflight.missing}); return BrokerResult(False, preflight.reason)
+        if path not in self.allowed_paths or not COMMIT_SHA_RE.fullmatch(commit_sha): return BrokerResult(False, "SOURCE_SCOPE_INVALID")
+        result = self.verifier.verify_from_github(self.resolver, self.repository, path, commit_sha, proof, now)
         if not result.allowed or result.descriptor is None or not result.source_verified:
-            self.audit.append("PROOF_DENIED", {"reason": result.reason})
-            return BrokerResult(False, result.reason)
+            self.audit.append("PROOF_DENIED", {"reason": result.reason}); return BrokerResult(False, result.reason)
         capability = result.descriptor
-        if capability.repository != repository or capability.path != path or capability.commit_sha != commit_sha:
-            return BrokerResult(False, "CAPABILITY_SCOPE_MISMATCH")
+        if capability.repository != self.repository or capability.path != path or capability.commit_sha != commit_sha: return BrokerResult(False, "CAPABILITY_SCOPE_MISMATCH")
         try:
-            snapshot = self.source_provider.resolve(repository, commit_sha, allowed_paths)
-            task_entry = snapshot.manifest.entry(path)
-            expected_manifest = SourceManifest.create(snapshot.manifest.tree_sha, snapshot.files, allowed_paths)
-            if (
-                snapshot.repository != repository
-                or snapshot.commit_sha != commit_sha
-                or not snapshot.main_reachable
-                or snapshot.manifest != expected_manifest
-                or task_entry is None
-                or task_entry.sha256 != capability.task_sha256
-            ):
+            snapshot = self.source_provider.resolve(self.repository, commit_sha, self.allowed_paths)
+            expected = SourceManifest.create(snapshot.manifest.tree_sha, snapshot.files, self.allowed_paths)
+            entry = snapshot.manifest.entry(path)
+            if snapshot.repository != self.repository or snapshot.commit_sha != commit_sha or not snapshot.main_reachable or snapshot.manifest != expected or not snapshot.manifest.validate(self.allowed_paths) or entry is None or entry.sha256 != capability.task_sha256:
                 return BrokerResult(False, "SOURCE_MANIFEST_UNVERIFIED")
-            reservation = self.journal.reserve(capability, task_id, snapshot.manifest, executor_sid)
         except (OSError, ValueError, RuntimeError):
             return BrokerResult(False, "SOURCE_MANIFEST_UNVERIFIED")
+        try:
+            reservation = self.journal.reserve(capability, snapshot.manifest)
+        except (OSError, sqlite3.Error, ReservationStoreError):
+            return BrokerResult(False, "RESERVATION_DURABILITY_UNKNOWN")
         self.audit.append("RESERVATION_CREATED" if reservation.reserved else "RESERVATION_BLOCKED", {"approval_id": capability.approval_id, "reason": reservation.reason, "manifest_digest": snapshot.manifest.digest})
         return BrokerResult(reservation.reserved, reservation.reason, reservation.record)
