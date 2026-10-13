@@ -10,31 +10,35 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import json
 import os
 import re
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 
 DEFAULT_CONFIG = Path(__file__).with_name("watcher_config.json")
 CURRENT_PATH = "tasks/CURRENT.md"
 TASK_PATH_RE = re.compile(r"^tasks/[A-Za-z0-9][A-Za-z0-9._-]*\.md$")
-TASK_LINK_RE = re.compile(r"\[([A-Za-z0-9][A-Za-z0-9_-]*)\]\(([^)]+)\)")
+MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]*)\)")
 FRONT_MATTER_RE = re.compile(r"^---\r?\n(.*?)\r?\n---(?:\r?\n|$)", re.DOTALL)
 ALLOWED_STATUSES = {"DRAFT", "MANUAL_READY", "APPROVED", "BLOCKED", "FAILED", "IN_PROGRESS", "REVIEW", "DONE"}
 ALLOWED_EXECUTION = {"manual_bootstrap_only", "automatic_after_verified_approval"}
 MAX_LOG_BYTES = 512 * 1024
 MAX_LOG_LINES = 500
-LOCK_MAX_AGE_SECONDS = 2 * 60 * 60
 
 
 class WatcherError(Exception):
@@ -165,20 +169,41 @@ class LocalStore:
         record = {"timestamp": iso_timestamp(), "event": event}
         if details:
             record.update(details)
+        line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
+        if len(line.encode("utf-8")) > MAX_LOG_BYTES:
+            # Keep the event and a bounded diagnostic excerpt visible even if
+            # a remote error or malformed input is unusually large.
+            excerpt = str(details or "")[:512]
+            record = {
+                "timestamp": record["timestamp"],
+                "event": event,
+                "record_truncated": True,
+                "details_excerpt": excerpt,
+            }
+            line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
         with self.log_path.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, sort_keys=True) + "\n")
+            stream.write(line)
         self._bound_log()
 
     def _bound_log(self) -> None:
-        try:
-            if self.log_path.stat().st_size <= MAX_LOG_BYTES:
-                return
-            lines = self.log_path.read_text(encoding="utf-8").splitlines()[-MAX_LOG_LINES:]
-            temporary = self.log_path.with_suffix(".tmp")
-            temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            os.replace(temporary, self.log_path)
-        except OSError:
-            pass
+        lines = self.log_path.read_text(encoding="utf-8").splitlines()
+        normalized: list[str] = []
+        for line in lines:
+            if len(line.encode("utf-8")) > MAX_LOG_BYTES:
+                normalized.append(json.dumps({
+                    "timestamp": iso_timestamp(),
+                    "event": "log_record_truncated",
+                    "record_truncated": True,
+                }, sort_keys=True))
+            else:
+                normalized.append(line)
+        lines = normalized
+        lines = lines[-MAX_LOG_LINES:]
+        while lines and len(("\n".join(lines) + "\n").encode("utf-8")) > MAX_LOG_BYTES:
+            lines.pop(0)
+        temporary = self.log_path.with_suffix(".tmp")
+        temporary.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        os.replace(temporary, self.log_path)
 
     def acquire(self) -> "FileLock":
         self.ensure_directory()
@@ -188,51 +213,50 @@ class LocalStore:
 class FileLock:
     def __init__(self, path: Path):
         self.path = path
-        self.owned = False
+        self.handle: Any = None
 
     def __enter__(self) -> "FileLock":
         payload = {"pid": os.getpid(), "started_at": iso_timestamp()}
-        for attempt in range(2):
-            try:
-                descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                    json.dump(payload, stream)
-                self.owned = True
-                return self
-            except FileExistsError:
-                if attempt == 0 and self._stale():
-                    try:
-                        self.path.unlink()
-                    except OSError:
-                        pass
-                    continue
-                raise LockBusy("Another watcher operation is already running")
-        raise LockBusy("Another watcher operation is already running")
-
-    def _stale(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-            pid = int(data.get("pid", 0))
-            started = parse_timestamp(data.get("started_at"))
-            if started and (utc_now() - started).total_seconds() > LOCK_MAX_AGE_SECONDS:
-                return True
-            if pid <= 0:
-                return True
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                return True
-            return False
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            return True
+            self.handle = self.path.open("a+b")
+            self.handle.seek(0)
+            if self.handle.read(1) == b"":
+                self.handle.seek(0)
+                self.handle.write(b"\0")
+                self.handle.flush()
+            self.handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.handle.seek(0)
+            self.handle.truncate()
+            self.handle.write(json.dumps(payload).encode("utf-8"))
+            self.handle.flush()
+            return self
+        except (BlockingIOError, OSError) as error:
+            self._close_after_failed_acquire()
+            raise LockBusy("Another watcher operation is already running") from error
+
+    def _close_after_failed_acquire(self) -> None:
+        if self.handle is not None:
+            with contextlib.suppress(OSError):
+                self.handle.close()
+            self.handle = None
 
     def __exit__(self, *_: object) -> None:
-        if self.owned:
-            try:
-                self.path.unlink()
-            except FileNotFoundError:
-                pass
-            self.owned = False
+        if self.handle is None:
+            return
+        with contextlib.suppress(OSError):
+            if os.name == "nt":
+                self.handle.seek(0)
+                msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            self.handle.close()
+        self.handle = None
 
 
 class GitHubFetcher:
@@ -241,11 +265,24 @@ class GitHubFetcher:
         self.branch = branch
         self.timeout = timeout
         self.api_root = f"https://api.github.com/repos/{repo}/contents"
+        self.git_root = f"https://api.github.com/repos/{repo}/git"
+        self.snapshot_sha: str | None = None
 
-    def fetch(self, path: str) -> RemoteFile:
-        if not valid_task_path(path) and path != CURRENT_PATH:
-            raise WatcherError(f"Rejected remote path: {path}")
-        url = f"{self.api_root}/{quote(path, safe='/')}?ref={quote(self.branch, safe='') }"
+    def begin_read_cycle(self) -> str:
+        url = f"{self.git_root}/ref/heads/{quote(self.branch, safe='')}"
+        payload = self._get_json(url, f"branch {self.branch}")
+        try:
+            obj = payload["object"]
+            sha = obj["sha"]
+            object_type = obj["type"]
+        except (KeyError, TypeError) as error:
+            raise WatcherError("GitHub branch response was malformed") from error
+        if object_type != "commit" or not isinstance(sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", sha):
+            raise WatcherError("GitHub branch response did not contain a valid commit SHA")
+        self.snapshot_sha = sha
+        return sha
+
+    def _get_json(self, url: str, description: str) -> dict[str, Any]:
         request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "PingPlaceWatcher/StageB"})
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if token:
@@ -254,7 +291,17 @@ class GitHubFetcher:
             with urlopen(request, timeout=self.timeout) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
-            raise WatcherError(f"GitHub read failed for {path}: {redacted_error(error)}") from error
+            raise WatcherError(f"GitHub read failed for {description}: {redacted_error(error)}") from error
+        if not isinstance(payload, dict):
+            raise WatcherError(f"GitHub response for {description} was malformed")
+        return payload
+
+    def fetch(self, path: str) -> RemoteFile:
+        if not valid_task_path(path) and path != CURRENT_PATH:
+            raise WatcherError(f"Rejected remote path: {path}")
+        ref = self.snapshot_sha or self.branch
+        url = f"{self.api_root}/{quote(path, safe='/')}?ref={quote(ref, safe='')}"
+        payload = self._get_json(url, path)
         if not isinstance(payload, dict) or payload.get("type") != "file":
             raise WatcherError(f"GitHub response for {path} was not a file")
         try:
@@ -299,14 +346,24 @@ def parse_front_matter(task: RemoteFile) -> dict[str, str]:
 
 def referenced_tasks(current: RemoteFile) -> list[tuple[str, str]]:
     references: list[tuple[str, str]] = []
-    for match in TASK_LINK_RE.finditer(current.text):
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    for match in MARKDOWN_LINK_RE.finditer(current.text):
         task_id, path = match.groups()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", task_id):
+            raise WatcherError(f"CURRENT.md: malformed task link label {task_id!r}")
         # CURRENT.md is stored in tasks/, so ordinary Markdown links are
         # relative to that directory (for example WATCHER-01B.md).
         if "/" not in path and "\\" not in path and not path.startswith("."):
             path = f"tasks/{path}"
         if not valid_task_path(path):
             raise WatcherError(f"CURRENT.md: rejected task path {path}")
+        if task_id in seen_ids:
+            raise WatcherError(f"CURRENT.md: duplicate task ID {task_id}")
+        if path in seen_paths:
+            raise WatcherError(f"CURRENT.md: duplicate task path {path}")
+        seen_ids.add(task_id)
+        seen_paths.add(path)
         references.append((task_id, path))
     return references
 
@@ -336,6 +393,10 @@ class Watcher:
         with self.store.acquire():
             started = iso_timestamp()
             try:
+                snapshot_sha = None
+                begin_cycle = getattr(self.fetcher, "begin_read_cycle", None)
+                if begin_cycle is not None:
+                    snapshot_sha = begin_cycle()
                 current = self.fetcher.fetch(CURRENT_PATH)
                 records: list[TaskRecord] = []
                 for linked_id, path in referenced_tasks(current):
@@ -351,7 +412,7 @@ class Watcher:
                     "last_check_finished": iso_timestamp(),
                     "last_result": "dry_run" if dry_run else "ok",
                     "last_error": None,
-                    "remote_revision": current.sha,
+                    "remote_revision": snapshot_sha or current.sha,
                     "detected_tasks": [record.as_dict() for record in records],
                     "dispatch_enabled": False,
                     "next_check_basis": "estimate_from_last_check_plus_interval",

@@ -27,6 +27,10 @@ State and bounded logs are stored under
 as an estimate from the last completed check plus the configured 15-minute
 interval; it is not a guarantee of Task Scheduler execution.
 
+`dry-run` performs the same read-only GitHub validation but does not create or
+update `state.json`. It intentionally appends one bounded diagnostic log entry
+so a manual dry run is visible in local diagnostics.
+
 ## Optional safe installation
 
 Review `install_watcher.ps1` before use. It prints the planned task settings
@@ -35,6 +39,12 @@ and requires typing `INSTALL`. It creates a normal-user task named
 15 minutes, ignores overlapping instances, does not wake a sleeping PC, and
 uses `StartWhenAvailable` so a missed run can occur after logon. It never runs
 an infinite loop. Codex has not run the installer.
+
+Validate the Task Scheduler parameters without installing anything:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\automation\install_watcher.ps1 -ValidateOnly
+```
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\automation\install_watcher.ps1
@@ -51,3 +61,9 @@ history remain available for diagnosis.
 Even an `APPROVED` status is reported as ineligible because independent,
 revision-bound approval proof is not implemented in Stage B. This is
 intentional. No watcher command has a dispatch path.
+
+Each check first resolves one immutable commit SHA for `main`, then reads
+`CURRENT.md` and all linked task files at that same SHA. Concurrent checks use
+an OS-backed lock (`msvcrt` on Windows, `flock` elsewhere); a stale PID is never
+used to delete an active lock. If the lock, log, or remote read cannot be
+handled safely, the operation fails visibly.
