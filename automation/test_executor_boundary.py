@@ -10,7 +10,7 @@ from pathlib import Path
 from approval_gate import ApprovalPolicy, ApprovalVerifier, task_digest
 from executor_boundary import (
     ApprovalBroker, AuditFailure, AuditLog, BoundaryPreflight, DurableReservationJournal,
-    PreflightResult, RecoveryAuthority, ReservationStoreError, SourceManifest, SourceSnapshot,
+    PreflightResult, ReservationStoreError, SourceManifest, SourceSnapshot,
 )
 from test_approval_gate import NOW, StaticResolver, TASK_BYTES, signed_proof
 
@@ -28,6 +28,11 @@ class TestOnlyPreflight(BoundaryPreflight):
 
 class TestOnlyRecoveryAuthority:
     def authorize(self, approval_id, current, target): return target == "ABANDONED" and bool(approval_id) and current in {"RESERVED", "RUNNING"}
+
+
+class TestOnlyRecoveryJournal(DurableReservationJournal):
+    def _recovery_authorized(self, approval_id, current, target):
+        return TestOnlyRecoveryAuthority().authorize(approval_id, current, target)
 
 
 class FixtureSource:
@@ -121,7 +126,7 @@ class ExecutorBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             broker = make_broker(directory); result = broker.reserve(signed_proof(TASK_BYTES), TASK_PATH, COMMIT, NOW)
             with self.assertRaises(ReservationStoreError): broker.journal.transition(result.reservation.approval_id, "ABANDONED", "human_recovery")
-            journal = DurableReservationJournal(Path(directory) / "reservation.sqlite", TestOnlyPreflight(), recovery_authority=TestOnlyRecoveryAuthority())
+            journal = TestOnlyRecoveryJournal(Path(directory) / "reservation.sqlite", TestOnlyPreflight())
             self.assertTrue(journal.transition(result.reservation.approval_id, "ABANDONED", "human_recovery"))
             with self.assertRaises(ReservationStoreError): journal.transition(result.reservation.approval_id, "RUNNING", "executor")
 
@@ -147,6 +152,16 @@ class ExecutorBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(AuditFailure, "AUDIT_ANCHOR_MISSING"): AuditLog(path).append("NEW")
             path.unlink(); AuditLog(path).append("OK"); Path(str(path) + ".anchor").write_text("bad")
             with self.assertRaisesRegex(AuditFailure, "AUDIT_ANCHOR_INVALID"): AuditLog(path).append("NEW")
+
+            path.unlink(missing_ok=True)
+            anchor = Path(str(path) + ".anchor")
+            anchor.unlink(missing_ok=True)
+            AuditLog(path, max_lines=1).append("ONE")
+            active_anchor = json.loads(anchor.read_text())
+            archived = path.with_name(f"{path.stem}.{active_anchor['sequence']:020d}{path.suffix}")
+            path.replace(archived)
+            with self.assertRaisesRegex(AuditFailure, "AUDIT_ROTATION_RECOVERY_REQUIRED"):
+                AuditLog(path, max_lines=1).append("TWO")
 
     def test_audit_separate_process_concurrency(self):
         with tempfile.TemporaryDirectory() as directory:

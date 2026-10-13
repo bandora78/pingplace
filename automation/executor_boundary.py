@@ -66,10 +66,6 @@ class BoundaryPreflight:
         return self.provider.attest()
 
 
-class RecoveryAuthority(Protocol):
-    def authorize(self, approval_id: str, current: str, target: str) -> bool: ...
-
-
 class WindowsRecoveryAuthority:
     """Production recovery authority; human-authenticated IPC is not active."""
 
@@ -170,9 +166,11 @@ class DurableReservationJournal:
     COLUMN_INFO = (("approval_id", "TEXT", 0, 1), ("reservation_id", "TEXT", 1, 0), ("repository", "TEXT", 1, 0), ("task_id", "TEXT", 1, 0), ("path", "TEXT", 1, 0), ("commit_sha", "TEXT", 1, 0), ("task_sha256", "TEXT", 1, 0), ("tree_sha", "TEXT", 1, 0), ("manifest_digest", "TEXT", 1, 0), ("executor_sid", "TEXT", 1, 0), ("state", "TEXT", 1, 0), ("created_at", "TEXT", 1, 0), ("updated_at", "TEXT", 1, 0))
     TRANSITIONS = {("RESERVED", "RUNNING", "executor"), ("RUNNING", "SUCCEEDED", "executor"), ("RUNNING", "FAILED", "executor")}
 
-    def __init__(self, path: Path, preflight: BoundaryPreflight | None = None, connection_factory: Any = sqlite3.connect, recovery_authority: RecoveryAuthority | None = None):
+    def __init__(self, path: Path, preflight: BoundaryPreflight | None = None, connection_factory: Any = sqlite3.connect):
         self.path, self.preflight, self.connection_factory = path, preflight or BoundaryPreflight(), connection_factory
-        self.recovery_authority = recovery_authority or WindowsRecoveryAuthority()
+
+    def _recovery_authorized(self, approval_id: str, current: str, target: str) -> bool:
+        return WindowsRecoveryAuthority().authorize(approval_id, current, target)
 
     def _connect_checked(self) -> sqlite3.Connection:
         result = self.preflight.check()
@@ -266,7 +264,7 @@ class DurableReservationJournal:
             if not row: connection.rollback(); return False
             current = self._row(row).state
             if actor == "human_recovery":
-                if state != "ABANDONED" or not self.recovery_authority.authorize(approval_id, current, state):
+                if state != "ABANDONED" or not self._recovery_authorized(approval_id, current, state):
                     connection.rollback(); raise ReservationStoreError("RECOVERY_AUTHORIZATION_REQUIRED")
             elif (current, state, actor) not in self.TRANSITIONS:
                 connection.rollback(); raise ReservationStoreError("RESERVATION_TRANSITION_INVALID")
@@ -311,52 +309,80 @@ class AuditLog:
         if isinstance(value, str) and re.search(r"bearer\s+\S+|gh[pousr]_[A-Za-z0-9_]+", value, re.I): return "<redacted>"
         return value
 
-    def _anchor_value(self) -> tuple[int, str]:
+    def _read_last_record(self, path: Path) -> dict[str, Any] | None:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if not lines: return None
+        value = json.loads(lines[-1])
+        if not isinstance(value, dict) or not isinstance(value.get("sequence"), int) or not SHA256_RE.fullmatch(str(value.get("record_hash", ""))):
+            raise AuditFailure("AUDIT_RECORD_INVALID")
+        return value
+
+    def _segment_paths(self) -> list[Path]:
+        return sorted(self.path.parent.glob(self.path.stem + ".*." + self.path.suffix.lstrip(".")))
+
+    def _anchor_value(self) -> tuple[int, str, str, int]:
         if not self.anchor.exists():
-            if self.path.exists() and self.path.stat().st_size: raise AuditFailure("AUDIT_ANCHOR_MISSING")
-            return 0, ZERO_HASH
+            if (self.path.exists() and self.path.stat().st_size) or self._segment_paths(): raise AuditFailure("AUDIT_ANCHOR_MISSING")
+            return 0, ZERO_HASH, self.path.name, 0
         try:
             value = json.loads(self.anchor.read_text(encoding="utf-8")); sequence, last_hash = value["sequence"], value["last_hash"]
-            if not isinstance(sequence, int) or sequence < 0 or not SHA256_RE.fullmatch(last_hash): raise ValueError
-            for segment in self.path.parent.glob(self.path.stem + ".*." + self.path.suffix.lstrip(".")):
-                match = re.search(r"\.(\d{20})\." + re.escape(self.path.suffix.lstrip(".")) + r"$", segment.name)
+            segment, size = value["segment"], value["size"]
+            if not isinstance(sequence, int) or sequence < 0 or not SHA256_RE.fullmatch(last_hash) or not isinstance(segment, str) or not isinstance(size, int) or size < 0: raise ValueError
+            target = self.path.parent / segment
+            if not target.exists(): raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
+            if target.stat().st_size != size: raise AuditFailure("AUDIT_LOG_ANCHOR_MISMATCH")
+            record = self._read_last_record(target)
+            if not record or record.get("sequence") != sequence or record.get("record_hash") != last_hash: raise AuditFailure("AUDIT_LOG_ANCHOR_MISMATCH")
+            for archived in self._segment_paths():
+                match = re.search(r"\.(\d{20})\." + re.escape(self.path.suffix.lstrip(".")) + r"$", archived.name)
                 if match and int(match.group(1)) > sequence: raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
-            return sequence, last_hash
+            if segment == self.path.name:
+                pass
+            elif self.path.exists() and self.path.stat().st_size: raise AuditFailure("AUDIT_ROTATION_RECOVERY_REQUIRED")
+            return sequence, last_hash, segment, size
         except AuditFailure: raise
         except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc: raise AuditFailure("AUDIT_ANCHOR_INVALID") from exc
 
-    def _write_anchor(self, sequence: int, last_hash: str) -> None:
+    def _write_anchor(self, sequence: int, last_hash: str, segment: str, size: int) -> None:
         temp = self.anchor.with_name(self.anchor.name + ".tmp")
         try:
-            temp.write_text(json.dumps({"sequence": sequence, "last_hash": last_hash}, sort_keys=True) + "\n", encoding="utf-8")
+            temp.write_text(json.dumps({"sequence": sequence, "last_hash": last_hash, "segment": segment, "size": size}, sort_keys=True) + "\n", encoding="utf-8")
             with temp.open("r+b") as stream: stream.flush(); os.fsync(stream.fileno())
             os.replace(temp, self.anchor)
         except Exception as exc: raise AuditFailure("AUDIT_DURABILITY_UNKNOWN") from exc
 
     def _rotate_and_prune(self, sequence: int) -> None:
-        try: os.replace(self.path, self.path.with_name(f"{self.path.stem}.{sequence:020d}{self.path.suffix}"))
+        rotated = self.path.with_name(f"{self.path.stem}.{sequence:020d}{self.path.suffix}")
+        try: os.replace(self.path, rotated)
         except OSError as exc: raise AuditFailure("AUDIT_ROTATION_FAILED") from exc
-        segments = sorted(self.path.parent.glob(self.path.stem + ".*." + self.path.suffix.lstrip(".")))
-        if len(segments) <= self.max_segments: return
-        for segment in segments[:-self.max_segments]:
+        segments = self._segment_paths()
+        while len(segments) > self.max_segments:
+            segment = segments[0]
             try:
                 events = {json.loads(line).get("event") for line in segment.read_text(encoding="utf-8").splitlines() if line.strip()}
-                if not events.intersection(self.TERMINAL_EVENTS): segment.unlink()
+                if events.intersection(self.TERMINAL_EVENTS): raise AuditFailure("AUDIT_TERMINAL_RETENTION_BLOCKED")
+                segment.unlink()
+                segments = self._segment_paths()
+            except AuditFailure: raise
             except Exception as exc: raise AuditFailure("AUDIT_RETENTION_FAILED") from exc
 
     def append(self, event: str, details: Mapping[str, Any] | None = None) -> None:
         if not isinstance(event, str) or not event or len(event) > 128: raise AuditFailure("AUDIT_EVENT_INVALID")
         try:
             with _InterprocessLock(self.lock):
-                sequence, previous_hash = self._anchor_value()
+                sequence, previous_hash, _, _ = self._anchor_value()
                 record = {"timestamp": utc_now(), "event": event, "details": self._safe(details or {}), "previous_hash": previous_hash, "sequence": sequence + 1}
                 encoded = json.dumps(record, sort_keys=True, ensure_ascii=True, separators=(",", ":")); record["record_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
                 line = json.dumps(record, sort_keys=True, ensure_ascii=True) + "\n"
                 if len(line.encode()) > self.max_bytes: raise AuditFailure("AUDIT_RECORD_TOO_LARGE")
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 with self.path.open("a", encoding="utf-8", newline="\n") as stream: stream.write(line); stream.flush(); os.fsync(stream.fileno())
-                self._write_anchor(sequence + 1, record["record_hash"])
-                if self.path.stat().st_size > self.max_bytes or sequence + 1 > self.max_lines: self._rotate_and_prune(sequence + 1)
+                active_size = self.path.stat().st_size
+                self._write_anchor(sequence + 1, record["record_hash"], self.path.name, active_size)
+                active_lines = len(self.path.read_text(encoding="utf-8").splitlines())
+                if active_size > self.max_bytes or active_lines > self.max_lines:
+                    self._rotate_and_prune(sequence + 1)
+                    self._write_anchor(sequence + 1, record["record_hash"], self.path.with_name(f"{self.path.stem}.{sequence + 1:020d}{self.path.suffix}").name, active_size)
         except AuditFailure: raise
         except Exception as exc: raise AuditFailure("AUDIT_DURABILITY_UNKNOWN") from exc
 
