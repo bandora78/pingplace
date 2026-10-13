@@ -14,6 +14,7 @@ import binascii
 import hashlib
 import hmac
 import json
+import os
 import re
 import sys
 import uuid
@@ -21,6 +22,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 
 APPROVAL_VERSION = 1
@@ -33,6 +37,7 @@ TASK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 REPOSITORY = re.compile(r"^[^/\s]+/[^/\s]+$")
 APPROVAL_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F-]{27,}$")
 RSA_DIGEST_INFO_PREFIX = bytes.fromhex("3031300d060960864801650304020105000420")
+MIN_RSA_BITS = 2048
 
 
 class ApprovalError(Exception):
@@ -45,6 +50,12 @@ class VerificationResult:
     reason: str
     approval_id: str | None = None
     approver_id: str | None = None
+    source_verified: bool = False
+    repository: str | None = None
+    path: str | None = None
+    commit_sha: str | None = None
+    task_sha256: str | None = None
+    descriptor: "VerifiedApproval | None" = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +63,34 @@ class ApprovalPolicy:
     repository: str
     max_age: timedelta | None = DEFAULT_MAX_AGE
     future_skew: timedelta = MAX_FUTURE_SKEW
+
+
+_VERIFIED_CAPABILITY = object()
+
+
+class VerifiedApproval:
+    """Immutable source-bound capability issued only by verify_from_github."""
+
+    __slots__ = ("repository", "path", "commit_sha", "task_sha256", "approval_id", "approver_id")
+
+    def __init__(self, capability: object, repository: str, path: str, commit_sha: str, task_sha256: str, approval_id: str, approver_id: str | None):
+        if capability is not _VERIFIED_CAPABILITY:
+            raise TypeError("verified approvals are issued by ApprovalVerifier only")
+        self.repository = repository
+        self.path = path
+        self.commit_sha = commit_sha
+        self.task_sha256 = task_sha256
+        self.approval_id = approval_id
+        self.approver_id = approver_id
+
+
+@dataclass(frozen=True)
+class ResolvedTask:
+    repository: str
+    path: str
+    commit_sha: str
+    task_bytes: bytes
+    blob_sha: str
 
 
 def utc_now() -> datetime:
@@ -114,7 +153,7 @@ def _verify_rsa_sha256(signature: bytes, payload: bytes, key: Mapping[str, Any])
         exponent = int(key["e"])
     except (KeyError, TypeError, ValueError) as error:
         raise ApprovalError("trusted RSA key is malformed") from error
-    if modulus <= 0 or exponent <= 1 or exponent % 2 == 0:
+    if modulus.bit_length() < MIN_RSA_BITS or exponent != 65537:
         raise ApprovalError("trusted RSA key has invalid parameters")
     size = (modulus.bit_length() + 7) // 8
     if len(signature) != size:
@@ -126,6 +165,49 @@ def _verify_rsa_sha256(signature: bytes, payload: bytes, key: Mapping[str, Any])
         return False
     expected = b"\x00\x01" + (b"\xff" * padding_length) + b"\x00" + digest_info
     return hmac.compare_digest(encoded, expected)
+
+
+class GitHubCommitResolver:
+    """Resolve exact file bytes from a claimed immutable GitHub commit.
+
+    This is the only source boundary that can produce a source-verified
+    descriptor for reservation. It never follows a branch or accepts a task's
+    self-reported SHA as proof of the bytes it returns.
+    """
+
+    def __init__(self, timeout: float = 20.0, opener: Any = urlopen):
+        self.timeout = timeout
+        self.opener = opener
+
+    def _get_json(self, url: str) -> dict[str, Any]:
+        request = Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "PingPlaceApprovalVerifier/1"})
+        try:
+            with self.opener(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as error:
+            raise ApprovalError("immutable GitHub source could not be verified") from error
+        if not isinstance(payload, dict):
+            raise ApprovalError("immutable GitHub response was malformed")
+        return payload
+
+    def resolve(self, repository: str, path: str, commit_sha: str) -> ResolvedTask:
+        if not REPOSITORY.fullmatch(repository) or not valid_task_path(path) or not COMMIT_SHA.fullmatch(commit_sha):
+            raise ApprovalError("immutable source scope is invalid")
+        root = f"https://api.github.com/repos/{repository}"
+        commit = self._get_json(f"{root}/git/commits/{quote(commit_sha, safe='')}")
+        if commit.get("sha", "").lower() != commit_sha.lower():
+            raise ApprovalError("GitHub commit identity did not match requested SHA")
+        file = self._get_json(f"{root}/contents/{quote(path, safe='/')}?ref={quote(commit_sha, safe='')}")
+        if file.get("type") != "file" or file.get("encoding") != "base64":
+            raise ApprovalError("requested task path is not a file at the immutable commit")
+        try:
+            task_bytes = base64.b64decode(file["content"], validate=True)
+            blob_sha = file["sha"]
+        except (KeyError, TypeError, ValueError, binascii.Error) as error:
+            raise ApprovalError("GitHub task bytes were malformed") from error
+        if not isinstance(blob_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", blob_sha):
+            raise ApprovalError("GitHub task blob identity was malformed")
+        return ResolvedTask(repository, path, commit_sha, task_bytes, blob_sha)
 
 
 def load_trust_store(path: Path) -> dict[str, dict[str, Any]]:
@@ -200,7 +282,60 @@ class ApprovalVerifier:
             return _deny(str(error).upper().replace(" ", "_"), proof)
         if not valid_signature:
             return _deny("SIGNATURE_INVALID", proof)
-        return VerificationResult(True, "APPROVAL_VALID", approval_id, approver_id)
+        return VerificationResult(
+            True,
+            "APPROVAL_VALID_LOCAL_BYTES_ONLY",
+            approval_id,
+            approver_id,
+            False,
+            repository,
+            path,
+            commit_sha,
+            digest,
+        )
+
+    def verify_from_github(
+        self,
+        resolver: GitHubCommitResolver,
+        repository: str,
+        path: str,
+        commit_sha: str,
+        proof: Any,
+        now: datetime | None = None,
+    ) -> VerificationResult:
+        try:
+            resolved = resolver.resolve(repository, path, commit_sha)
+        except ApprovalError:
+            return _deny("TASK_SOURCE_UNVERIFIED", proof if isinstance(proof, dict) else None)
+        if (
+            resolved.repository != repository
+            or resolved.path != path
+            or resolved.commit_sha.lower() != commit_sha.lower()
+        ):
+            return _deny("TASK_SOURCE_SCOPE_MISMATCH", proof if isinstance(proof, dict) else None)
+        result = self.verify(resolved.task_bytes, repository, path, commit_sha, proof, now)
+        if not result.allowed:
+            return result
+        return VerificationResult(
+            True,
+            "APPROVAL_VALID_SOURCE_VERIFIED",
+            result.approval_id,
+            result.approver_id,
+            True,
+            repository,
+            path,
+            commit_sha,
+            result.task_sha256,
+            VerifiedApproval(
+                _VERIFIED_CAPABILITY,
+                repository,
+                path,
+                commit_sha,
+                result.task_sha256 or "",
+                result.approval_id or "",
+                result.approver_id,
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -221,26 +356,50 @@ class ApprovalReservationStore:
     def __init__(self, directory: Path):
         self.directory = directory
 
-    def reserve(self, result: VerificationResult, repository: str, path: str, commit_sha: str) -> ReservationResult:
-        if not result.allowed or not result.approval_id:
+    def reserve(self, result: VerificationResult) -> ReservationResult:
+        if not result.allowed or result.descriptor is None:
             return ReservationResult(False, "APPROVAL_NOT_VERIFIED")
+        descriptor = result.descriptor
+        if not self._durability_supported():
+            return ReservationResult(False, "RESERVATION_DURABILITY_UNVERIFIED")
         self.directory.mkdir(parents=True, exist_ok=True)
-        reservation = self.directory / f"approval-{result.approval_id}.json"
+        reservation = self.directory / f"approval-{descriptor.approval_id}.json"
         payload = {
-            "approval_id": result.approval_id,
-            "approver_id": result.approver_id,
-            "repository": repository,
-            "path": path,
-            "commit_sha": commit_sha,
+            "approval_id": descriptor.approval_id,
+            "approver_id": descriptor.approver_id,
+            "repository": descriptor.repository,
+            "path": descriptor.path,
+            "commit_sha": descriptor.commit_sha,
+            "task_sha256": descriptor.task_sha256,
             "reserved_at": utc_now().isoformat().replace("+00:00", "Z"),
         }
         try:
-            descriptor = reservation.open("x", encoding="utf-8")
+            descriptor = reservation.open("x", encoding="utf-8", newline="\n")
         except FileExistsError:
             return ReservationResult(False, "APPROVAL_ALREADY_RESERVED")
         with descriptor:
             descriptor.write(json.dumps(payload, sort_keys=True) + "\n")
+            descriptor.flush()
+            os.fsync(descriptor.fileno())
+        if not self._fsync_directory():
+            return ReservationResult(False, "RESERVATION_DURABILITY_UNVERIFIED")
         return ReservationResult(True, "APPROVAL_RESERVED")
+
+    def _durability_supported(self) -> bool:
+        # Windows directory handles cannot be opened with the required fsync
+        # semantics through Python's standard library on this deployment.
+        return os.name != "nt"
+
+    def _fsync_directory(self) -> bool:
+        try:
+            descriptor = os.open(self.directory, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            return True
+        except OSError:
+            return False
 
 
 def read_json(path: Path) -> Any:
@@ -273,7 +432,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read-only WATCHER-C1 approval verifier")
     subparsers = parser.add_subparsers(dest="command", required=True)
     verify = subparsers.add_parser("verify")
-    verify.add_argument("--task-file", type=Path, required=True)
     verify.add_argument("--repository", required=True)
     verify.add_argument("--path", required=True)
     verify.add_argument("--commit-sha", required=True)
@@ -293,11 +451,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "request":
             return request_approval(args)
-        task_bytes = args.task_file.read_bytes()
         proof = read_json(args.proof_file)
         trust_store = load_trust_store(args.trust_file)
-        result = ApprovalVerifier(trust_store, ApprovalPolicy(args.repository)).verify(
-            task_bytes, args.repository, args.path, args.commit_sha, proof
+        result = ApprovalVerifier(trust_store, ApprovalPolicy(args.repository)).verify_from_github(
+            GitHubCommitResolver(), args.repository, args.path, args.commit_sha, proof
         )
         print(json.dumps({"allowed": result.allowed, "reason": result.reason}, sort_keys=True))
         return 0 if result.allowed else 1
