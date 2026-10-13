@@ -2,6 +2,9 @@
 
 This file is the entry point for human reviewers and the future Agent Watcher.
 
+## Next manually bootstrapped implementation
+- [WATCHER-01B](WATCHER-01B.md) — Read-only Windows watcher (15-minute schedule) — **MANUAL_READY**. Human must invoke Codex once. This is NOT automatic dispatch approval.
+
 ## Active work
 - [TASK-08](TASK-08.md) — Persistent Diagnostics & Full Log Export — **DRAFT**
 - [WATCHER-01](WATCHER-01.md) — Windows Agent Watcher — **DRAFT**
