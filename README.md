@@ -6,6 +6,52 @@ Every pull request targeting `main` runs the Android debug checks and build in G
 
 The workflow produces the normal Flutter debug APK using the existing Android application ID and debug signing configuration, so it can be installed over an existing debug build when the signing keys are compatible. It does not create GitHub Releases.
 
+## Consistently signed test APKs
+
+The **Android signed test APK** workflow is manual-only and always checks out the trusted `main` branch. It uses a dedicated test keystore supplied through GitHub Actions secrets; it is separate from the pull-request workflow above, which continues to use the default Android debug signing behavior.
+
+### One-time repository-owner setup
+
+1. Create a dedicated, non-production test keystore locally. Do not use a release keystore:
+
+   ```sh
+   keytool -genkeypair -v \
+     -keystore pingplace-debug.keystore \
+     -alias pingplace-debug \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+   Choose and record the keystore password, key password, and alias. Keep the keystore and passwords in encrypted, access-controlled backup storage. Never commit them to this repository.
+
+2. Base64-encode the keystore without changing its bytes. On Linux/macOS:
+
+   ```sh
+   base64 -w 0 pingplace-debug.keystore
+   ```
+
+   On PowerShell:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes('pingplace-debug.keystore'))
+   ```
+
+3. In the repository, open **Settings → Secrets and variables → Actions → New repository secret** and configure these four secrets:
+
+   - `PINGPLACE_DEBUG_KEYSTORE_BASE64`: the base64-encoded keystore
+   - `PINGPLACE_DEBUG_KEYSTORE_PASSWORD`: the keystore password
+   - `PINGPLACE_DEBUG_KEY_ALIAS`: `pingplace-debug` (or the chosen alias)
+   - `PINGPLACE_DEBUG_KEY_PASSWORD`: the key password
+
+   The workflow fails before reconstructing a keystore or building an APK when any secret is missing. Secrets are never printed, and the temporary keystore is removed even when a later step fails.
+
+4. In **Actions → Android signed test APK → Run workflow**, select the `main` branch in the workflow's branch selector and run it. The signed job is guarded so it runs only for `main`; it builds only the current trusted `main` commit, verifies that the APK certificate matches the dedicated keystore, and uploads an artifact containing the app version, commit short SHA, and versionCode.
+
+The signed workflow enforces this version policy: `versionCode = 10000 + GITHUB_RUN_NUMBER`. It reads the generated APK's actual Android manifest versionCode with Android `aapt` and fails if it differs. This is increasing for subsequent executions of this exact workflow. It is not a globally durable counter if the workflow is recreated or its run numbering is reset; in that case, or if an installed APK has a higher versionCode, increase the policy offset or perform the one-time uninstall migration before installing the next test APK.
+
+If the APK currently installed on the Xiaomi 15 was signed with a different certificate, Android requires one final uninstall before the first APK signed with this dedicated key can be installed. After that migration, consecutive signed test APKs use the same certificate and increasing version codes, so they can be installed as updates.
+
+To confirm signing consistency, download two consecutive signed artifacts, run `apksigner verify --print-certs <apk>` on each, and compare the `Signer #1 certificate SHA-256 digest` values. They must match; the workflow also performs this comparison against the keystore for every build.
+
 A new Flutter project.
 
 ## Getting Started

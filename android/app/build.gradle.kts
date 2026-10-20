@@ -4,16 +4,30 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val ciDebugKeystoreFile = providers.gradleProperty("pingplaceDebugKeystoreFile").orNull
-val ciDebugStorePassword = providers.gradleProperty("pingplaceDebugKeystorePassword").orNull
-val ciDebugKeyAlias = providers.gradleProperty("pingplaceDebugKeyAlias").orNull
-val ciDebugKeyPassword = providers.gradleProperty("pingplaceDebugKeyPassword").orNull
+val ciDebugKeystoreFile = providers.environmentVariable("PINGPLACE_DEBUG_KEYSTORE_FILE")
+    .orElse(providers.gradleProperty("pingplaceDebugKeystoreFile"))
+    .orNull
+val ciDebugStorePassword = providers.environmentVariable("PINGPLACE_DEBUG_KEYSTORE_PASSWORD")
+    .orElse(providers.gradleProperty("pingplaceDebugKeystorePassword"))
+    .orNull
+val ciDebugKeyAlias = providers.environmentVariable("PINGPLACE_DEBUG_KEY_ALIAS")
+    .orElse(providers.gradleProperty("pingplaceDebugKeyAlias"))
+    .orNull
+val ciDebugKeyPassword = providers.environmentVariable("PINGPLACE_DEBUG_KEY_PASSWORD")
+    .orElse(providers.gradleProperty("pingplaceDebugKeyPassword"))
+    .orNull
 val hasCiDebugSigning = listOf(
     ciDebugKeystoreFile,
     ciDebugStorePassword,
     ciDebugKeyAlias,
     ciDebugKeyPassword,
 ).all { !it.isNullOrBlank() }
+val requireCiDebugSigning = providers.environmentVariable("PINGPLACE_REQUIRE_CI_DEBUG_SIGNING")
+    .orNull == "true"
+
+if (requireCiDebugSigning && !hasCiDebugSigning) {
+    error("PINGPLACE_REQUIRE_CI_DEBUG_SIGNING is enabled, but the complete CI signing environment is missing")
+}
 
 android {
     namespace = "com.example.pingplace"
