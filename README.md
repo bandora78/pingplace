@@ -44,7 +44,7 @@ The **Android signed test APK** workflow is manual-only and always checks out th
 
    The workflow fails before reconstructing a keystore or building an APK when any secret is missing. Secrets are never printed, and the temporary keystore is removed even when a later step fails.
 
-4. In **Actions → Android signed test APK → Run workflow**, run the workflow with its default settings. It builds only the current trusted `main` commit, verifies that the APK certificate matches the dedicated keystore, and uploads an artifact containing the app version, commit short SHA, and monotonically increasing test build number.
+4. In **Actions → Android signed test APK → Run workflow**, select the `main` branch in the workflow's branch selector and run it. The signed job is guarded so it runs only for `main`; it builds only the current trusted `main` commit, verifies that the APK certificate matches the dedicated keystore, and uploads an artifact containing the app version, commit short SHA, and monotonically increasing test build number.
 
 If the APK currently installed on the Xiaomi 15 was signed with a different certificate, Android requires one final uninstall before the first APK signed with this dedicated key can be installed. After that migration, consecutive signed test APKs use the same certificate and increasing version codes, so they can be installed as updates.
 
