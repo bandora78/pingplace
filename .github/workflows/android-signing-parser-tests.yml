@@ -1,0 +1,25 @@
+name: Android signing parser tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/scripts/**'
+      - '.github/workflows/android-signed-test-apk.yml'
+      - '.github/workflows/android-signing-parser-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-certificate-parser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Run certificate fingerprint parser tests
+        shell: bash
+        run: bash .github/scripts/test-certificate-fingerprint.sh
