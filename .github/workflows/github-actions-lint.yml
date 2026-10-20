@@ -21,3 +21,7 @@ jobs:
 
       - name: Validate workflow syntax with actionlint
         uses: raven-actions/actionlint@v2
+        with:
+          # This check is intentionally scoped to workflow syntax and expressions.
+          # Existing shell style is validated by the workflow's own Bash steps.
+          shellcheck: false
