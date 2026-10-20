@@ -1,5 +1,11 @@
 # pingplace
 
+## Android debug APKs from pull requests
+
+Every pull request targeting `main` runs the Android debug checks and build in GitHub Actions. After the workflow succeeds, open the repository's **Actions** tab, select **Android debug APK**, open the workflow run for the pull request, and download the artifact named `pingplace-debug-apk-<short-sha>-v<version>` from the **Artifacts** section. Artifacts are retained for 30 days.
+
+The workflow produces the normal Flutter debug APK using the existing Android application ID and debug signing configuration, so it can be installed over an existing debug build when the signing keys are compatible. It does not create GitHub Releases.
+
 A new Flutter project.
 
 ## Getting Started
