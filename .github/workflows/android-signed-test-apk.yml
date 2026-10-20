@@ -138,6 +138,10 @@ jobs:
           fi
           echo "Verified APK versionCode: ${actual_version_code}"
 
+      - name: Test certificate fingerprint parser
+        shell: bash
+        run: bash .github/scripts/test-certificate-fingerprint.sh
+
       - name: Verify APK signing certificate
         env:
           PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
@@ -151,26 +155,10 @@ jobs:
             echo "Could not find Android apksigner" >&2
             exit 1
           fi
-
-          keystore_fingerprint="$(keytool -list -v \
-            -keystore .ci-signing/pingplace-debug.keystore \
-            -storepass "${PINGPLACE_DEBUG_KEYSTORE_PASSWORD}" \
-            -alias "${PINGPLACE_DEBUG_KEY_ALIAS}" |
-            awk -F': ' '/SHA256:/{print $2; exit}' |
-            tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          apk_fingerprint="$("${apksigner_path}" verify --print-certs "${apk_path}" |
-            awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print $2; exit}' |
-            tr -d ':' | tr '[:upper:]' '[:lower:]')"
-
-          if [[ -z "${keystore_fingerprint}" || -z "${apk_fingerprint}" ]]; then
-            echo "Could not read the signing certificate fingerprint" >&2
-            exit 1
-          fi
-          if [[ "${keystore_fingerprint}" != "${apk_fingerprint}" ]]; then
-            echo "APK certificate does not match the dedicated test keystore" >&2
-            exit 1
-          fi
-          echo "Verified APK certificate SHA-256: ${apk_fingerprint}"
+          bash .github/scripts/verify-apk-signing.sh \
+            "${apk_path}" \
+            .ci-signing/pingplace-debug.keystore \
+            "${apksigner_path}"
 
       - name: Rename APK with build identity
         run: >-
