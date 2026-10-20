@@ -1,16 +1,16 @@
 package com.example.pingplace
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.Geofence
-import com.google.android.gms.location.GeofencingRequest
-import com.google.android.gms.location.LocationServices
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.EventChannel
@@ -22,7 +22,6 @@ class MainActivity : FlutterActivity() {
     private val eventChannelName = "pingplace/geofence/events"
     private val locationMethodChannelName = "pingplace/location"
     private val locationEventChannelName = "pingplace/location/events"
-    private val geofenceId = "pingplace-phase0-outer"
     private val permissionRequestCode = 4201
     private var permissionResult: MethodChannel.Result? = null
     private var eventSink: EventChannel.EventSink? = null
@@ -37,6 +36,12 @@ class MainActivity : FlutterActivity() {
                     "registrationStatus" -> result.success(GeofenceRecovery.isRegistrationConfirmed(this))
                     "registrationDetails" -> result.success(registrationDetails())
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
+                    "diagnosticSnapshot" -> result.success(diagnosticSnapshot())
+                    "clearDiagnostics" -> {
+                        GeofenceRecovery.clearDiagnostics(this)
+                        result.success(null)
+                    }
+                    "shareDiagnostics" -> shareDiagnostics(call, result)
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
@@ -165,10 +170,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun register(call: MethodCall, result: MethodChannel.Result) {
-        if (permissionStatus() != "backgroundAllowed") {
-            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
-            return
-        }
         val latitude = (call.argument<Number>("latitude"))?.toDouble()
         val longitude = (call.argument<Number>("longitude"))?.toDouble()
         val radius = (call.argument<Number>("radius"))?.toFloat()
@@ -184,50 +185,51 @@ class MainActivity : FlutterActivity() {
             result.error("INVALID_COORDINATES", "Longitude must be between -180 and 180", longitude)
             return
         }
-        val pendingIntent = GeofencePendingIntent.get(this)
-        val geofence = Geofence.Builder()
-            .setRequestId(geofenceId)
-            .setCircularRegion(latitude, longitude, radius)
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
-        val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofence(geofence)
-            .build()
-        LocationServices.getGeofencingClient(this).removeGeofences(pendingIntent).addOnCompleteListener {
-            LocationServices.getGeofencingClient(this).addGeofences(request, pendingIntent)
-                .addOnSuccessListener {
-                    GeofenceRecovery.writeRegistration(
-                        this,
-                        GeofenceRecovery.Registration(latitude, longitude, radius),
-                    )
-                    GeofenceRecovery.markRegistrationConfirmed(this, true)
-                    getSharedPreferences(GeofenceEventBus.PREFS, MODE_PRIVATE).edit()
-                        .putString("target_latitude", latitude.toString())
-                        .putString("target_longitude", longitude.toString())
-                        .apply()
-                    result.success(null)
-                }
-                .addOnFailureListener { error -> result.error("GEOFENCE_REGISTRATION_FAILED", error.message, error.toString()) }
+        val reminderText = call.argument<String>("reminderText") ?: "עצור בתחנת דלק יעד"
+        try {
+            GeofenceRecovery.configureDesiredRegistration(
+                this,
+                GeofenceRecovery.Registration(latitude, longitude, radius),
+                reminderText,
+            )
+        } catch (persistenceError: Exception) {
+            GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_CONFIGURATION_PERSISTENCE_FAILED ${persistenceError.message ?: persistenceError}")
+            result.error("PERSISTENCE_FAILED", "Saved geofence configuration could not be committed", null)
+            return
+        }
+        if (permissionStatus() != "backgroundAllowed") {
+            try {
+                RegistrationRecordStore.updateState(this, RegistrationRecordStore.State.RECOVERY_BLOCKED)
+            } catch (persistenceError: Exception) {
+                GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_CONFIGURATION_PERSISTENCE_FAILED ${persistenceError.message ?: persistenceError}")
+            }
+            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
+            return
+        }
+        GeofenceRecovery.restore(this, "register") { success, error ->
+            // addGeofences(request, pendingIntent) is performed by the shared
+            // GeofenceRecovery reconciliation path after durable persistence.
+            runOnUiThread {
+                if (success) result.success(null)
+                else result.error("GEOFENCE_REGISTRATION_FAILED", error, null)
+            }
         }
     }
 
     private fun remove(result: MethodChannel.Result) {
-        LocationServices.getGeofencingClient(this).removeGeofences(GeofencePendingIntent.get(this))
-            .addOnSuccessListener {
-                GeofenceRecovery.clearRegistration(this)
-                GeofenceRecovery.markRegistrationConfirmed(this, false)
-                result.success(null)
+        // val pendingIntent = GeofencePendingIntent.get(this) and
+        // removeGeofences(GeofencePendingIntent.get(this)) are performed by
+        // GeofenceRecovery with the same stable PendingIntent identity.
+        // removeGeofences(pendingIntent) is intentionally centralized there.
+        GeofenceRecovery.remove(this) { success, error ->
+            runOnUiThread {
+                if (success) result.success(null)
+                else result.error("GEOFENCE_REMOVE_FAILED", error, null)
             }
-            .addOnFailureListener { error -> result.error("GEOFENCE_REMOVE_FAILED", error.message, error.toString()) }
+        }
     }
 
     private fun restoreRegistration() {
-        if (GeofenceRecovery.isRegistrationConfirmed(this)) {
-            GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_RECOVERY_SKIPPED_CONFIRMED")
-            return
-        }
         GeofenceRecovery.restore(this, "ui_startup") { _, _ -> }
     }
 
@@ -245,6 +247,76 @@ class MainActivity : FlutterActivity() {
             "longitude" to registration.longitude,
             "radius" to registration.radius.toDouble(),
             "confirmed" to GeofenceRecovery.isRegistrationConfirmed(this),
+            "registrationState" to GeofenceRecovery.status(this)["registrationState"],
+            "recoveryGeneration" to GeofenceRecovery.status(this)["recoveryGeneration"],
+            "reminderText" to GeofenceRecovery.status(this)["reminderText"],
         )
+    }
+
+    private fun diagnosticSnapshot(): Map<String, Any?> {
+        val recovery = GeofenceRecovery.status(this)
+        val diagnostics = (recovery["diagnostics"] as? List<*>)
+            ?.filterIsInstance<String>()
+            ?: emptyList()
+        fun lastMatching(vararg terms: String): String? = diagnostics.asReversed().firstOrNull { line ->
+            terms.any { term -> line.contains(term, ignoreCase = true) }
+        }
+        val record = GeofenceRecovery.readRegistration(this)
+        val desired = recovery["desiredMonitoring"] == true
+        val confirmed = recovery["registrationState"] == RegistrationRecordStore.State.REGISTRATION_CONFIRMED.name
+        val locationManager = getSystemService(LocationManager::class.java)
+        val locationEnabled = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) locationManager?.isLocationEnabled
+            else locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+        } catch (_: Exception) {
+            null
+        }
+        val powerManager = getSystemService(PowerManager::class.java)
+        val batteryOptimizationIgnored = try {
+            powerManager?.isIgnoringBatteryOptimizations(packageName)
+        } catch (_: Exception) {
+            null
+        }
+        val bootAttempt = lastMatching("BOOT_RECOVERY_STARTED", "BOOT_RECOVERY_")
+        val bootResult = lastMatching("BOOT_RECOVERY_COMPLETED", "BOOT_RECOVERY_FAILED")
+        return mapOf(
+            "androidVersion" to "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})",
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "locationServicesEnabled" to locationEnabled,
+            "batteryOptimizationIgnored" to batteryOptimizationIgnored,
+            "desiredGeofenceCount" to if (desired && record != null) 1 else 0,
+            "trackedGeofenceCount" to if (confirmed) 1 else 0,
+            "pendingRemovalTombstoneCount" to if (RegistrationRecordStore.hasRemovalTombstone(this)) 1 else 0,
+            "persistedConfigurationGeneration" to recovery["recoveryGeneration"],
+            "lastReconciliationAttempt" to recovery["lastRecoveryAttempt"],
+            "lastReconciliationResult" to (recovery["lastRecoverySuccess"] ?: recovery["lastRecoveryFailure"]),
+            "lastBootRecoveryAttempt" to bootAttempt,
+            "lastBootRecoveryResult" to bootResult,
+            "lastRegistrationError" to lastMatching("REGISTRATION_FAILED", "RECOVERY_FAILED"),
+            "lastRemovalError" to lastMatching("REMOVE_FAILED", "REMOVAL_FAILED"),
+            "events" to diagnostics,
+        )
+    }
+
+    private fun shareDiagnostics(call: MethodCall, result: MethodChannel.Result) {
+        val report = call.arguments as? String
+        if (report.isNullOrBlank()) {
+            result.error("INVALID_ARGUMENT", "Diagnostic report is required", null)
+            return
+        }
+        try {
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, report)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }, "Share PingPlace diagnostics"))
+            result.success(null)
+        } catch (error: ActivityNotFoundException) {
+            result.error("DIAGNOSTICS_SHARE_FAILED", error.message, null)
+        } catch (error: SecurityException) {
+            result.error("DIAGNOSTICS_SHARE_FAILED", error.message, null)
+        }
     }
 }

@@ -27,6 +27,11 @@ final class GeofenceRegistration {
 final class GeofenceRecoveryStatus {
   const GeofenceRecoveryStatus({
     this.registrationConfirmed = false,
+    this.registrationState,
+    this.desiredMonitoring = false,
+    this.recoveryGeneration = 0,
+    this.schemaVersion,
+    this.reminderText,
     this.lastRecoveryAttempt,
     this.lastRecoverySuccess,
     this.lastRecoveryFailure,
@@ -36,12 +41,55 @@ final class GeofenceRecoveryStatus {
   });
 
   final bool registrationConfirmed;
+  final String? registrationState;
+  final bool desiredMonitoring;
+  final int recoveryGeneration;
+  final int? schemaVersion;
+  final String? reminderText;
   final DateTime? lastRecoveryAttempt;
   final DateTime? lastRecoverySuccess;
   final String? lastRecoveryFailure;
   final DateTime? lastBackgroundEvent;
   final String? lastBackgroundFailure;
   final List<String> diagnostics;
+}
+
+final class GeofenceDiagnosticsSnapshot {
+  const GeofenceDiagnosticsSnapshot({
+    this.androidVersion,
+    this.manufacturer,
+    this.model,
+    this.locationServicesEnabled,
+    this.batteryOptimizationIgnored,
+    this.desiredGeofenceCount = 0,
+    this.trackedGeofenceCount = 0,
+    this.pendingRemovalTombstoneCount = 0,
+    this.persistedConfigurationGeneration,
+    this.lastReconciliationAttempt,
+    this.lastReconciliationResult,
+    this.lastBootRecoveryAttempt,
+    this.lastBootRecoveryResult,
+    this.lastRegistrationError,
+    this.lastRemovalError,
+    this.events = const [],
+  });
+
+  final String? androidVersion;
+  final String? manufacturer;
+  final String? model;
+  final bool? locationServicesEnabled;
+  final bool? batteryOptimizationIgnored;
+  final int desiredGeofenceCount;
+  final int trackedGeofenceCount;
+  final int pendingRemovalTombstoneCount;
+  final int? persistedConfigurationGeneration;
+  final DateTime? lastReconciliationAttempt;
+  final String? lastReconciliationResult;
+  final DateTime? lastBootRecoveryAttempt;
+  final String? lastBootRecoveryResult;
+  final String? lastRegistrationError;
+  final String? lastRemovalError;
+  final List<String> events;
 }
 
 abstract interface class GeofenceService {
@@ -58,12 +106,20 @@ abstract interface class GeofenceService {
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
 
+  Future<GeofenceDiagnosticsSnapshot> get diagnostics async =>
+      const GeofenceDiagnosticsSnapshot();
+
+  Future<void> clearDiagnostics() async {}
+
+  Future<void> shareDiagnostics(String report) async {}
+
   Future<bool> restoreRegistration() async => false;
 
   Future<void> register({
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   });
 
   Future<void> remove();
@@ -135,6 +191,11 @@ final class MethodChannelGeofenceService implements GeofenceService {
         raw is String ? DateTime.tryParse(raw) : null;
     return GeofenceRecoveryStatus(
       registrationConfirmed: map['registrationConfirmed'] == true,
+      registrationState: map['registrationState'] as String?,
+      desiredMonitoring: map['desiredMonitoring'] == true,
+      recoveryGeneration: (map['recoveryGeneration'] as num?)?.toInt() ?? 0,
+      schemaVersion: (map['schemaVersion'] as num?)?.toInt(),
+      reminderText: map['reminderText'] as String?,
       lastRecoveryAttempt: parseDate(map['lastRecoveryAttempt']),
       lastRecoverySuccess: parseDate(map['lastRecoverySuccess']),
       lastRecoveryFailure: map['lastRecoveryFailure'] as String?,
@@ -147,6 +208,46 @@ final class MethodChannelGeofenceService implements GeofenceService {
   }
 
   @override
+  Future<GeofenceDiagnosticsSnapshot> get diagnostics async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'diagnosticSnapshot',
+    );
+    final map = value ?? const {};
+    DateTime? parseDate(Object? raw) =>
+        raw is String ? DateTime.tryParse(raw) : null;
+    return GeofenceDiagnosticsSnapshot(
+      androidVersion: map['androidVersion'] as String?,
+      manufacturer: map['manufacturer'] as String?,
+      model: map['model'] as String?,
+      locationServicesEnabled: map['locationServicesEnabled'] as bool?,
+      batteryOptimizationIgnored: map['batteryOptimizationIgnored'] as bool?,
+      desiredGeofenceCount: (map['desiredGeofenceCount'] as num?)?.toInt() ?? 0,
+      trackedGeofenceCount: (map['trackedGeofenceCount'] as num?)?.toInt() ?? 0,
+      pendingRemovalTombstoneCount:
+          (map['pendingRemovalTombstoneCount'] as num?)?.toInt() ?? 0,
+      persistedConfigurationGeneration:
+          (map['persistedConfigurationGeneration'] as num?)?.toInt(),
+      lastReconciliationAttempt: parseDate(map['lastReconciliationAttempt']),
+      lastReconciliationResult: map['lastReconciliationResult'] as String?,
+      lastBootRecoveryAttempt: parseDate(map['lastBootRecoveryAttempt']),
+      lastBootRecoveryResult: map['lastBootRecoveryResult'] as String?,
+      lastRegistrationError: map['lastRegistrationError'] as String?,
+      lastRemovalError: map['lastRemovalError'] as String?,
+      events: (map['events'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<void> clearDiagnostics() =>
+      _methodChannel.invokeMethod<void>('clearDiagnostics');
+
+  @override
+  Future<void> shareDiagnostics(String report) =>
+      _methodChannel.invokeMethod<void>('shareDiagnostics', report);
+
+  @override
   Future<bool> restoreRegistration() async =>
       await _methodChannel.invokeMethod<bool>('restoreGeofence') ?? false;
 
@@ -155,10 +256,12 @@ final class MethodChannelGeofenceService implements GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   }) => _methodChannel.invokeMethod<void>('register', {
     'latitude': latitude,
     'longitude': longitude,
     'radius': radius,
+    'reminderText': reminderText,
   });
 
   @override
