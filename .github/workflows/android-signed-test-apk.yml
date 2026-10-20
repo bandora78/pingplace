@@ -47,8 +47,8 @@ jobs:
 
           build_name="${version_line%%+*}"
           commit_short="$(git rev-parse --short=7 HEAD)"
-          # Keep signed test APK versionCodes increasing across manual runs so
-          # a later APK can update an earlier one without uninstalling it.
+          # Keep signed test APK versionCodes increasing within this workflow's
+          # run-number sequence so a later APK can update an earlier one.
           build_number="$((10000 + GITHUB_RUN_NUMBER))"
 
           echo "version=${version_line}" >> "${GITHUB_OUTPUT}"
@@ -103,17 +103,40 @@ jobs:
 
       - name: Build consistently signed test APK
         env:
+          PINGPLACE_DEBUG_KEYSTORE_FILE: ${{ github.workspace }}/.ci-signing/pingplace-debug.keystore
           PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
           PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
           PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEY_PASSWORD }}
+          PINGPLACE_REQUIRE_CI_DEBUG_SIGNING: 'true'
         run: >-
-          ./android/gradlew --no-daemon :app:assembleDebug
-          -PpingplaceDebugKeystoreFile="${{ github.workspace }}/.ci-signing/pingplace-debug.keystore"
-          -PpingplaceDebugKeystorePassword="${PINGPLACE_DEBUG_KEYSTORE_PASSWORD}"
-          -PpingplaceDebugKeyAlias="${PINGPLACE_DEBUG_KEY_ALIAS}"
-          -PpingplaceDebugKeyPassword="${PINGPLACE_DEBUG_KEY_PASSWORD}"
-          -Pflutter.versionName="${{ steps.version.outputs.build_name }}"
-          -Pflutter.versionCode="${{ steps.version.outputs.build_number }}"
+          flutter build apk --debug
+          --build-name "${{ steps.version.outputs.build_name }}"
+          --build-number "${{ steps.version.outputs.build_number }}"
+
+      - name: Verify generated APK versionCode
+        env:
+          EXPECTED_VERSION_CODE: ${{ steps.version.outputs.build_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="build/app/outputs/flutter-apk/app-debug.apk"
+          aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          if [[ -z "${aapt_path}" ]]; then
+            echo "Could not find Android aapt" >&2
+            exit 1
+          fi
+
+          actual_version_code="$("${aapt_path}" dump badging "${apk_path}" |
+            sed -n "s/.*versionCode='\\([^']*\\)'.*/\\1/p" | head -n 1)"
+          if [[ -z "${actual_version_code}" ]]; then
+            echo "Could not read APK versionCode" >&2
+            exit 1
+          fi
+          if [[ "${actual_version_code}" != "${EXPECTED_VERSION_CODE}" ]]; then
+            echo "APK versionCode ${actual_version_code} does not match expected ${EXPECTED_VERSION_CODE}" >&2
+            exit 1
+          fi
+          echo "Verified APK versionCode: ${actual_version_code}"
 
       - name: Verify APK signing certificate
         env:
@@ -122,7 +145,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          apk_path="build/app/outputs/apk/debug/app-debug.apk"
+          apk_path="build/app/outputs/flutter-apk/app-debug.apk"
           apksigner_path="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           if [[ -z "${apksigner_path}" ]]; then
             echo "Could not find Android apksigner" >&2
@@ -151,14 +174,14 @@ jobs:
 
       - name: Rename APK with build identity
         run: >-
-          cp build/app/outputs/apk/debug/app-debug.apk
-          "build/app/outputs/apk/debug/pingplace-signed-test-${{ steps.version.outputs.version }}-${{ steps.version.outputs.commit_short }}-build${{ steps.version.outputs.build_number }}.apk"
+          cp build/app/outputs/flutter-apk/app-debug.apk
+          "build/app/outputs/flutter-apk/pingplace-signed-test-${{ steps.version.outputs.version }}-${{ steps.version.outputs.commit_short }}-build${{ steps.version.outputs.build_number }}.apk"
 
       - name: Upload signed test APK
         uses: actions/upload-artifact@v4
         with:
           name: pingplace-signed-test-apk-${{ steps.version.outputs.version }}-${{ steps.version.outputs.commit_short }}-build${{ steps.version.outputs.build_number }}
-          path: build/app/outputs/apk/debug/pingplace-signed-test-*.apk
+          path: build/app/outputs/flutter-apk/pingplace-signed-test-*.apk
           if-no-files-found: error
           retention-days: 30
 
