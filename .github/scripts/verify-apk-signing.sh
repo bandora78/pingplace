@@ -60,7 +60,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 1
   fi
 
-  apksigner_output="$("${apksigner_path}" verify --print-certs "${apk_path}")"
+  apksigner_output="$("${apksigner_path}" verify --print-certs "${apk_path}" 2>&1)"
   apk_fingerprint="$(printf '%s\n' "${apksigner_output}" | extract_apksigner_sha256)"
   if [[ -z "${apk_fingerprint}" ]]; then
     echo "::error::Missing APK certificate fingerprint: apksigner output did not contain a valid SHA-256 certificate digest" >&2
