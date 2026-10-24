@@ -27,6 +27,11 @@ final class GeofenceRegistration {
 final class GeofenceRecoveryStatus {
   const GeofenceRecoveryStatus({
     this.registrationConfirmed = false,
+    this.registrationState,
+    this.desiredMonitoring = false,
+    this.recoveryGeneration = 0,
+    this.schemaVersion,
+    this.reminderText,
     this.lastRecoveryAttempt,
     this.lastRecoverySuccess,
     this.lastRecoveryFailure,
@@ -36,6 +41,11 @@ final class GeofenceRecoveryStatus {
   });
 
   final bool registrationConfirmed;
+  final String? registrationState;
+  final bool desiredMonitoring;
+  final int recoveryGeneration;
+  final int? schemaVersion;
+  final String? reminderText;
   final DateTime? lastRecoveryAttempt;
   final DateTime? lastRecoverySuccess;
   final String? lastRecoveryFailure;
@@ -64,6 +74,7 @@ abstract interface class GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   });
 
   Future<void> remove();
@@ -135,6 +146,11 @@ final class MethodChannelGeofenceService implements GeofenceService {
         raw is String ? DateTime.tryParse(raw) : null;
     return GeofenceRecoveryStatus(
       registrationConfirmed: map['registrationConfirmed'] == true,
+      registrationState: map['registrationState'] as String?,
+      desiredMonitoring: map['desiredMonitoring'] == true,
+      recoveryGeneration: (map['recoveryGeneration'] as num?)?.toInt() ?? 0,
+      schemaVersion: (map['schemaVersion'] as num?)?.toInt(),
+      reminderText: map['reminderText'] as String?,
       lastRecoveryAttempt: parseDate(map['lastRecoveryAttempt']),
       lastRecoverySuccess: parseDate(map['lastRecoverySuccess']),
       lastRecoveryFailure: map['lastRecoveryFailure'] as String?,
@@ -155,10 +171,12 @@ final class MethodChannelGeofenceService implements GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   }) => _methodChannel.invokeMethod<void>('register', {
     'latitude': latitude,
     'longitude': longitude,
     'radius': radius,
+    'reminderText': reminderText,
   });
 
   @override
