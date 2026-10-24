@@ -100,6 +100,49 @@ void main() {
     expect(result.state, DetectionState.waitingForExit);
   });
 
+  test(
+    'repeated inner samples after cooldown expiry cannot notify before exit',
+    () {
+      final engine = createEngine();
+      final at = DateTime.utc(2026, 10, 10, 12);
+
+      engine.dispatch(const Arm());
+      engine.dispatch(OuterEnter(at: at));
+      final arrival = engine.dispatch(
+        LocationReceived(sampleAtMeters(70, at: at)),
+      );
+      expect(
+        arrival.contains(DetectionEffectType.notificationRequested),
+        isTrue,
+      );
+
+      final expired = engine.dispatch(
+        CooldownElapsed(at.add(const Duration(minutes: 10))),
+      );
+      expect(expired.state, DetectionState.waitingForExit);
+
+      final distances = [70.0, 60.0, 40.0];
+      for (var index = 0; index < distances.length; index++) {
+        final result = engine.dispatch(
+          LocationReceived(
+            sampleAtMeters(
+              distances[index],
+              at: at.add(Duration(minutes: 11 + index)),
+            ),
+          ),
+        );
+
+        expect(result.contains(DetectionEffectType.locationSample), isTrue);
+        expect(result.contains(DetectionEffectType.locationRejected), isFalse);
+        expect(result.state, DetectionState.waitingForExit);
+        expect(
+          result.contains(DetectionEffectType.notificationRequested),
+          isFalse,
+        );
+      }
+    },
+  );
+
   test('exit during cooldown allows immediate rearm at cooldown expiry', () {
     final engine = createEngine();
     final at = DateTime(2026, 10, 10, 12);
