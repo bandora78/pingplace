@@ -21,20 +21,63 @@ extract_keytool_sha256() {
 
 extract_apksigner_sha256() {
   awk '
+    function emit(value) {
+      gsub(/[[:space:]:\r]/, "", value)
+      value = tolower(value)
+      if (length(value) == 64 && value !~ /[^0-9a-f]/) {
+        print value
+        found = 1
+      }
+    }
     {
       line = tolower($0)
       if (line ~ /certificate[[:space:]]+sha-[[:space:]]*256[[:space:]]+digest[[:space:]]*:/) {
         value = $0
-        sub(/^[^:]*:/, "", value)
-        gsub(/[[:space:]:\r]/, "", value)
-        value = tolower(value)
-        if (length(value) == 64 && value !~ /[^0-9a-f]/) {
-          print value
+        sub(/^.*digest[[:space:]]*:/, "", value)
+        emit(value)
+        if (found) {
           exit
+        }
+        pending = 1
+        next
+      }
+      if (pending) {
+        value = $0
+        gsub(/[[:space:]:\r]/, "", value)
+        if (value ~ /^[0-9a-fA-F]+$/) {
+          wrapped = wrapped value
+          if (length(wrapped) == 64) {
+            print tolower(wrapped)
+            exit
+          }
+          if (length(wrapped) > 64) {
+            pending = 0
+          }
+        } else if (value != "") {
+          pending = 0
         }
       }
     }
   '
+}
+
+print_apksigner_structure() {
+  local stream_name="$1"
+  local stream_file="$2"
+  local line_count
+  local sha256_label_count
+
+  line_count="$(wc -l < "${stream_file}" | tr -d '[:space:]')"
+  sha256_label_count="$(awk '
+    {
+      line = tolower($0)
+      if (line ~ /certificate[[:space:]]+sha-[[:space:]]*256[[:space:]]+digest[[:space:]]*:/) {
+        count++
+      }
+    }
+    END { print count + 0 }
+  ' "${stream_file}")"
+  echo "apksigner ${stream_name}: lines=${line_count}, sha256-digest-labels=${sha256_label_count}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
@@ -55,12 +98,36 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 1
   fi
 
-  if ! "${apksigner_path}" verify "${apk_path}"; then
+  diagnostics_dir="$(mktemp -d)"
+  trap 'rm -rf "${diagnostics_dir}"' EXIT
+
+  set +e
+  "${apksigner_path}" verify "${apk_path}" \
+    >"${diagnostics_dir}/verify-stdout" 2>"${diagnostics_dir}/verify-stderr"
+  verify_status=$?
+  set -e
+  echo "apksigner verify exit status: ${verify_status}"
+  print_apksigner_structure verify-stdout "${diagnostics_dir}/verify-stdout"
+  print_apksigner_structure verify-stderr "${diagnostics_dir}/verify-stderr"
+  if [[ "${verify_status}" -ne 0 ]]; then
     echo "::error::APK signature verification failed: apksigner verify rejected the APK" >&2
     exit 1
   fi
 
-  apksigner_output="$("${apksigner_path}" verify --print-certs "${apk_path}" 2>&1)"
+  set +e
+  "${apksigner_path}" verify --print-certs "${apk_path}" \
+    >"${diagnostics_dir}/stdout" 2>"${diagnostics_dir}/stderr"
+  print_certs_status=$?
+  set -e
+
+  print_apksigner_structure stdout "${diagnostics_dir}/stdout"
+  print_apksigner_structure stderr "${diagnostics_dir}/stderr"
+  if [[ "${print_certs_status}" -ne 0 ]]; then
+    echo "::error::apksigner verify --print-certs failed with exit status ${print_certs_status}" >&2
+    exit 1
+  fi
+
+  apksigner_output="$(cat "${diagnostics_dir}/stdout" "${diagnostics_dir}/stderr")"
   apk_fingerprint="$(printf '%s\n' "${apksigner_output}" | extract_apksigner_sha256)"
   if [[ -z "${apk_fingerprint}" ]]; then
     echo "::error::Missing APK certificate fingerprint: apksigner output did not contain a valid SHA-256 certificate digest" >&2
