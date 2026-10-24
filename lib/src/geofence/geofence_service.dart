@@ -64,6 +64,7 @@ abstract interface class GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   });
 
   Future<void> remove();
@@ -155,10 +156,12 @@ final class MethodChannelGeofenceService implements GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   }) => _methodChannel.invokeMethod<void>('register', {
     'latitude': latitude,
     'longitude': longitude,
     'radius': radius,
+    'reminderText': reminderText,
   });
 
   @override

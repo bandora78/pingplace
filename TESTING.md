@@ -1,5 +1,31 @@
 # PingPlace Phase 0 testing
 
+## APP-04A desired-registration persistence
+
+The schema-1 desired-registration record stores one target, radius, reminder text
+and `desiredMonitoring`. Existing current/Activity preference namespaces are
+migrated only when the canonical record is absent. Migration commits and verifies
+the new record before use, preserves the source preferences and existing runtime
+reminder, and never combines partial targets or falls back from a corrupt or
+unsupported canonical record. Persistence diagnostics expose failure categories,
+not stored coordinates, reminder contents or JSON parser details.
+
+Registration/recovery must commit desired state before platform mutations.
+Removal commits the same configuration with `desiredMonitoring=false` before
+calling Android, keeping legacy data from being reactivated. Missing/corrupt
+configuration fails closed; a failed platform removal remains disabled and is
+reported as a failure. APP-04A adds no automatic removal retries, tombstones,
+generation-based coordination or stale-callback suppression. The existing
+startup confirmation shortcut is retained for APP-04B review.
+
+Run `cd android && ./gradlew :app:testDebugUnitTest` for behavioral persistence,
+migration and platform-call gating tests (including commit failure with an
+in-memory-only write). These tests use real JSON serialization and storage/platform
+fakes; they do not establish power-loss durability or OEM lifecycle behavior.
+Also run the existing Flutter notification, cooldown and rearm tests. On Xiaomi,
+verify upgrading preserves the target/reminder and that a removed target is not
+restored after reopening/reboot. Physical validation is still required.
+
 ## Real Android outer geofence test
 
 This task uses the official Google Play services Location Geofencing API (`play-services-location:21.3.0`) through a native Android implementation behind `GeofenceService`. It supports one non-expiring outer geofence and ENTER/EXIT transitions. Android delivery is best-effort: location services, device power management, Google Play services, permission state, and device movement all affect timing. The geofence-only procedure below is retained as the registration and outer-wake-up baseline; temporary precise verification and arrival notifications are covered in the Task 04 and Task 05 sections.
@@ -188,14 +214,14 @@ test procedure.
 Every push to `main` runs the **Flutter validation and debug APK** workflow in
 GitHub Actions. Open the repository's **Actions** tab, select the completed
 workflow run for the desired commit, and download the artifact named like
-`pingplace-1.0.0+5-<commit>`. The APK filename contains the same version/build
+`pingplace-1.0.0+6-<commit>`. The APK filename contains the same version/build
 and short source commit shown in the app's debug screen. GitHub Actions is the
 distribution path; APK binaries are not committed to the repository.
 
 To install a downloaded debug APK with ADB:
 
 ```bash
-adb install -r pingplace-1.0.0+5-<commit>.apk
+adb install -r pingplace-1.0.0+6-<commit>.apk
 ```
 
 If Android reports a signature conflict, uninstall the previous debug build
@@ -256,7 +282,7 @@ keytool -list -v -keystore "$env:USERPROFILE\.android\debug.keystore" `
 $sdk = if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { Join-Path $env:LOCALAPPDATA 'Android\Sdk' }
 $apksigner = Get-ChildItem (Join-Path $sdk 'build-tools') -Recurse -Filter apksigner.bat |
   Sort-Object FullName -Descending | Select-Object -First 1
-& $apksigner.FullName verify --print-certs .\pingplace-1.0.0+5-<commit>.apk
+& $apksigner.FullName verify --print-certs .\pingplace-1.0.0+6-<commit>.apk
 ```
 
 The SHA-256 certificate fingerprints must match. Matching fingerprints plus

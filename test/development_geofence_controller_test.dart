@@ -13,6 +13,7 @@ final class FakeGeofenceService implements GeofenceService {
       StreamController<GeofenceEvent>.broadcast();
   GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
   bool registered = false;
+  String? registeredReminderText;
   GeofenceRegistration? savedRegistration;
   GeofenceRecoveryStatus recovery = const GeofenceRecoveryStatus();
   int restoreCount = 0;
@@ -56,8 +57,10 @@ final class FakeGeofenceService implements GeofenceService {
     required double latitude,
     required double longitude,
     required double radius,
+    String? reminderText,
   }) async {
     registered = true;
+    registeredReminderText = reminderText;
     savedRegistration = GeofenceRegistration(
       latitude: latitude,
       longitude: longitude,
@@ -123,6 +126,22 @@ LocationServiceEvent locationEvent(
 }
 
 void main() {
+  test('registration forwards the current reminder unchanged', () async {
+    final service = FakeGeofenceService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.setReminderText('  תזכורת שמורה  ');
+    await controller.register();
+
+    expect(service.registeredReminderText, '  תזכורת שמורה  ');
+    expect(controller.registered, isTrue);
+    expect(controller.state, DetectionState.armed);
+    controller.dispose();
+  });
+
   test(
     'manual recovery is visible and does not alter detection state',
     () async {
