@@ -37,51 +37,57 @@ object GeofenceRecovery {
     fun registrationPreferences(context: Context) =
         context.getSharedPreferences(REGISTRATION_PREFS, Context.MODE_PRIVATE)
 
-    fun readRegistration(context: Context): Registration? {
-        val current = registrationPreferences(context)
-        val currentRegistration = parseRegistration(current)
-        if (currentRegistration != null) return currentRegistration
+    internal fun desiredStore(context: Context) =
+        DesiredRegistrationStore(AndroidDesiredRegistrationStorage(context))
 
-        // Preserve registrations written by the pre-Task-07 Activity preferences.
-        val legacyNames = listOf(
-            "MainActivity_preferences",
-            "com.example.pingplace.MainActivity_preferences",
-        )
-        for (name in legacyNames) {
-            val legacy = context.getSharedPreferences(name, Context.MODE_PRIVATE)
-            val registration = parseRegistration(legacy) ?: continue
-            writeRegistration(context, registration)
-            return registration
+    internal fun recordPersistenceFailure(
+        context: Context,
+        error: DesiredRegistrationStore.StoreException,
+    ) {
+        val message = "GEOFENCE_STATE_${error.failure.name}"
+        android.util.Log.e("PingPlace", message)
+        try {
+            recordDiagnostic(context, message)
+        } catch (_: Exception) {
+            // Logcat remains available even when preference-backed diagnostics fail.
         }
-        return null
     }
 
-    fun writeRegistration(context: Context, registration: Registration) {
-        registrationPreferences(context).edit()
-            .putString("latitude", registration.latitude.toString())
-            .putString("longitude", registration.longitude.toString())
-            .putString("radius", registration.radius.toString())
-            .apply()
-    }
-
-    fun clearRegistration(context: Context) {
-        registrationPreferences(context).edit().clear().apply()
-        context.getSharedPreferences("MainActivity_preferences", Context.MODE_PRIVATE).edit().clear().apply()
-    }
+    fun readRegistration(context: Context): Registration? =
+        try {
+            desiredStore(context)
+                .load()
+                ?.takeIf { it.desiredMonitoring }
+                ?.let { Registration(it.latitude, it.longitude, it.radius) }
+        } catch (error: DesiredRegistrationStore.StoreException) {
+            recordPersistenceFailure(context, error)
+            null
+        }
 
     fun markRegistrationConfirmed(context: Context, confirmed: Boolean) {
-        val editor = recoveryPreferences(context).edit().putBoolean(CONFIRMED, confirmed)
-        if (confirmed) editor.putString(LAST_SUCCESS, Instant.now().toString())
-        editor.apply()
+        val committed =
+            try {
+                val editor = recoveryPreferences(context).edit().putBoolean(CONFIRMED, confirmed)
+                if (confirmed) editor.putString(LAST_SUCCESS, Instant.now().toString())
+                editor.commit()
+            } catch (_: Exception) {
+                false
+            }
+        if (!committed) {
+            throw DesiredRegistrationStore.StoreException(
+                DesiredRegistrationStore.Failure.PERSISTENCE_FAILED
+            )
+        }
     }
 
     fun isRegistrationConfirmed(context: Context): Boolean =
-        recoveryPreferences(context).getBoolean(CONFIRMED, false)
+        readRegistration(context) != null &&
+            recoveryPreferences(context).getBoolean(CONFIRMED, false)
 
     fun status(context: Context): Map<String, Any?> {
         val preferences = recoveryPreferences(context)
         return mapOf(
-            "registrationConfirmed" to preferences.getBoolean(CONFIRMED, false),
+            "registrationConfirmed" to isRegistrationConfirmed(context),
             "lastRecoveryAttempt" to preferences.getString(LAST_ATTEMPT, null),
             "lastRecoverySuccess" to preferences.getString(LAST_SUCCESS, null),
             "lastRecoveryFailure" to preferences.getString(LAST_FAILURE, null),
@@ -129,7 +135,8 @@ object GeofenceRecovery {
         val previouslyConfirmed = preferences.getBoolean(CONFIRMED, false)
         val startedAt = Instant.now().toString()
         val diagnosticPrefix = if (reason == "boot") "BOOT_RECOVERY" else "GEOFENCE_RECOVERY"
-        preferences.edit()
+        preferences
+            .edit()
             .putString(LAST_ATTEMPT, startedAt)
             .remove(LAST_FAILURE)
             .putBoolean(CONFIRMED, false)
@@ -141,11 +148,13 @@ object GeofenceRecovery {
             if (!callbackCompleted.compareAndSet(false, true)) return
             synchronized(lock) { inFlight = false }
             if (success) {
-                val timestamp = Instant.now().toString()
-                preferences.edit()
-                    .putBoolean(CONFIRMED, true)
-                    .putString(LAST_SUCCESS, timestamp)
-                    .apply()
+                try {
+                    markRegistrationConfirmed(context, true)
+                } catch (failure: DesiredRegistrationStore.StoreException) {
+                    recordPersistenceFailure(context, failure)
+                    callback(false, failure.message)
+                    return
+                }
                 recordDiagnostic(context, "${diagnosticPrefix}_COMPLETED reason=$reason")
                 recordDiagnostic(context, "GEOFENCE_RESTORED")
             } else {
@@ -156,81 +165,93 @@ object GeofenceRecovery {
             callback(success, error)
         }
 
-        val registration = readRegistration(context)
-        if (registration == null) {
-            finish(false, "No saved geofence configuration")
-            return
-        }
-        context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE).edit()
-            .putString("target_latitude", registration.latitude.toString())
-            .putString("target_longitude", registration.longitude.toString())
-            .apply()
-        val permissionFailure = locationPermissionFailure(context)
-        if (permissionFailure != null) {
-            finish(false, permissionFailure)
-            return
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-            !(context.getSystemService(LocationManager::class.java)?.isLocationEnabled ?: false)
-        ) {
-            finish(false, "Location services are disabled")
-            return
-        }
+        try {
+            desiredStore(context).restore ready@{ desired ->
+                val registration = Registration(desired.latitude, desired.longitude, desired.radius)
+                context
+                    .getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("target_latitude", registration.latitude.toString())
+                    .putString("target_longitude", registration.longitude.toString())
+                    .apply()
+                val permissionFailure = locationPermissionFailure(context)
+                if (permissionFailure != null) {
+                    finish(false, permissionFailure)
+                    return@ready
+                }
+                if (
+                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                        !(context.getSystemService(LocationManager::class.java)?.isLocationEnabled
+                            ?: false)
+                ) {
+                    finish(false, "Location services are disabled")
+                    return@ready
+                }
 
-        val geofence = Geofence.Builder()
-            .setRequestId(GEOfENCE_ID)
-            .setCircularRegion(registration.latitude, registration.longitude, registration.radius)
-            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-            .build()
-        val request = GeofencingRequest.Builder()
-            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofence(geofence)
-            .build()
-        val pendingIntent = GeofencePendingIntent.get(context)
-        val client = LocationServices.getGeofencingClient(context)
-        fun addRegistration() {
-            try {
-                client.addGeofences(request, pendingIntent)
-                    .addOnSuccessListener { finish(true, null) }
-                    .addOnFailureListener { error ->
+                val geofence =
+                    Geofence.Builder()
+                        .setRequestId(GEOfENCE_ID)
+                        .setCircularRegion(
+                            registration.latitude,
+                            registration.longitude,
+                            registration.radius,
+                        )
+                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                        .setTransitionTypes(
+                            Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT
+                        )
+                        .build()
+                val request =
+                    GeofencingRequest.Builder()
+                        .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+                        .addGeofence(geofence)
+                        .build()
+                val pendingIntent = GeofencePendingIntent.get(context)
+                val client = LocationServices.getGeofencingClient(context)
+                fun addRegistration() {
+                    try {
+                        client
+                            .addGeofences(request, pendingIntent)
+                            .addOnSuccessListener { finish(true, null) }
+                            .addOnFailureListener { error ->
+                                finish(
+                                    false,
+                                    "Geofence registration failed: ${error.message ?: error}",
+                                )
+                            }
+                    } catch (error: Exception) {
                         finish(false, "Geofence registration failed: ${error.message ?: error}")
                     }
-            } catch (error: Exception) {
-                finish(false, "Geofence registration failed: ${error.message ?: error}")
-            }
-        }
-        if (!previouslyConfirmed) {
-            recordDiagnostic(context, "GEOFENCE_REMOVE_SKIPPED_NO_CONFIRMED_REGISTRATION")
-            addRegistration()
-            return
-        }
-        try {
-            client.removeGeofences(pendingIntent).addOnCompleteListener { removalTask ->
-                if (!removalTask.isSuccessful) {
-                    val error = removalTask.exception?.message ?: "Unknown geofence removal failure"
-                    finish(false, "Geofence removal failed; registration was not replaced: $error")
-                    return@addOnCompleteListener
                 }
-                addRegistration()
+                if (!previouslyConfirmed) {
+                    recordDiagnostic(context, "GEOFENCE_REMOVE_SKIPPED_NO_CONFIRMED_REGISTRATION")
+                    addRegistration()
+                    return@ready
+                }
+                try {
+                    client.removeGeofences(pendingIntent).addOnCompleteListener { removalTask ->
+                        if (!removalTask.isSuccessful) {
+                            val error =
+                                removalTask.exception?.message ?: "Unknown geofence removal failure"
+                            finish(
+                                false,
+                                "Geofence removal failed; registration was not replaced: $error",
+                            )
+                            return@addOnCompleteListener
+                        }
+                        addRegistration()
+                    }
+                } catch (error: Exception) {
+                    finish(
+                        false,
+                        "Geofence removal failed; registration was not replaced: ${error.message ?: error}",
+                    )
+                }
             }
-        } catch (error: Exception) {
-            finish(false, "Geofence removal failed; registration was not replaced: ${error.message ?: error}")
+        } catch (error: DesiredRegistrationStore.StoreException) {
+            recordPersistenceFailure(context, error)
+            finish(false, error.message)
         }
-    }
-
-    private fun parseRegistration(preferences: android.content.SharedPreferences): Registration? {
-        val latitude = preferences.getString("latitude", null)?.toDoubleOrNull()
-            ?: preferences.getString("geofence_latitude", null)?.toDoubleOrNull()
-        val longitude = preferences.getString("longitude", null)?.toDoubleOrNull()
-            ?: preferences.getString("geofence_longitude", null)?.toDoubleOrNull()
-        val radius = preferences.getString("radius", null)?.toFloatOrNull()
-            ?: preferences.getString("geofence_radius", null)?.toFloatOrNull()
-        if (latitude == null || longitude == null || radius == null ||
-            !latitude.isFinite() || latitude < -90.0 || latitude > 90.0 ||
-            !longitude.isFinite() || longitude < -180.0 || longitude > 180.0 || radius <= 0f
-        ) return null
-        return Registration(latitude, longitude, radius)
     }
 
     private fun locationPermissionFailure(context: Context): String? {
