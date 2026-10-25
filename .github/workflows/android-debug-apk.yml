@@ -74,8 +74,8 @@ jobs:
         with:
           name: android-jvm-test-reports
           path: |
-            android/app/build/test-results/testDebugUnitTest/**/*.xml
-            android/app/build/reports/tests/testDebugUnitTest/**
+            build/app/test-results/testDebugUnitTest/**/*.xml
+            build/app/reports/tests/testDebugUnitTest/**
           if-no-files-found: warn
           retention-days: 14
 
