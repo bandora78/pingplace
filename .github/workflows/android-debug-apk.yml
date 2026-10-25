@@ -43,6 +43,8 @@ jobs:
             exit 1
           fi
           echo "version=${version_line}" >> "${GITHUB_OUTPUT}"
+          echo "build_name=${version_line%%+*}" >> "${GITHUB_OUTPUT}"
+          echo "build_number=${version_line##*+}" >> "${GITHUB_OUTPUT}"
 
           short_sha="${GITHUB_SHA::7}"
           echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
@@ -80,7 +82,31 @@ jobs:
           retention-days: 14
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: |
+          flutter build apk --debug \
+            --build-name "${{ steps.version.outputs.build_name }}" \
+            --build-number "${{ steps.version.outputs.build_number }}" \
+            --dart-define=PINGPLACE_APP_VERSION="${{ steps.version.outputs.build_name }}" \
+            --dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.build_number }}" \
+            --dart-define=PINGPLACE_GIT_SHA="${{ steps.version.outputs.short_sha }}" \
+            --dart-define=PINGPLACE_BUILD_TYPE=debug
+
+      - name: Verify APK package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk_path="build/app/outputs/flutter-apk/app-debug.apk"
+          aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          if [[ -z "${aapt_path}" ]]; then
+            echo "Android build-tools aapt was not found" >&2
+            exit 1
+          fi
+          badging="$("${aapt_path}" dump badging "${apk_path}")"
+          actual_version_name="$(grep -o "versionName=\x27[^\x27]*\x27" <<< "${badging}" | head -n 1 | cut -d\x27 -f2)"
+          actual_version_code="$(grep -o "versionCode=\x27[^\x27]*\x27" <<< "${badging}" | head -n 1 | cut -d\x27 -f2)"
+          echo "APK versionName=${actual_version_name} versionCode=${actual_version_code}"
+          test "${actual_version_name}" = "${{ steps.version.outputs.build_name }}"
+          test "${actual_version_code}" = "${{ steps.version.outputs.build_number }}"
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
