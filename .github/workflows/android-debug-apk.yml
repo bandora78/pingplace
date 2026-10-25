@@ -56,6 +56,29 @@ jobs:
       - name: Run tests
         run: flutter test
 
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Generate Gradle wrapper
+        working-directory: android
+        run: gradle wrapper --gradle-version 9.3.1 --distribution-type all
+
+      - name: Run Android JVM tests
+        run: cd android && ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=1
+
+      - name: Upload Android JVM test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jvm-test-reports
+          path: |
+            android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/app/build/reports/tests/testDebugUnitTest/**
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Build debug APK
         run: flutter build apk --debug
 
