@@ -102,8 +102,8 @@ jobs:
             exit 1
           fi
           badging="$("${aapt_path}" dump badging "${apk_path}")"
-          actual_version_name="$(grep -o "versionName=\x27[^\x27]*\x27" <<< "${badging}" | head -n 1 | cut -d\x27 -f2)"
-          actual_version_code="$(grep -o "versionCode=\x27[^\x27]*\x27" <<< "${badging}" | head -n 1 | cut -d\x27 -f2)"
+          actual_version_name="$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)"
+          actual_version_code="$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)"
           echo "APK versionName=${actual_version_name} versionCode=${actual_version_code}"
           test "${actual_version_name}" = "${{ steps.version.outputs.build_name }}"
           test "${actual_version_code}" = "${{ steps.version.outputs.build_number }}"
