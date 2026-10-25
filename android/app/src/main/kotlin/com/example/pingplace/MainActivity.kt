@@ -8,9 +8,6 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.Geofence
-import com.google.android.gms.location.GeofencingRequest
-import com.google.android.gms.location.LocationServices
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.EventChannel
@@ -22,7 +19,6 @@ class MainActivity : FlutterActivity() {
     private val eventChannelName = "pingplace/geofence/events"
     private val locationMethodChannelName = "pingplace/location"
     private val locationEventChannelName = "pingplace/location/events"
-    private val geofenceId = "pingplace-phase0-outer"
     private val permissionRequestCode = 4201
     private var permissionResult: MethodChannel.Result? = null
     private var eventSink: EventChannel.EventSink? = null
@@ -166,119 +162,48 @@ class MainActivity : FlutterActivity() {
 
     private fun register(call: MethodCall, result: MethodChannel.Result) {
         if (permissionStatus() != "backgroundAllowed") {
-            result.error(
-                "PERMISSION_MISSING",
-                "Background location permission is required",
-                permissionStatus(),
-            )
+            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
             return
         }
-        val latitude = (call.argument<Number>("latitude"))?.toDouble()
-        val longitude = (call.argument<Number>("longitude"))?.toDouble()
-        val radius = (call.argument<Number>("radius"))?.toFloat()
+        val latitude = call.argument<Number>("latitude")?.toDouble()
+        val longitude = call.argument<Number>("longitude")?.toDouble()
+        val radius = call.argument<Number>("radius")?.toFloat()
         if (latitude == null || longitude == null || radius == null || radius <= 0) {
-            result.error(
-                "INVALID_ARGUMENT",
-                "Valid latitude, longitude, and radius are required",
-                null,
-            )
+            result.error("INVALID_ARGUMENT", "Valid latitude, longitude, and radius are required", null)
             return
         }
-        if (!latitude.isFinite() || latitude < -90.0 || latitude > 90.0) {
-            result.error("INVALID_COORDINATES", "Latitude must be between -90 and 90", latitude)
+        if (!latitude.isFinite() || latitude !in -90.0..90.0) {
+            result.error("INVALID_COORDINATES", "Latitude must be between -90 and 90", null)
             return
         }
-        if (!longitude.isFinite() || longitude < -180.0 || longitude > 180.0) {
-            result.error("INVALID_COORDINATES", "Longitude must be between -180 and 180", longitude)
+        if (!longitude.isFinite() || longitude !in -180.0..180.0) {
+            result.error("INVALID_COORDINATES", "Longitude must be between -180 and 180", null)
             return
         }
-        try {
-            GeofenceRecovery.desiredStore(this).register(
-                latitude,
-                longitude,
-                radius,
-                call.argument<String>("reminderText"),
-            ) {
-                GeofenceRecovery.markRegistrationConfirmed(this, false)
-                val pendingIntent = GeofencePendingIntent.get(this)
-                val geofence =
-                    Geofence.Builder()
-                        .setRequestId(geofenceId)
-                        .setCircularRegion(latitude, longitude, radius)
-                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                        .setTransitionTypes(
-                            Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT
-                        )
-                        .build()
-                val request =
-                    GeofencingRequest.Builder()
-                        .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-                        .addGeofence(geofence)
-                        .build()
-                LocationServices.getGeofencingClient(this)
-                    .removeGeofences(pendingIntent)
-                    .addOnCompleteListener {
-                        LocationServices.getGeofencingClient(this)
-                            .addGeofences(request, pendingIntent)
-                            .addOnSuccessListener {
-                                try {
-                                    GeofenceRecovery.markRegistrationConfirmed(this, true)
-                                    getSharedPreferences(GeofenceEventBus.PREFS, MODE_PRIVATE)
-                                        .edit()
-                                        .putString("target_latitude", latitude.toString())
-                                        .putString("target_longitude", longitude.toString())
-                                        .apply()
-                                    result.success(null)
-                                } catch (error: DesiredRegistrationStore.StoreException) {
-                                    persistenceError(result, error)
-                                }
-                            }
-                            .addOnFailureListener { error ->
-                                result.error(
-                                    "GEOFENCE_REGISTRATION_FAILED",
-                                    error.message,
-                                    error.toString(),
-                                )
-                            }
-                    }
+        GeofenceRecovery.register(this, latitude, longitude, radius, call.argument<String>("reminderText")) { success, error ->
+            runOnUiThread {
+                if (success) result.success(null)
+                else if (error?.startsWith("Desired geofence state:") == true) result.error("PERSISTENCE_FAILED", error, null)
+                else result.error("GEOFENCE_REGISTRATION_FAILED", error, null)
             }
-        } catch (error: DesiredRegistrationStore.StoreException) {
-            persistenceError(result, error)
         }
     }
 
     private fun remove(result: MethodChannel.Result) {
-        try {
-            GeofenceRecovery.desiredStore(this).remove {
-                GeofenceRecovery.markRegistrationConfirmed(this, false)
-                LocationServices.getGeofencingClient(this)
-                    .removeGeofences(GeofencePendingIntent.get(this))
-                    .addOnSuccessListener { result.success(null) }
-                    .addOnFailureListener { error ->
-                        result.error("GEOFENCE_REMOVE_FAILED", error.message, error.toString())
-                    }
+        GeofenceRecovery.remove(this) { success, error ->
+            runOnUiThread {
+                if (success) result.success(null)
+                else if (error?.startsWith("Desired geofence state:") == true) result.error("PERSISTENCE_FAILED", error, null)
+                else result.error("GEOFENCE_REMOVE_FAILED", error, null)
             }
-        } catch (error: DesiredRegistrationStore.StoreException) {
-            persistenceError(result, error)
         }
     }
-
-    private fun persistenceError(
-        result: MethodChannel.Result,
-        error: DesiredRegistrationStore.StoreException,
-    ) {
-        GeofenceRecovery.recordPersistenceFailure(this, error)
-        result.error(error.failure.name, error.message, null)
-    }
-
     private fun restoreRegistration() {
-        if (GeofenceRecovery.isRegistrationConfirmed(this)) {
-            GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_RECOVERY_SKIPPED_CONFIRMED")
-            return
+        // A persisted confirmation is not proof that the platform still owns it.
+        GeofenceRecovery.restore(this, "ui_startup") { success, _ ->
+            if (!success) GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_STARTUP_RECONCILIATION_FAILED")
         }
-        GeofenceRecovery.restore(this, "ui_startup") { _, _ -> }
     }
-
     private fun restoreGeofence(result: MethodChannel.Result) {
         GeofenceRecovery.restore(this, "manual") { success, error ->
             if (success) result.success(true)
@@ -296,3 +221,4 @@ class MainActivity : FlutterActivity() {
         )
     }
 }
+

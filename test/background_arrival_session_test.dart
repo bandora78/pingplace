@@ -74,4 +74,46 @@ void main() {
       session.dispose();
     },
   );
+  test('missing background failure detail is diagnosed without null', () async {
+    final diagnostics = <String>[];
+    final session = BackgroundArrivalSession(
+      onDiagnostic: diagnostics.add,
+      onCommand: (_) async {},
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+      notificationService: InMemoryNotificationService(),
+    );
+
+    await session.handleEvent({'type': 'error', 'error': null});
+
+    expect(
+      diagnostics,
+      contains('BACKGROUND_EVENT_FAILED: MISSING_ERROR_DETAIL'),
+    );
+    expect(diagnostics, isNot(contains('null')));
+    session.dispose();
+  });
+  test('valid background failure detail is preserved', () async {
+    final diagnostics = <String>[];
+    final session = BackgroundArrivalSession(
+      onDiagnostic: diagnostics.add,
+      onCommand: (_) async {},
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+      notificationService: InMemoryNotificationService(),
+    );
+
+    await session.handleEvent({
+      'type': 'error',
+      'error': 'GEOFENCE_EVENT_FAILED: registration lost',
+    });
+
+    expect(
+      diagnostics,
+      contains(
+        'BACKGROUND_EVENT_FAILED: GEOFENCE_EVENT_FAILED: registration lost',
+      ),
+    );
+    expect(diagnostics, isNot(contains('MISSING_ERROR_DETAIL')));
+    session.dispose();
+  });
 }
+

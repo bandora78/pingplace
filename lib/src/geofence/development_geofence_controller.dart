@@ -42,7 +42,9 @@ final class DevelopmentGeofenceController {
   SmartArrivalConfig _config;
   final DateTime Function() _clock;
   final List<GeofenceListener> _listeners = [];
-  Future<void> _recoveryTail = Future<void>.value();
+  Future<void> _operationTail = Future<void>.value();
+  int _operationGeneration = 0;
+  bool _desiredMonitoring = false;
   final List<String> _eventLog = [];
   StreamSubscription<GeofenceEvent>? _geofenceSubscription;
   StreamSubscription<LocationServiceEvent>? _locationSubscription;
@@ -110,6 +112,7 @@ final class DevelopmentGeofenceController {
     await refreshPermission();
     try {
       registered = await service.registrationStatus;
+      _desiredMonitoring = registered;
       recoveryStatus = await service.recoveryStatus;
       final savedRegistration = await service.registration;
       if (savedRegistration != null) {
@@ -135,10 +138,15 @@ final class DevelopmentGeofenceController {
   }
 
   Future<void> restoreGeofence() {
-    final previous = _recoveryTail;
-    final next = previous.then((_) => _restoreGeofence());
-    _recoveryTail = next.catchError((Object _) {});
-    return next;
+    _desiredMonitoring = true;
+    return _enqueueOperation(() async {
+      lastError = null;
+      if (!_desiredMonitoring && registered) {
+        _fail('GEOFENCE_RECOVERY_BLOCKED desiredMonitoring=false');
+        return;
+      }
+      await _restoreGeofence();
+    });
   }
 
   Future<void> _restoreGeofence() async {
@@ -198,46 +206,76 @@ final class DevelopmentGeofenceController {
     _notifyListeners();
   }
 
-  Future<void> register() async {
-    lastError = null;
-    if (!initialized) {
-      _fail('INITIALIZATION_INCOMPLETE: wait for PingPlace to finish loading.');
-      return;
-    }
-    if (!_syncTarget()) return;
-    _log('GEOFENCE_REGISTER_REQUESTED');
-    if (permission != GeofencePermissionStatus.backgroundAllowed) {
-      _log('PERMISSION_MISSING ${permission.name}');
-      lastError = 'Background location permission is required.';
-      _notifyListeners();
-      return;
-    }
-    try {
-      await service.register(
-        latitude: latitude,
-        longitude: longitude,
-        radius: radius,
-        reminderText: reminderText,
-      );
-      registered = true;
-      _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
-      await _dispatch(const Arm());
-    } catch (error) {
-      _fail('GEOFENCE_REGISTRATION_FAILED: $error');
-    }
+  Future<void> register() {
+    _desiredMonitoring = true;
+    return _enqueueOperation(() async {
+      lastError = null;
+      if (!initialized) {
+        _fail(
+          'INITIALIZATION_INCOMPLETE: wait for PingPlace to finish loading.',
+        );
+        return;
+      }
+      if (!_syncTarget()) return;
+      _log('GEOFENCE_REGISTER_REQUESTED');
+      if (permission != GeofencePermissionStatus.backgroundAllowed) {
+        _log('PERMISSION_MISSING ${permission.name}');
+        lastError = 'Background location permission is required.';
+        _notifyListeners();
+        return;
+      }
+      try {
+        await service.register(
+          latitude: latitude,
+          longitude: longitude,
+          radius: radius,
+          reminderText: reminderText,
+        );
+        if (!_desiredMonitoring) {
+          _log('GEOFENCE_REGISTER_CALLBACK_STALE');
+          return;
+        }
+        registered = true;
+        _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
+        await _dispatch(const Arm());
+      } catch (error) {
+        if (_desiredMonitoring) {
+          _fail('GEOFENCE_REGISTRATION_FAILED: ${error.runtimeType}');
+        }
+      }
+    });
   }
 
-  Future<void> remove() async {
-    lastError = null;
-    await _stopPreciseLocation();
-    try {
-      await service.remove();
-      registered = false;
-      _log('GEOFENCE_REMOVED');
-      _notifyListeners();
-    } catch (error) {
-      _fail('GEOFENCE_REMOVE_FAILED: $error');
-    }
+  Future<void> remove() {
+    _desiredMonitoring = false;
+    return _enqueueOperation(() async {
+      lastError = null;
+      await _stopPreciseLocation();
+      try {
+        await service.remove();
+        if (_desiredMonitoring) {
+          _log('GEOFENCE_REMOVE_CALLBACK_STALE');
+          return;
+        }
+        registered = false;
+        _log('GEOFENCE_REMOVED');
+        _notifyListeners();
+      } catch (error) {
+        if (!_desiredMonitoring) {
+          _fail('GEOFENCE_REMOVE_FAILED: ${error.runtimeType}');
+        }
+      }
+    });
+  }
+
+  Future<void> _enqueueOperation(Future<void> Function() operation) {
+    final generation = ++_operationGeneration;
+    final next = _operationTail.then((_) async {
+      if (generation != _operationGeneration && !_desiredMonitoring) return;
+      await operation();
+    });
+    _operationTail = next.catchError((Object _) {});
+    return next;
   }
 
   void resetTest() {
@@ -261,6 +299,8 @@ final class DevelopmentGeofenceController {
     _approachTimer?.cancel();
     _cooldownTimer?.cancel();
     _locationGeneration++;
+    _operationGeneration++;
+    _desiredMonitoring = false;
     unawaited(locationService.stop());
     locationService.dispose();
     service.dispose();
@@ -542,3 +582,4 @@ final class DevelopmentGeofenceController {
     }
   }
 }
+
