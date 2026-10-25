@@ -181,7 +181,10 @@ final class MethodChannelGeofenceService implements GeofenceService {
   static GeofenceEvent _parseEvent(Map<dynamic, dynamic> value) {
     final type = value['type'] as String?;
     final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
-    final error = value['error'] as String?;
+    final rawError = value['error'];
+    final error = rawError is String && rawError.trim().isNotEmpty
+        ? rawError
+        : null;
     final eventType = switch (type) {
       'enter' => GeofenceEventType.enter,
       'exit' => GeofenceEventType.exit,
@@ -198,3 +201,4 @@ final class MethodChannelGeofenceService implements GeofenceService {
     );
   }
 }
+

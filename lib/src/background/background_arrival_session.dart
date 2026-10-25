@@ -50,9 +50,11 @@ final class BackgroundArrivalSession {
     await _ensureEngine();
     final type = payload['type'] as String?;
     if (type == 'error') {
-      onDiagnostic(
-        'BACKGROUND_EVENT_FAILED: ${payload['error'] ?? 'Unknown background event'}',
-      );
+      final rawError = payload['error'];
+      final detail = rawError is String && rawError.trim().isNotEmpty
+          ? rawError.trim()
+          : 'MISSING_ERROR_DETAIL';
+      onDiagnostic('BACKGROUND_EVENT_FAILED: $detail');
       await onCommand('stop');
     } else if (type == 'enter') {
       final latitude = (payload['targetLatitude'] as num?)?.toDouble();
@@ -308,3 +310,4 @@ final class BackgroundArrivalSession {
     }
   }
 }
+

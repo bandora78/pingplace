@@ -21,19 +21,22 @@ void main() {
   });
 
   test('registration and removal use the shared PendingIntent helper', () {
-    final source = File(
+    final activitySource = File(
       'android/app/src/main/kotlin/com/example/pingplace/MainActivity.kt',
     ).readAsStringSync();
+    final recoverySource = File(
+      'android/app/src/main/kotlin/com/example/pingplace/GeofenceRecovery.kt',
+    ).readAsStringSync();
 
+    expect(activitySource, contains('GeofenceRecovery.register'));
+    expect(activitySource, contains('GeofenceRecovery.remove'));
     expect(
-      source,
-      contains('val pendingIntent = GeofencePendingIntent.get(this)'),
+      recoverySource,
+      contains('val pendingIntent = GeofencePendingIntent.get(context)'),
     );
-    expect(source, contains('addGeofences(request, pendingIntent)'));
-    expect(source, contains('removeGeofences(pendingIntent)'));
-    expect(
-      source,
-      contains('removeGeofences(GeofencePendingIntent.get(this))'),
-    );
+    expect(recoverySource, contains('addGeofences(request, pendingIntent)'));
+    expect(recoverySource, contains('removeGeofences(pendingIntent)'));
+    expect(recoverySource, contains('GeofenceLifecycleCoordinator'));
   });
 }
+

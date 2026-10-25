@@ -91,7 +91,8 @@ object GeofenceEventBus {
 
     @Synchronized
     fun publish(context: Context, type: String, error: String?) {
-        val event = PendingGeofenceEvent(type, Instant.now().toString(), error)
+        val safeError = if (type == "error" && error.isNullOrBlank()) "Missing geofence event detail" else error
+        val event = PendingGeofenceEvent(type, Instant.now().toString(), safeError)
         val currentSink = sink
         if (currentSink != null) {
             currentSink(event.toPayload())
@@ -153,3 +154,4 @@ object GeofenceEventBus {
         )
     }
 }
+
