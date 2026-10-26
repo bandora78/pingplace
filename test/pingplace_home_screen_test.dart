@@ -15,6 +15,7 @@ final class HomeFakeGeofenceService implements GeofenceService {
   int eventsReadCount = 0;
   bool registered = false;
   GeofenceRegistration? savedRegistration;
+  Object? registerError;
 
   @override
   Stream<GeofenceEvent> get events {
@@ -50,6 +51,7 @@ final class HomeFakeGeofenceService implements GeofenceService {
     required double radius,
     String? reminderText,
   }) async {
+    if (registerError != null) throw registerError!;
     registered = true;
     savedRegistration = GeofenceRegistration(
       latitude: latitude,
@@ -151,6 +153,53 @@ void main() {
     controller.dispose();
   });
 
+  test('invalid target input does not mutate or persist the active target', () async {
+    final service = HomeFakeGeofenceService();
+    final store = InMemoryArrivalRuntimeStore();
+    final controller = createController(service: service, store: store);
+    await controller.initialize();
+
+    final result = await controller.registerTarget(
+      targetLatitude: 91,
+      targetLongitude: 34.8,
+      targetRadius: 300,
+      targetReminderText: 'חדש',
+    );
+
+    expect(result, isFalse);
+    expect(controller.latitude, 32);
+    expect(controller.longitude, 34.8);
+    expect(controller.reminderText, store.reminderText);
+    expect(service.registered, isFalse);
+    controller.dispose();
+  });
+
+  test('failed platform registration preserves the previously saved target', () async {
+    final service = HomeFakeGeofenceService()
+      ..registerError = StateError('platform unavailable');
+    final store = InMemoryArrivalRuntimeStore()..reminderText = 'תזכורת קיימת';
+    final controller = createController(service: service, store: store);
+    await controller.initialize();
+    controller
+      ..latitude = 31.664913
+      ..longitude = 34.8
+      ..radius = 300;
+    await controller.registerTarget(
+      targetLatitude: 31.7,
+      targetLongitude: 34.9,
+      targetRadius: 250,
+      targetReminderText: 'תזכורת חדשה',
+    );
+
+    expect(controller.latitude, 31.664913);
+    expect(controller.longitude, 34.8);
+    expect(controller.radius, 300);
+    expect(controller.reminderText, 'תזכורת קיימת');
+    expect(store.reminderText, 'תזכורת קיימת');
+    expect(controller.registered, isFalse);
+    expect(controller.lastError, contains('GEOFENCE_REGISTRATION_FAILED'));
+    controller.dispose();
+  });
   test('initialization is idempotent and preserves the saved target', () async {
     final service = HomeFakeGeofenceService();
     final store = InMemoryArrivalRuntimeStore()

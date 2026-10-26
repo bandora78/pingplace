@@ -87,14 +87,22 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
       );
       return;
     }
-    controller
-      ..latitude = latitude
-      ..longitude = longitude
-      ..radius = radius;
-    await controller.setReminderText(reminderController.text);
-    await controller.register();
-  }
 
+    final succeeded = await controller.registerTarget(
+      targetLatitude: latitude,
+      targetLongitude: longitude,
+      targetRadius: radius,
+      targetReminderText: reminderController.text,
+    );
+    if (!mounted || succeeded) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          controller.lastError ?? 'שמירת היעד והפעלת המעקב נכשלו',
+        ),
+      ),
+    );
+  }
   void _openDeveloperMode() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
