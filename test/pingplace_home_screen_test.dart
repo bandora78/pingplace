@@ -85,6 +85,31 @@ final class HomeFakeLocationService implements LocationService {
   void dispose() => unawaited(eventsController.close());
 }
 
+final class FailingReminderStore implements ArrivalRuntimeStore {
+  DetectionRuntimeSnapshot? snapshot = const DetectionRuntimeSnapshot(
+    state: DetectionState.disarmed,
+    target: TargetLocation(latitude: 32, longitude: 34.8),
+  );
+  String reminderText = 'תזכורת קיימת';
+
+  @override
+  Future<DetectionRuntimeSnapshot?> load() async => snapshot;
+
+  @override
+  Future<void> save(DetectionRuntimeSnapshot value) async => snapshot = value;
+
+  @override
+  Future<void> clear() async => snapshot = null;
+
+  @override
+  Future<String> loadReminderText() async => reminderText;
+
+  @override
+  Future<void> saveReminderText(String value) async {
+    throw StateError('reminder persistence unavailable');
+  }
+}
+
 DevelopmentGeofenceController createController({
   HomeFakeGeofenceService? service,
   InMemoryArrivalRuntimeStore? store,
@@ -200,6 +225,41 @@ void main() {
     expect(controller.lastError, contains('GEOFENCE_REGISTRATION_FAILED'));
     controller.dispose();
   });
+
+  test(
+    'failed reminder persistence rolls back the new registration and snapshot',
+    () async {
+      final service = HomeFakeGeofenceService();
+      final store = FailingReminderStore();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: HomeFakeLocationService(),
+        notificationService: InMemoryNotificationService(),
+        runtimeStore: store,
+      );
+      await controller.initialize();
+
+      final result = await controller.registerTarget(
+        targetLatitude: 31.7,
+        targetLongitude: 34.9,
+        targetRadius: 250,
+        targetReminderText: 'תזכורת חדשה',
+      );
+
+      expect(result, isFalse);
+      expect(service.registered, isFalse);
+      expect(controller.latitude, 32);
+      expect(controller.longitude, 34.8);
+      expect(controller.reminderText, 'תזכורת קיימת');
+      expect(
+        store.snapshot?.target,
+        const TargetLocation(latitude: 32, longitude: 34.8),
+      );
+      expect(controller.lastError, contains('REGISTRATION_ROLLBACK_FAILED'));
+      controller.dispose();
+    },
+  );
+
   test('initialization is idempotent and preserves the saved target', () async {
     final service = HomeFakeGeofenceService();
     final store = InMemoryArrivalRuntimeStore()

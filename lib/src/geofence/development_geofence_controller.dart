@@ -225,6 +225,7 @@ final class DevelopmentGeofenceController {
     final previousReminderText = reminderText;
     final previousConfig = _config;
     final previousEngine = engine;
+    final previousRuntimeSnapshot = engine.runtimeSnapshot;
     final previousRegistered = registered;
 
     latitude = targetLatitude;
@@ -270,6 +271,12 @@ final class DevelopmentGeofenceController {
       reminderText = previousReminderText;
       _config = previousConfig;
       engine = previousEngine;
+      try {
+        await runtimeStore.save(previousRuntimeSnapshot);
+        await runtimeStore.saveReminderText(previousReminderText);
+      } catch (_) {
+        rollbackFailure = true;
+      }
       _fail(
         rollbackFailure
             ? 'REGISTRATION_ROLLBACK_FAILED: ${error.runtimeType}'
