@@ -134,26 +134,26 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 1
   fi
 
-  if [[ "${{keystore_fingerprint}" != "${{apk_fingerprint}" ]]; then
+  if [[ "${keystore_fingerprint}" != "${apk_fingerprint}" ]]; then
     echo "::error::Certificate mismatch: the APK certificate differs from the dedicated test keystore" >&2
     exit 1
   fi
 
-  configured_fingerprint="$(printf '%s' "${{PINGPLACE_TRUSTED_CERT_SHA256:-}" |
+  configured_fingerprint="$(printf '%s' "${PINGPLACE_TRUSTED_CERT_SHA256:-}" |
     tr -d '[:space:]:' | tr '[:upper:]' '[:lower:]')"
-  if [[ -n "${{configured_fingerprint}" ]]; then
-    if [[ ! "${{configured_fingerprint}" =~ ^[0-9a-f]{64}$ ]]; then
+  if [[ -n "${configured_fingerprint}" ]]; then
+    if [[ ! "${configured_fingerprint}" =~ ^[0-9a-f]{64}$ ]]; then
       echo "::error::PINGPLACE_TRUSTED_CERT_SHA256 is not a valid SHA-256 fingerprint" >&2
       exit 1
     fi
-    if [[ "${{configured_fingerprint}" != "${{apk_fingerprint}" ]]; then
+    if [[ "${configured_fingerprint}" != "${apk_fingerprint}" ]]; then
       echo "::error::Certificate mismatch: the APK certificate differs from PINGPLACE_TRUSTED_CERT_SHA256" >&2
       exit 1
     fi
     echo "Verified configured trusted certificate fingerprint"
   fi
 
-  echo "APK signing certificate SHA-256: ${{apk_fingerprint}"
+  echo "APK signing certificate SHA-256: ${apk_fingerprint}"
   echo "Verified APK signature and certificate match"
 
 fi
