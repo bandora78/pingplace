@@ -77,9 +77,9 @@ jobs:
           missing=0
           for name in \
             PINGPLACE_KEYSTORE_BASE64 \
-            PINGPLACE_KEYSTORE_PASSWORD \
-            PINGPLACE_KEY_ALIAS \
-            PINGPLACE_KEY_PASSWORD; do
+            PINGPLACE_DEBUG_STORE_PASSWORD \
+            PINGPLACE_DEBUG_KEY_ALIAS \
+            PINGPLACE_DEBUG_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Missing required GitHub Actions secret: ${name}"
               missing=1
