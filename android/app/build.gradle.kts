@@ -7,8 +7,8 @@ plugins {
 val ciDebugKeystoreFile = providers.environmentVariable("PINGPLACE_DEBUG_KEYSTORE_FILE")
     .orElse(providers.gradleProperty("pingplaceDebugKeystoreFile"))
     .orNull
-val ciDebugStorePassword = providers.environmentVariable("PINGPLACE_DEBUG_STORE_PASSWORD")
-    .orElse(providers.gradleProperty("pingplaceDebugStorePassword"))
+val ciDebugStorePassword = providers.environmentVariable("PINGPLACE_DEBUG_KEYSTORE_PASSWORD")
+    .orElse(providers.gradleProperty("pingplaceDebugKeystorePassword"))
     .orNull
 val ciDebugKeyAlias = providers.environmentVariable("PINGPLACE_DEBUG_KEY_ALIAS")
     .orElse(providers.gradleProperty("pingplaceDebugKeyAlias"))

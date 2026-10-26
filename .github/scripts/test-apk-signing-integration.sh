@@ -47,11 +47,8 @@ create_keystore "${first_keystore}"
 create_keystore "${second_keystore}"
 
 sign_copy "${first_keystore}" "${first_apk}"
-export PINGPLACE_DEBUG_STORE_PASSWORD="${password}"
+export PINGPLACE_DEBUG_KEYSTORE_PASSWORD="${password}"
 export PINGPLACE_DEBUG_KEY_ALIAS="${alias_name}"
-trusted_fingerprint="$(keytool -list -v -keystore "${first_keystore}" -storepass "${password}" -alias "${alias_name}" |
-  awk '/^[[:space:]]*SHA-?256[[:space:]]*:/ { gsub(/[[:space:]:]/, "", $0); sub(/^[^:]*SHA-?256/, "", $0); print tolower($0); exit }')"
-export PINGPLACE_TRUSTED_CERT_SHA256="${trusted_fingerprint}"
 bash "${verify_script}" "${first_apk}" "${first_keystore}" "${apksigner_path}" \
   >"${test_dir}/matching.log"
 grep -q 'Verified APK signature and certificate match' "${test_dir}/matching.log"

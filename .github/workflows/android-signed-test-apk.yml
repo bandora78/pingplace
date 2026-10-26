@@ -68,9 +68,9 @@ jobs:
       - name: Validate signing secrets
         env:
           PINGPLACE_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_KEYSTORE_BASE64 }}
-          PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
-          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
-          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
+          PINGPLACE_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
+          PINGPLACE_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
+          PINGPLACE_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
