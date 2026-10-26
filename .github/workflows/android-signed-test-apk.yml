@@ -104,7 +104,7 @@ jobs:
 
       - name: Validate reconstructed signing configuration
         env:
-          PINGPLACE_DEBUG_KEYSTORE_FILE: ${RUNNER_TEMP}/pingplace-signing/pingplace-debug.keystore
+          PINGPLACE_DEBUG_KEYSTORE_FILE: ${{ runner.temp }}/pingplace-signing/pingplace-debug.keystore
           PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
           PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
           PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
@@ -114,7 +114,7 @@ jobs:
 
       - name: Build consistently signed test APK
         env:
-          PINGPLACE_DEBUG_KEYSTORE_FILE: ${RUNNER_TEMP}/pingplace-signing/pingplace-debug.keystore
+          PINGPLACE_DEBUG_KEYSTORE_FILE: ${{ runner.temp }}/pingplace-signing/pingplace-debug.keystore
           PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
           PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
           PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
