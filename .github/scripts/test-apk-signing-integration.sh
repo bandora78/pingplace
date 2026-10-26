@@ -47,11 +47,19 @@ create_keystore "${first_keystore}"
 create_keystore "${second_keystore}"
 
 sign_copy "${first_keystore}" "${first_apk}"
-export PINGPLACE_DEBUG_KEYSTORE_PASSWORD="${password}"
+export PINGPLACE_DEBUG_STORE_PASSWORD="${password}"
 export PINGPLACE_DEBUG_KEY_ALIAS="${alias_name}"
 bash "${verify_script}" "${first_apk}" "${first_keystore}" "${apksigner_path}" \
   >"${test_dir}/matching.log"
 grep -q 'Verified APK signature and certificate match' "${test_dir}/matching.log"
+
+if PINGPLACE_TRUSTED_CERT_SHA256='0000000000000000000000000000000000000000000000000000000000000000' \
+  bash "${verify_script}" "${first_apk}" "${first_keystore}" "${apksigner_path}" \
+  >"${test_dir}/trusted-mismatch.log" 2>&1; then
+  echo 'Expected configured trusted fingerprint mismatch to fail' >&2
+  exit 1
+fi
+grep -q 'PINGPLACE_TRUSTED_CERT_SHA256' "${test_dir}/trusted-mismatch.log"
 
 sign_copy "${second_keystore}" "${second_apk}"
 if bash "${verify_script}" "${second_apk}" "${first_keystore}" "${apksigner_path}" \
