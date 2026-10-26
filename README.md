@@ -21,7 +21,7 @@ The **Android signed test APK** workflow is manual-only and always checks out th
      -keyalg RSA -keysize 2048 -validity 10000
    ```
 
-   Choose and record the keystore password, key password, and alias. Keep the keystore and passwords in encrypted, access-controlled backup storage. Never commit them to this repository. Keep an encrypted backup of the JKS and its credentials in access-controlled storage, and record the certificate fingerprint separately so rotation can be audited.
+   Choose and record the keystore password, key password, and alias. Keep the keystore and passwords in encrypted, access-controlled backup storage. Never commit them to this repository.
 
 2. Base64-encode the keystore without changing its bytes. On Linux/macOS:
 
@@ -37,10 +37,10 @@ The **Android signed test APK** workflow is manual-only and always checks out th
 
 3. In the repository, open **Settings → Secrets and variables → Actions → New repository secret** and configure these four secrets:
 
-   - `PINGPLACE_KEYSTORE_BASE64`: the base64-encoded keystore
-   - `PINGPLACE_KEYSTORE_PASSWORD`: the keystore password
-   - `PINGPLACE_KEY_ALIAS`: `pingplace-debug` (or the chosen alias)
-   - `PINGPLACE_KEY_PASSWORD`: the key password
+   - `PINGPLACE_DEBUG_KEYSTORE_BASE64`: the base64-encoded keystore
+   - `PINGPLACE_DEBUG_KEYSTORE_PASSWORD`: the keystore password
+   - `PINGPLACE_DEBUG_KEY_ALIAS`: `pingplace-debug` (or the chosen alias)
+   - `PINGPLACE_DEBUG_KEY_PASSWORD`: the key password
 
    The workflow fails before reconstructing a keystore or building an APK when any secret is missing. Secrets are never printed, and the temporary keystore is removed even when a later step fails.
 
@@ -75,11 +75,3 @@ The Phase 0 development screen now includes a separate **REAL GEOFENCE TEST** se
 ## Read-only task watcher
 
 Stage B watcher setup and verification are documented in [automation/README.md](automation/README.md). The watcher reads GitHub task metadata and local state only; it never dispatches work or installs its optional scheduled task automatically.
-
-## Backup and rotation
-
-Back up the JKS bytes, alias, store password, key password, and certificate SHA-256 fingerprint in separate access-controlled storage. To rotate the key, create a new JKS, verify its fingerprint locally, update the four repository secrets together, and update `PINGPLACE_TRUSTED_CERT_SHA256` only after the new certificate is approved. Never expose the JKS or passwords in logs, artifacts, pull requests, or issue comments.
-
-Android requires an update APK to be signed by the same certificate as the installed package. Changing the signing key therefore prevents an in-place upgrade; users must uninstall the old package before installing the first APK signed with the replacement key, which also removes app data unless it has been backed up.
-
-The signed workflow is manual-only, checks out trusted `main`, and is never used by pull-request code. Pull-request validation remains unsigned and receives no signing secrets.
