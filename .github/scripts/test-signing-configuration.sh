@@ -24,12 +24,15 @@ validation_names="$(
     /- name: Validate signing secrets/ { step = 1; next }
     step && /^      - name:/ { exit }
     step && /for name in/ { in_loop = 1; next }
-    in_loop && /; do/ { exit }
     in_loop {
       line = $0
+      sub(/;[[:space:]]*do.*/, "", line)
       gsub(/[[:space:]\\]/, "", line)
       if (line ~ /^PINGPLACE_/) {
         print line
+      }
+      if ($0 ~ /;[[:space:]]*do/) {
+        exit
       }
     }
   ' "${workflow_file}" | sort
