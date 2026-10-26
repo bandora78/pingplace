@@ -47,7 +47,7 @@ create_keystore "${first_keystore}"
 create_keystore "${second_keystore}"
 
 sign_copy "${first_keystore}" "${first_apk}"
-export PINGPLACE_DEBUG_KEYSTORE_PASSWORD="${password}"
+export PINGPLACE_DEBUG_STORE_PASSWORD="${password}"
 export PINGPLACE_DEBUG_KEY_ALIAS="${alias_name}"
 bash "${verify_script}" "${first_apk}" "${first_keystore}" "${apksigner_path}" \
   >"${test_dir}/matching.log"
