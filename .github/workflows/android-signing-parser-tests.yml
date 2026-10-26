@@ -27,3 +27,7 @@ jobs:
       - name: Run certificate fingerprint parser tests
         shell: bash
         run: bash .github/scripts/test-certificate-fingerprint.sh
+
+      - name: Run Build 10 version metadata tests
+        shell: bash
+        run: bash .github/scripts/test-build-10-version.sh

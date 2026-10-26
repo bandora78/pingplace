@@ -291,6 +291,33 @@ the CI signing setup is not considered verified until the user creates the
 secrets, downloads the artifact, and confirms the fingerprints and update on a
 device.
 
+## Task 06.2 Build 10 in-place upgrade validation
+
+Build 10 is a minimal versioned APK intended to validate an in-place update from
+the consistently signed Build 9 artifact. The signed Build 9 baseline is the
+artifact named
+`pingplace-signed-test-apk-1.0.0+9-274b395-build10007` from workflow run
+[40400807491](https://github.com/bandora78/pingplace/actions/runs/40400807491).
+Its Android `versionCode` is 10007.
+
+After this PR is merged, run the trusted signed APK workflow and record the
+actual artifact name, commit, `versionCode`, and certificate fingerprint. The
+existing workflow strategy is `10000 + GITHUB_RUN_NUMBER`; the next run must
+produce a value greater than 10007 (normally 10008 if the next run number is 8).
+
+Manual device test:
+
+1. Start with signed Build 9 installed; do not uninstall it.
+2. Confirm an existing target is saved and record its reminder and diagnostics.
+3. Install the signed Build 10 APK over Build 9 without uninstalling.
+4. Confirm Android accepts the installation and the application still opens.
+5. Confirm the app displays `Build 10` and the expected source commit.
+6. Confirm the previously saved target and reminder remain intact.
+7. Open **Geofence Diagnostics** and record the registration status after upgrade.
+8. Record the actual device, Android/HyperOS version, APK artifact, versionCode,
+   certificate fingerprint, and result. Do not mark this test passed without
+   physical device evidence.
+
 ## Task 07 background resilience matrix
 
 Use a registered target while outside the outer radius. Record device model,
