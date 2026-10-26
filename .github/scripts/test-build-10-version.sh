@@ -26,8 +26,18 @@ if ! grep -Fq -- '--build-number "${{ steps.version.outputs.build_number }}"' "$
   exit 1
 fi
 
-if ! grep -Fq -- '--dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.build_number }}"' "${workflow_file}"; then
-  echo "Displayed build number is not synchronized with the signed APK versionCode input" >&2
+if ! grep -Fq 'display_build_number="${version_line##*+}"' "${workflow_file}"; then
+  echo "Signed workflow does not derive the displayed build number from pubspec.yaml" >&2
+  exit 1
+fi
+
+if ! grep -Fq -- '--dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.display_build_number }}"' "${workflow_file}"; then
+  echo "Displayed build number is not synchronized with the package build number" >&2
+  exit 1
+fi
+
+if grep -Fq -- '--dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.build_number }}"' "${workflow_file}"; then
+  echo "Displayed build number incorrectly uses Android versionCode" >&2
   exit 1
 fi
 
