@@ -345,3 +345,34 @@ the user launches the app, and PingPlace does not claim to bypass that state.
 Normal process termination and removal from recents are separate from Force
 Stop. The platform registration status is confirmed only after the geofencing
 API accepts the restored request; saved coordinates alone are not proof.
+
+## Task 07 production UI and Build 10 to Build 11 upgrade
+
+The normal app launch now opens the Hebrew-first production home screen. It shows
+the single active target, reminder, monitoring status, and actionable permission
+or recovery errors. Simulation controls, raw event logs, and detailed geofence
+diagnostics are not shown there.
+
+Developer Mode is deliberately hidden behind a long press on the version
+information at the bottom of the home screen. It retains Simulation Mode, real
+geofence diagnostics, recovery controls, event logs, and copy/share diagnostics.
+The geofence controller is owned by the app root, so navigating between screens
+does not start or stop monitoring subscriptions.
+
+Manual upgrade test:
+
+1. Start with the signed Build 10 installed and an existing target saved.
+2. Record the current target, reminder, monitoring status, and displayed commit.
+3. Install signed Build 11 over Build 10 without uninstalling.
+4. Confirm Android accepts the update and the app opens on the production home screen.
+5. Confirm the screen displays Build 11 and the expected commit.
+6. Confirm the saved target and reminder are unchanged.
+7. Confirm monitoring status and permission diagnostics reconcile after launch.
+8. Long-press the version information and confirm Developer Mode opens; verify simulation and diagnostics remain available.
+9. Record device model, Android/HyperOS version, artifact, versionCode, certificate fingerprint, and actual result. Do not mark this test passed without physical device evidence.
+
+The following Phase 0 physical checks remain required on Xiaomi 15: background and
+cold-process geofence entry, arrival notification exactly-once behavior, exit
+beyond 350 m and re-entry, reboot recovery, permission revocation, location
+services disabled, and HyperOS battery/autostart restrictions. APP-07 does not
+claim those checks passed.

@@ -51,6 +51,7 @@ final class DevelopmentGeofenceController {
   Timer? _approachTimer;
   Timer? _cooldownTimer;
   int _locationGeneration = 0;
+  Future<void>? _initialization;
 
   double latitude = 32;
   double longitude = 34.8;
@@ -87,7 +88,9 @@ final class DevelopmentGeofenceController {
 
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
 
-  Future<void> initialize() async {
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
     initialized = false;
     await _restoreRuntime();
     try {
@@ -473,7 +476,11 @@ final class DevelopmentGeofenceController {
       final snapshot = await runtimeStore.load();
       if (snapshot == null) return;
       final target = snapshot.target;
-      if (target != null) _config = _config.copyWith(target: target);
+      if (target != null) {
+        _config = _config.copyWith(target: target);
+        latitude = target.latitude;
+        longitude = target.longitude;
+      }
       engine = SmartArrivalDetectionEngine(_config, snapshot: snapshot);
       currentVisitId = snapshot.visitId;
       if (engine.state == DetectionState.approaching) {
@@ -582,4 +589,3 @@ final class DevelopmentGeofenceController {
     }
   }
 }
-

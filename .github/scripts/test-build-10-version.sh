@@ -6,13 +6,13 @@ build_info_file="lib/src/build_info.dart"
 workflow_file=".github/workflows/android-signed-test-apk.yml"
 
 version_line="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*$/\1/p' "${pubspec_file}" | head -n 1)"
-if [[ "${version_line}" != "1.0.0+10" ]]; then
-  echo "Expected pubspec version 1.0.0+10, got ${version_line}" >&2
+if [[ "${version_line}" != "1.0.0+11" ]]; then
+  echo "Expected pubspec version 1.0.0+11, got ${version_line}" >&2
   exit 1
 fi
 
-if ! grep -Fq "defaultValue: '10'" "${build_info_file}"; then
-  echo "BuildInfo default build number is not 10" >&2
+if ! grep -Fq "defaultValue: '11'" "${build_info_file}"; then
+  echo "BuildInfo default build number is not 11" >&2
   exit 1
 fi
 
@@ -49,4 +49,4 @@ if (( next_version_code <= baseline_version_code )); then
   exit 1
 fi
 
-echo "Build 10 version metadata and signed versionCode strategy passed"
+echo "Build 11 version metadata and signed versionCode strategy passed"

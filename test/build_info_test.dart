@@ -16,13 +16,13 @@ void main() {
   });
 
   test('uses the current package build number when no define is supplied', () {
-    expect(BuildInfo.current.versionLabel, 'PingPlace 1.0.0 (Build 10)');
+    expect(BuildInfo.current.versionLabel, 'PingPlace 1.0.0 (Build 11)');
   });
 
   test('uses an explicit fallback when Git metadata is unavailable', () {
     const info = BuildInfo(
       version: '1.0.0',
-      buildNumber: '10',
+      buildNumber: '11',
       commit: 'unknown',
       buildType: 'debug',
     );
