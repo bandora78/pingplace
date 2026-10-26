@@ -13,7 +13,7 @@ final class BuildInfo {
     ),
     buildNumber: String.fromEnvironment(
       'PINGPLACE_BUILD_NUMBER',
-      defaultValue: '8',
+      defaultValue: '9',
     ),
     commit: String.fromEnvironment(
       'PINGPLACE_GIT_SHA',

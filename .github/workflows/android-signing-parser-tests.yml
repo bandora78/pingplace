@@ -20,6 +20,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Run signing configuration regression tests
+        shell: bash
+        run: bash .github/scripts/test-signing-configuration.sh
+
       - name: Run certificate fingerprint parser tests
         shell: bash
         run: bash .github/scripts/test-certificate-fingerprint.sh

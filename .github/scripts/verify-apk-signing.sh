@@ -81,7 +81,7 @@ print_apksigner_structure() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  : "${PINGPLACE_DEBUG_KEYSTORE_PASSWORD:?PINGPLACE_DEBUG_KEYSTORE_PASSWORD is required}"
+  : "${PINGPLACE_DEBUG_STORE_PASSWORD:?PINGPLACE_DEBUG_STORE_PASSWORD is required}"
   : "${PINGPLACE_DEBUG_KEY_ALIAS:?PINGPLACE_DEBUG_KEY_ALIAS is required}"
 
   apk_path="${1:?APK path is required}"
@@ -90,7 +90,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
   keytool_output="$(keytool -list -v \
     -keystore "${keystore_path}" \
-    -storepass "${PINGPLACE_DEBUG_KEYSTORE_PASSWORD}" \
+    -storepass "${PINGPLACE_DEBUG_STORE_PASSWORD}" \
     -alias "${PINGPLACE_DEBUG_KEY_ALIAS}")"
   keystore_fingerprint="$(printf '%s\n' "${keytool_output}" | extract_keytool_sha256)"
   if [[ -z "${keystore_fingerprint}" ]]; then
@@ -134,10 +134,26 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     exit 1
   fi
 
-  if [[ "${keystore_fingerprint}" != "${apk_fingerprint}" ]]; then
+  if [[ "${{keystore_fingerprint}" != "${{apk_fingerprint}" ]]; then
     echo "::error::Certificate mismatch: the APK certificate differs from the dedicated test keystore" >&2
     exit 1
   fi
 
+  configured_fingerprint="$(printf '%s' "${{PINGPLACE_TRUSTED_CERT_SHA256:-}" |
+    tr -d '[:space:]:' | tr '[:upper:]' '[:lower:]')"
+  if [[ -n "${{configured_fingerprint}" ]]; then
+    if [[ ! "${{configured_fingerprint}" =~ ^[0-9a-f]{64}$ ]]; then
+      echo "::error::PINGPLACE_TRUSTED_CERT_SHA256 is not a valid SHA-256 fingerprint" >&2
+      exit 1
+    fi
+    if [[ "${{configured_fingerprint}" != "${{apk_fingerprint}" ]]; then
+      echo "::error::Certificate mismatch: the APK certificate differs from PINGPLACE_TRUSTED_CERT_SHA256" >&2
+      exit 1
+    fi
+    echo "Verified configured trusted certificate fingerprint"
+  fi
+
+  echo "APK signing certificate SHA-256: ${{apk_fingerprint}"
   echo "Verified APK signature and certificate match"
+
 fi
