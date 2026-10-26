@@ -67,19 +67,19 @@ jobs:
 
       - name: Validate signing secrets
         env:
-          PINGPLACE_DEBUG_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_BASE64 }}
-          PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
-          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
-          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEY_PASSWORD }}
+          PINGPLACE_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_KEYSTORE_BASE64 }}
+          PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
+          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
+          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
           missing=0
           for name in \
-            PINGPLACE_DEBUG_KEYSTORE_BASE64 \
-            PINGPLACE_DEBUG_KEYSTORE_PASSWORD \
-            PINGPLACE_DEBUG_KEY_ALIAS \
-            PINGPLACE_DEBUG_KEY_PASSWORD; do
+            PINGPLACE_KEYSTORE_BASE64 \
+            PINGPLACE_KEYSTORE_PASSWORD \
+            PINGPLACE_KEY_ALIAS \
+            PINGPLACE_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Missing required GitHub Actions secret: ${name}"
               missing=1
@@ -92,26 +92,37 @@ jobs:
 
       - name: Reconstruct dedicated test keystore
         env:
-          PINGPLACE_DEBUG_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_BASE64 }}
+          PINGPLACE_KEYSTORE_BASE64: ${{ secrets.PINGPLACE_KEYSTORE_BASE64 }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .ci-signing
-          printf '%s' "${PINGPLACE_DEBUG_KEYSTORE_BASE64}" | base64 --decode > .ci-signing/pingplace-debug.keystore
-          chmod 600 .ci-signing/pingplace-debug.keystore
-          test -s .ci-signing/pingplace-debug.keystore
+          signing_dir="${RUNNER_TEMP}/pingplace-signing"
+          mkdir -p "${signing_dir}"
+          printf '%s' "${PINGPLACE_KEYSTORE_BASE64}" | base64 --decode > "${signing_dir}/pingplace-debug.keystore"
+          chmod 600 "${signing_dir}/pingplace-debug.keystore"
+          test -s "${signing_dir}/pingplace-debug.keystore"
+
+      - name: Validate reconstructed signing configuration
+        env:
+          PINGPLACE_DEBUG_KEYSTORE_FILE: ${RUNNER_TEMP}/pingplace-signing/pingplace-debug.keystore
+          PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
+          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
+          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
+          PINGPLACE_REQUIRE_CI_DEBUG_SIGNING: 'true'
+        shell: bash
+        run: bash .github/scripts/validate-signing-environment.sh
 
       - name: Build consistently signed test APK
         env:
-          PINGPLACE_DEBUG_KEYSTORE_FILE: ${{ github.workspace }}/.ci-signing/pingplace-debug.keystore
-          PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
-          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
-          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEY_PASSWORD }}
+          PINGPLACE_DEBUG_KEYSTORE_FILE: ${RUNNER_TEMP}/pingplace-signing/pingplace-debug.keystore
+          PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
+          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
+          PINGPLACE_DEBUG_KEY_PASSWORD: ${{ secrets.PINGPLACE_KEY_PASSWORD }}
           PINGPLACE_REQUIRE_CI_DEBUG_SIGNING: 'true'
         run: >-
           flutter build apk --debug
           --build-name "${{ steps.version.outputs.build_name }}"
-          --build-number "${{ steps.version.outputs.build_number }}"
+          --build-number "${{ steps.version.outputs.build_number }}" --dart-define=PINGPLACE_APP_VERSION="${{ steps.version.outputs.build_name }}" --dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.build_number }}" --dart-define=PINGPLACE_GIT_SHA="${{ steps.version.outputs.commit_short }}" --dart-define=PINGPLACE_BUILD_TYPE=debug
 
       - name: Verify generated APK versionCode
         env:
@@ -144,8 +155,9 @@ jobs:
 
       - name: Verify APK signing certificate
         env:
-          PINGPLACE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.PINGPLACE_DEBUG_KEYSTORE_PASSWORD }}
-          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_DEBUG_KEY_ALIAS }}
+          PINGPLACE_DEBUG_STORE_PASSWORD: ${{ secrets.PINGPLACE_KEYSTORE_PASSWORD }}
+          PINGPLACE_DEBUG_KEY_ALIAS: ${{ secrets.PINGPLACE_KEY_ALIAS }}
+          PINGPLACE_TRUSTED_CERT_SHA256: ${{ vars.PINGPLACE_TRUSTED_CERT_SHA256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -157,7 +169,7 @@ jobs:
           fi
           bash .github/scripts/verify-apk-signing.sh \
             "${apk_path}" \
-            .ci-signing/pingplace-debug.keystore \
+            ${RUNNER_TEMP}/pingplace-signing/pingplace-debug.keystore \
             "${apksigner_path}"
 
       - name: Rename APK with build identity
@@ -176,4 +188,4 @@ jobs:
       - name: Remove reconstructed signing material
         if: always()
         shell: bash
-        run: rm -rf .ci-signing
+        run: rm -rf "${RUNNER_TEMP}/pingplace-signing"
