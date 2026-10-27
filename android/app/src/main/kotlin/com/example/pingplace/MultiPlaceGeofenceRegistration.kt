@@ -17,6 +17,26 @@ import org.json.JSONObject
  * later request reconciles the platform from the newest committed set. This
  * makes an older callback unable to become the final platform state.
  */
+internal data class MultiPlaceTransitionPlan(
+    val additions: List<String>,
+    val removals: List<String>,
+    val removeLegacy: Boolean,
+) {
+    companion object {
+        fun create(previous: List<String>, desired: List<String>): MultiPlaceTransitionPlan {
+            val desiredIds = desired.distinct()
+            return MultiPlaceTransitionPlan(
+                additions = desiredIds,
+                removals = previous.distinct().filter { it !in desiredIds },
+                removeLegacy = true,
+            )
+        }
+    }
+
+    fun confirmed(addSucceeded: Boolean, removalsSucceeded: Boolean, legacyRemovalSucceeded: Boolean): Boolean =
+        addSucceeded && removalsSucceeded && legacyRemovalSucceeded
+}
+
 object MultiPlaceGeofenceRegistration {
     private const val PREFS = "pingplace_multi_geofences"
     private const val REQUESTS = "requests"
@@ -105,43 +125,42 @@ object MultiPlaceGeofenceRegistration {
         if (validation != null) { done(false, validation); return }
         val client = LocationServices.getGeofencingClient(context)
         val pendingIntent = GeofencePendingIntent.get(context)
-        val removeIds = (previous + targets.map { it.placeId }).distinct()
-        val afterRemoval = {
-            if (targets.isEmpty()) {
-                client.removeGeofences(listOf(LEGACY_ID))
-                    .addOnSuccessListener { done(true, null) }
-                    .addOnFailureListener { done(false, "Legacy geofence removal failed") }
-            } else {
-                val request = GeofencingRequest.Builder()
-                    .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-                    .addGeofences(targets.map { target ->
-                        Geofence.Builder()
-                            .setRequestId(target.placeId)
-                            .setCircularRegion(target.latitude, target.longitude, target.radius)
-                            .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                            .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-                            .build()
-                    }).build()
-                try {
-                    client.addGeofences(request, pendingIntent)
-                        .addOnSuccessListener {
-                            // Removal of the legacy request happens only after all
-                            // replacement requests have been accepted.
-                            client.removeGeofences(listOf(LEGACY_ID))
-                                .addOnSuccessListener { done(true, null) }
-                                .addOnFailureListener { done(false, "Legacy geofence removal failed") }
-                        }
-                        .addOnFailureListener { done(false, "Multi-place geofence registration failed") }
-                } catch (_: Exception) { done(false, "Multi-place geofence registration failed") }
-            }
+        val plan = MultiPlaceTransitionPlan.create(previous, targets.map { it.placeId })
+        val removeLegacy = {
+            client.removeGeofences(listOf(LEGACY_ID))
+                .addOnSuccessListener { done(true, null) }
+                .addOnFailureListener { done(false, "Legacy geofence removal failed") }
         }
-        try {
-            if (removeIds.isEmpty()) afterRemoval()
-            else client.removeGeofences(removeIds).addOnCompleteListener { result ->
-                if (result.isSuccessful) afterRemoval()
+        val removeObsolete = {
+            if (plan.removals.isEmpty()) removeLegacy()
+            else client.removeGeofences(plan.removals).addOnCompleteListener { result ->
+                if (result.isSuccessful) removeLegacy()
                 else done(false, "Multi-place geofence removal failed")
             }
-        } catch (_: Exception) { done(false, "Multi-place geofence removal failed") }
+        }
+        if (plan.additions.isEmpty()) {
+            // With no desired places, only remove obsolete multi-place IDs and legacy.
+            try { removeObsolete() }
+            catch (_: Exception) { done(false, "Multi-place geofence removal failed") }
+            return
+        }
+        val request = GeofencingRequest.Builder()
+            .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+            .addGeofences(targets.map { target ->
+                Geofence.Builder()
+                    .setRequestId(target.placeId)
+                    .setCircularRegion(target.latitude, target.longitude, target.radius)
+                    .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                    .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+                    .build()
+            }).build()
+        try {
+            // Add the replacement set first. If this fails, the previous registrations
+            // remain active and the durable confirmation is cleared by submit().
+            client.addGeofences(request, pendingIntent)
+                .addOnSuccessListener { removeObsolete() }
+                .addOnFailureListener { done(false, "Multi-place geofence registration failed") }
+        } catch (_: Exception) { done(false, "Multi-place geofence registration failed") }
     }
 
     private fun validate(context: Context, targets: List<Target>): String? {
@@ -171,7 +190,9 @@ object MultiPlaceGeofenceRegistration {
             put("cooldownSeconds", target.cooldownSeconds); put("approachTimeoutSeconds", target.approachTimeoutSeconds)
             put("maxAcceptedAccuracy", target.maxAcceptedAccuracy.toDouble()); put("reminderText", target.reminderText ?: "")
         }) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(MODE, true).putBoolean(CONFIRMED, false).putString(REQUESTS, json.toString()).commit()
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!preferences.edit().putBoolean(CONFIRMED, false).commit()) return false
+        preferences.edit().putBoolean(MODE, true).putString(REQUESTS, json.toString()).commit()
     } catch (_: Exception) { false }
 
     private fun read(context: Context): List<Target>? = try {

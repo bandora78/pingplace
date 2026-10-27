@@ -151,7 +151,11 @@ deduplication uses `placeId:visitId`, so simultaneous places cannot collide.
 The desired multi-registration document is validated fail-closed. Corrupt data
 never becomes an empty set; startup records a diagnostic and falls back to the
 last known legacy target. A confirmed identical desired set is a no-op; recovery
-reconciles platform state. The legacy request is removed only after replacement
-registration succeeds. Android geofence quotas are device/service dependent;
-this implementation rejects more than 100 enabled places and reports partial
-reconciliation failures.
+reconciles platform state. Reconciliation adds the complete desired set before
+removing obsolete place IDs or the legacy request. If add fails, existing
+registrations remain active; if an obsolete or legacy removal fails, the new
+registrations remain active and the durable confirmation flag is cleared for
+retry. Confirmation is written only after every required platform step succeeds.
+Android geofence quotas are device/service dependent; this implementation
+rejects more than 100 enabled places and reports partial reconciliation
+failures.

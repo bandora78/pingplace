@@ -213,6 +213,32 @@ class GeofenceLifecycleCoordinatorTest {
         assertFalse(boundary.removalPending)
     }
 
+    @Test
+    fun multiPlaceTransitionAddsBeforeRemovingObsoleteIds() {
+        val plan = MultiPlaceTransitionPlan.create(listOf("old", "keep"), listOf("keep", "new"))
+        assertEquals(listOf("keep", "new"), plan.additions)
+        assertEquals(listOf("old"), plan.removals)
+        assertTrue(plan.removeLegacy)
+    }
+
+    @Test
+    fun failedAddOrRemoveCannotConfirmTheNewRegistration() {
+        val plan = MultiPlaceTransitionPlan.create(listOf("old"), listOf("new"))
+        assertFalse(plan.confirmed(false, true, true))
+        assertFalse(plan.confirmed(true, false, true))
+        assertFalse(plan.confirmed(true, true, false))
+        assertTrue(plan.confirmed(true, true, true))
+    }
+
+    @Test
+    fun restartReusesTheDurableDesiredIdsWithoutDroppingThemOnFailure() {
+        val desired = listOf("place-a", "place-b")
+        val plan = MultiPlaceTransitionPlan.create(desired, desired)
+        assertEquals(desired, plan.additions)
+        assertTrue(plan.removals.isEmpty())
+        assertFalse(plan.confirmed(false, true, true))
+    }
+
     private data class FakeBoundary(
         var desired: String? = null,
         var platform: String? = null,

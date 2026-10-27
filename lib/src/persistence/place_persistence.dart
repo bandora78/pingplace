@@ -5,6 +5,16 @@ import '../runtime/arrival_runtime_store.dart';
 import 'legacy_place_migration.dart';
 import 'place_repositories.dart';
 
+final class PlaceInitializationResult {
+  const PlaceInitializationResult({
+    required this.succeeded,
+    required this.migrationChanged,
+  });
+
+  final bool succeeded;
+  final bool migrationChanged;
+}
+
 final class PlacePersistenceCoordinator {
   PlacePersistenceCoordinator({
     required this.database,
@@ -74,16 +84,22 @@ final class PlacePersistenceCoordinator {
     );
   }
 
-  Future<bool> initialize() async {
+  Future<PlaceInitializationResult> initialize() async {
     try {
       final migrated = await migration.migrateIfNeeded();
       initializationFailure = null;
-      return migrated;
+      return PlaceInitializationResult(
+        succeeded: true,
+        migrationChanged: migrated,
+      );
     } catch (error) {
       initializationFailure =
           'Place persistence initialization failed: ${error.runtimeType}: $error';
       debugPrint(initializationFailure);
-      return false;
+      return const PlaceInitializationResult(
+        succeeded: false,
+        migrationChanged: false,
+      );
     }
   }
 }
