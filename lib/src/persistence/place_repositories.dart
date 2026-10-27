@@ -40,6 +40,7 @@ final class MethodChannelPlaceDataStore implements PlaceDataStore {
 
   @override
   Future<void> save(PlaceData data) async {
+    data.validate();
     final committed = await _channel.invokeMethod<bool>(
       'saveState',
       jsonEncode(data.toJson()),
@@ -59,6 +60,7 @@ final class InMemoryPlaceDataStore implements PlaceDataStore {
 
   @override
   Future<void> save(PlaceData value) async {
+    value.validate();
     if (failWrites) {
       throw const PlacePersistenceException('Place data commit failed');
     }
@@ -66,29 +68,53 @@ final class InMemoryPlaceDataStore implements PlaceDataStore {
   }
 }
 
+final class PlaceDatabaseChange<T> {
+  const PlaceDatabaseChange({required this.data, required this.result});
+  final PlaceData data;
+  final T result;
+}
+
 final class PlaceDatabase {
   PlaceDatabase(this.store);
   final PlaceDataStore store;
   Future<void> _tail = Future<void>.value();
 
-  Future<PlaceData> read() async => await store.load() ?? const PlaceData();
+  Future<PlaceData> _load() async => await store.load() ?? const PlaceData();
+
+  Future<PlaceData> read() async {
+    final data = await _load();
+    data.validate();
+    return data;
+  }
+
+  Future<T> transact<T>(
+    Future<PlaceDatabaseChange<T>> Function(PlaceData current) change,
+  ) {
+    final next = _tail.then((_) async {
+      final current = await _load();
+      current.validate();
+      final updated = await change(current);
+      updated.data.validate();
+      await store.save(updated.data);
+      return updated.result;
+    });
+    _tail = next.then<void>((_) {}).catchError((Object _) {});
+    return next;
+  }
 
   Future<void> replace(PlaceData data) async {
-    final next = _tail.then((_) => store.save(data));
-    _tail = next.catchError((Object _) {});
-    await next;
+    await transact<void>(
+      (_) async => PlaceDatabaseChange<void>(data: data, result: null),
+    );
   }
 
-  Future<T> update<T>(PlaceData Function(PlaceData data) change) {
-    late PlaceData result;
-    final next = _tail.then((_) async {
-      final updated = change(await read());
-      await store.save(updated);
-      result = updated;
-    });
-    _tail = next.catchError((Object _) {});
-    return next.then((_) => result as T);
-  }
+  Future<T> update<T>(PlaceData Function(PlaceData data) change) =>
+      transact<T>(
+        (current) async => PlaceDatabaseChange<T>(
+          data: change(current),
+          result: null as T,
+        ),
+      );
 }
 
 final class PlaceRepository {
@@ -106,6 +132,7 @@ final class PlaceRepository {
   }
 
   Future<void> create(Place place) async {
+    place.validate();
     await _database.update<void>((data) {
       if (data.places.any((candidate) => candidate.id == place.id)) {
         throw StateError('Place already exists: ${place.id}');
@@ -118,6 +145,7 @@ final class PlaceRepository {
   }
 
   Future<void> update(Place place) async {
+    place.validate();
     await _database.update<void>((data) {
       if (!data.places.any((candidate) => candidate.id == place.id)) {
         throw StateError('Place does not exist: ${place.id}');
@@ -172,6 +200,7 @@ final class ReminderRepository {
   }
 
   Future<void> create(Reminder reminder) async {
+    reminder.validate();
     await _database.update<void>((data) {
       if (!data.places.any((place) => place.id == reminder.placeId)) {
         throw StateError('Place does not exist: ${reminder.placeId}');
@@ -187,6 +216,7 @@ final class ReminderRepository {
   }
 
   Future<void> update(Reminder reminder) async {
+    reminder.validate();
     await _database.update<void>((data) {
       if (!data.reminders.any((candidate) => candidate.id == reminder.id)) {
         throw StateError('Reminder does not exist: ${reminder.id}');

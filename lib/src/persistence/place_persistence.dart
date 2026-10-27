@@ -27,17 +27,20 @@ final class PlacePersistenceCoordinator {
 
   final PlaceDatabase database;
   final PlaceMigration migration;
+  String? initializationFailure;
 
   PlaceRepository get places => PlaceRepository(database);
   ReminderRepository get reminders => ReminderRepository(database);
 
   Future<bool> initialize() async {
     try {
-      return await migration.migrateIfNeeded();
+      final migrated = await migration.migrateIfNeeded();
+      initializationFailure = null;
+      return migrated;
     } catch (error) {
-      debugPrint(
-        'Place persistence initialization failed: ${error.runtimeType}',
-      );
+      initializationFailure =
+          'Place persistence initialization failed: ${error.runtimeType}: $error';
+      debugPrint(initializationFailure);
       return false;
     }
   }

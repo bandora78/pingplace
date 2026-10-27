@@ -403,3 +403,13 @@ reinitialization, write failures, valid/idempotent migration, missing legacy
 data, corrupt/partial-write fail-closed behavior, and the no-mutation migration
 boundary. They do not prove SharedPreferences power-loss durability or OEM
 process/reboot behavior; record those only from a physical device.
+
+### APP-08 review regression coverage
+
+The automated persistence tests cover conflicting Android/runtime legacy
+records, disabled desired monitoring, corrupt and malformed documents,
+validation of IDs/references/coordinates/radii/durations, failed commits,
+concurrent migration and repository writes, idempotent migration, and the
+absence of platform register/remove calls. A migration initialization failure
+is exposed through the coordinator diagnostic field and must be recorded with
+its type and reason.

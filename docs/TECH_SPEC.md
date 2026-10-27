@@ -85,3 +85,28 @@ legacy data untouched and the new store unchanged.
 The single-target controller and Android desired-state store remain the active
 compatibility boundary. APP-09 will decide how multiple enabled places are
 registered and routed; APP-08 only prepares durable records.
+
+### APP-08 legacy source-of-truth and failure policy
+
+When both legacy sources exist, Android's desired-registration record is the
+source of truth for the platform target and radius because it is the durable
+monitoring intent. The Dart runtime snapshot is used for coordinates only when
+Android has no desired record. If both records contain coordinates that differ
+beyond a small floating-point tolerance, migration fails closed and leaves the
+new store empty; it never combines coordinates from one source with a radius
+from the other. `desiredMonitoring=false` is preserved as a disabled migrated
+place.
+
+Build 11 persisted only the target coordinates in the runtime snapshot and the
+outer radius in Android desired state. The migration preserves every additional
+setting when a legacy source provides it. For settings that Build 11 did not
+persist, it uses the documented Phase 0 defaults (inner 80 m, rearm 350 m,
+10-minute cooldown and approach timeout, accuracy 50 m); these are not
+substitutions for a known stored value. Invalid or incomplete new documents,
+duplicate IDs, invalid coordinates/radii/durations, and dangling reminder
+references are rejected.
+
+Migration runs inside the same serialized `PlaceDatabase` transaction as
+repository writes. A failed source read or commit is reported through
+`PlacePersistenceCoordinator.initializationFailure` and does not register or
+remove a platform geofence.

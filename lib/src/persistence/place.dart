@@ -12,7 +12,7 @@ final class Place {
     this.rearmRadius = 350,
     this.cooldown = const Duration(minutes: 10),
     this.approachTimeout = const Duration(minutes: 10),
-    this.maxAcceptedAccuracy = 80,
+    this.maxAcceptedAccuracy = 50,
   });
 
   final String id;
@@ -55,35 +55,66 @@ final class Place {
     maxAcceptedAccuracy: maxAcceptedAccuracy ?? this.maxAcceptedAccuracy,
   );
 
-  Map<String, Object?> toJson() => {
-    'id': id,
-    'name': name,
-    'latitude': latitude,
-    'longitude': longitude,
-    'enabled': enabled,
-    'outerRadius': outerRadius,
-    'innerRadius': innerRadius,
-    'rearmRadius': rearmRadius,
-    'cooldownSeconds': cooldown.inSeconds,
-    'approachTimeoutSeconds': approachTimeout.inSeconds,
-    'maxAcceptedAccuracy': maxAcceptedAccuracy,
-  };
+  void validate() {
+    if (id.trim().isEmpty || name.trim().isEmpty) {
+      throw const FormatException('Place id and name must not be blank');
+    }
+    if (!latitude.isFinite || latitude < -90 || latitude > 90) {
+      throw const FormatException('Place latitude is out of bounds');
+    }
+    if (!longitude.isFinite || longitude < -180 || longitude > 180) {
+      throw const FormatException('Place longitude is out of bounds');
+    }
+    if (!outerRadius.isFinite || outerRadius <= 0 ||
+        !innerRadius.isFinite || innerRadius <= 0 ||
+        !rearmRadius.isFinite || rearmRadius < outerRadius ||
+        innerRadius > outerRadius) {
+      throw const FormatException('Place geofence radii are invalid');
+    }
+    if (cooldown.inSeconds <= 0 || approachTimeout.inSeconds <= 0 ||
+        !maxAcceptedAccuracy.isFinite || maxAcceptedAccuracy <= 0) {
+      throw const FormatException('Place timing or accuracy is invalid');
+    }
+  }
 
-  static Place fromJson(Map<Object?, Object?> json) => Place(
-    id: _requiredString(json, 'id'),
-    name: _requiredString(json, 'name'),
-    latitude: _requiredNumber(json, 'latitude'),
-    longitude: _requiredNumber(json, 'longitude'),
-    enabled: json['enabled'] == true,
-    outerRadius: _numberOr(json, 'outerRadius', 300),
-    innerRadius: _numberOr(json, 'innerRadius', 80),
-    rearmRadius: _numberOr(json, 'rearmRadius', 350),
-    cooldown: Duration(seconds: _intOr(json, 'cooldownSeconds', 600)),
-    approachTimeout: Duration(
-      seconds: _intOr(json, 'approachTimeoutSeconds', 600),
-    ),
-    maxAcceptedAccuracy: _numberOr(json, 'maxAcceptedAccuracy', 80),
-  );
+  Map<String, Object?> toJson() {
+    validate();
+    return {
+      'id': id,
+      'name': name,
+      'latitude': latitude,
+      'longitude': longitude,
+      'enabled': enabled,
+      'outerRadius': outerRadius,
+      'innerRadius': innerRadius,
+      'rearmRadius': rearmRadius,
+      'cooldownSeconds': cooldown.inSeconds,
+      'approachTimeoutSeconds': approachTimeout.inSeconds,
+      'maxAcceptedAccuracy': maxAcceptedAccuracy,
+    };
+  }
+
+  static Place fromJson(Map<Object?, Object?> json) {
+    final place = Place(
+      id: _requiredString(json, 'id'),
+      name: _requiredString(json, 'name'),
+      latitude: _requiredNumber(json, 'latitude'),
+      longitude: _requiredNumber(json, 'longitude'),
+      enabled: _requiredBool(json, 'enabled'),
+      outerRadius: _requiredNumber(json, 'outerRadius'),
+      innerRadius: _requiredNumber(json, 'innerRadius'),
+      rearmRadius: _requiredNumber(json, 'rearmRadius'),
+      cooldown: Duration(
+        seconds: _requiredPositiveInt(json, 'cooldownSeconds'),
+      ),
+      approachTimeout: Duration(
+        seconds: _requiredPositiveInt(json, 'approachTimeoutSeconds'),
+      ),
+      maxAcceptedAccuracy: _requiredNumber(json, 'maxAcceptedAccuracy'),
+    );
+    place.validate();
+    return place;
+  }
 }
 
 final class Reminder {
@@ -99,18 +130,40 @@ final class Reminder {
     text: text ?? this.text,
   );
 
-  Map<String, Object?> toJson() => {'id': id, 'placeId': placeId, 'text': text};
+  void validate() {
+    if (id.trim().isEmpty || placeId.trim().isEmpty) {
+      throw const FormatException('Reminder ids must not be blank');
+    }
+    if (text.trim().isEmpty) {
+      throw const FormatException('Reminder text must not be blank');
+    }
+  }
 
-  static Reminder fromJson(Map<Object?, Object?> json) => Reminder(
-    id: _requiredString(json, 'id'),
-    placeId: _requiredString(json, 'placeId'),
-    text: _requiredString(json, 'text'),
-  );
+  Map<String, Object?> toJson() {
+    validate();
+    return {'id': id, 'placeId': placeId, 'text': text};
+  }
+
+  static Reminder fromJson(Map<Object?, Object?> json) {
+    final reminder = Reminder(
+      id: _requiredString(json, 'id'),
+      placeId: _requiredString(json, 'placeId'),
+      text: _requiredString(json, 'text'),
+    );
+    reminder.validate();
+    return reminder;
+  }
 }
 
 String _requiredString(Map<Object?, Object?> json, String key) {
   final value = json[key];
   if (value is String && value.trim().isNotEmpty) return value;
+  throw FormatException('Invalid persistence field: $key');
+}
+
+bool _requiredBool(Map<Object?, Object?> json, String key) {
+  final value = json[key];
+  if (value is bool) return value;
   throw FormatException('Invalid persistence field: $key');
 }
 
@@ -120,14 +173,13 @@ double _requiredNumber(Map<Object?, Object?> json, String key) {
   throw FormatException('Invalid persistence field: $key');
 }
 
-double _numberOr(Map<Object?, Object?> json, String key, double fallback) {
+int _requiredPositiveInt(Map<Object?, Object?> json, String key) {
   final value = json[key];
-  return value is num && value.isFinite ? value.toDouble() : fallback;
-}
-
-int _intOr(Map<Object?, Object?> json, String key, int fallback) {
-  final value = json[key];
-  return value is num && value.isFinite ? value.toInt() : fallback;
+  if (value is! num || !value.isFinite || value.toInt() != value ||
+      value <= 0) {
+    throw FormatException('Invalid persistence field: $key');
+  }
+  return value.toInt();
 }
 
 final class PlaceData {
@@ -136,33 +188,67 @@ final class PlaceData {
   final List<Place> places;
   final List<Reminder> reminders;
 
-  Map<String, Object?> toJson() => {
-    'schemaVersion': 1,
-    'places': places.map((place) => place.toJson()).toList(),
-    'reminders': reminders.map((reminder) => reminder.toJson()).toList(),
-  };
+  void validate() {
+    final placeIds = <String>{};
+    for (final place in places) {
+      place.validate();
+      if (!placeIds.add(place.id)) {
+        throw FormatException('Duplicate place id: ${place.id}');
+      }
+    }
+    final reminderIds = <String>{};
+    for (final reminder in reminders) {
+      reminder.validate();
+      if (!reminderIds.add(reminder.id)) {
+        throw FormatException('Duplicate reminder id: ${reminder.id}');
+      }
+      if (!placeIds.contains(reminder.placeId)) {
+        throw FormatException(
+          'Reminder references missing place: ${reminder.placeId}',
+        );
+      }
+    }
+  }
+
+  Map<String, Object?> toJson() {
+    validate();
+    return {
+      'schemaVersion': 1,
+      'places': places.map((place) => place.toJson()).toList(),
+      'reminders': reminders.map((reminder) => reminder.toJson()).toList(),
+    };
+  }
 
   static PlaceData fromJson(Map<Object?, Object?> json) {
     if (json['schemaVersion'] != 1) {
-      throw FormatException('Unsupported place persistence schema');
+      throw const FormatException('Unsupported place persistence schema');
     }
     final rawPlaces = json['places'];
     final rawReminders = json['reminders'];
     if (rawPlaces is! List || rawReminders is! List) {
-      throw FormatException('Invalid place persistence collections');
+      throw const FormatException('Invalid place persistence collections');
     }
-    return PlaceData(
-      places: rawPlaces
-          .map(
-            (value) => Place.fromJson(Map<Object?, Object?>.from(value as Map)),
-          )
-          .toList(growable: false),
-      reminders: rawReminders
-          .map(
-            (value) =>
-                Reminder.fromJson(Map<Object?, Object?>.from(value as Map)),
-          )
-          .toList(growable: false),
-    );
+    try {
+      final data = PlaceData(
+        places: rawPlaces
+            .map(
+              (value) => Place.fromJson(
+                Map<Object?, Object?>.from(value as Map),
+              ),
+            )
+            .toList(growable: false),
+        reminders: rawReminders
+            .map(
+              (value) => Reminder.fromJson(
+                Map<Object?, Object?>.from(value as Map),
+              ),
+            )
+            .toList(growable: false),
+      );
+      data.validate();
+      return data;
+    } on TypeError {
+      throw const FormatException('Malformed place persistence document');
+    }
   }
 }
