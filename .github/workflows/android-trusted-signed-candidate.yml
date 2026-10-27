@@ -12,7 +12,11 @@ on:
         required: true
         type: string
       source_run_id:
-        description: Untrusted candidate workflow run ID
+        description: Successful untrusted candidate workflow run ID
+        required: true
+        type: string
+      source_artifact_id:
+        description: Exact artifact ID from that workflow run
         required: true
         type: string
       source_artifact_name:
@@ -33,12 +37,8 @@ on:
         required: true
         default: 1.0.0
         type: string
-      expected_version_code:
-        description: Expected Android versionCode, greater than 10007
-        required: true
-        type: string
       expected_commit_sha:
-        description: Expected embedded full commit SHA
+        description: Expected full source commit SHA
         required: true
         type: string
 
@@ -50,8 +50,22 @@ jobs:
   verify-approved-candidate:
     name: Verify approved candidate artifact
     runs-on: ubuntu-latest
+    outputs:
+      baseline_version_code: ${{ steps.baseline.outputs.version_code }}
+      candidate_version_code: ${{ steps.candidate.outputs.version_code }}
+      candidate_sha256: ${{ steps.candidate.outputs.apk_sha256 }}
 
     steps:
+      - name: Check out trusted verification tests
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Run provenance regression tests
+        run: bash .github/scripts/test-signed-artifact-provenance.sh
+
       - name: Verify PR state and exact head
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,7 +78,28 @@ jobs:
           test "$(jq -r '.head.sha' <<< "${pr_json}")" = "${EXPECTED_SHA}"
           echo "Verified open PR ${EXPECTED_PR} at ${EXPECTED_SHA}"
 
-      - name: Download only the named candidate artifact
+      - name: Verify source workflow run provenance through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          SOURCE_ARTIFACT_ID: ${{ inputs.source_artifact_id }}
+          SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
+          test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
+          test "$(jq -r '.path' <<< "${run_json}")" = ".github/workflows/android-untrusted-candidate.yml"
+          test "$(jq -r '.event' <<< "${run_json}")" = pull_request
+          test "$(jq -r '.head_sha' <<< "${run_json}")" = "${EXPECTED_SHA}"
+          test "$(jq -r '.status' <<< "${run_json}")" = completed
+          test "$(jq -r '.conclusion' <<< "${run_json}")" = success
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts")"
+          matches="$(jq --arg id "${SOURCE_ARTIFACT_ID}" --arg name "${SOURCE_ARTIFACT_NAME}" --argjson run "${SOURCE_RUN_ID}" '[.artifacts[] | select((.id|tostring) == $id and .name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
+          test "${matches}" -eq 1
+          echo "Verified workflow run, head SHA, and artifact identity through GitHub Actions API"
+
+      - name: Download only the verified candidate artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.source_artifact_name }}
@@ -72,14 +107,14 @@ jobs:
           github-token: ${{ github.token }}
           path: source
 
-      - name: Verify candidate identity and metadata
+      - name: Verify candidate hash and metadata
+        id: candidate
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
           EXPECTED_FULL_SHA: ${{ inputs.expected_commit_sha }}
           EXPECTED_ARTIFACT_SHA256: ${{ inputs.source_artifact_sha256 }}
           EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
           EXPECTED_VERSION_NAME: ${{ inputs.expected_version_name }}
-          EXPECTED_VERSION_CODE: ${{ inputs.expected_version_code }}
         run: |
           set -euo pipefail
           apk_path="$(find source -type f -name '*.apk' -print)"
@@ -94,21 +129,62 @@ jobs:
           test "$(jq -r .source_sha "${manifest_path}")" = "${EXPECTED_SHA}"
           test "${EXPECTED_FULL_SHA}" = "${EXPECTED_SHA}"
           test "$(jq -r .embedded_commit_sha "${manifest_path}")" = "${EXPECTED_SHA:0:7}"
-          version_code="$(jq -r .version_code "${manifest_path}")"
-          test "${version_code}" = "${EXPECTED_VERSION_CODE}"
-          if (( version_code <= 10007 )); then
-            echo "::error::versionCode does not exceed signed Build 12"
-            exit 1
-          fi
           aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
           badging="$("${aapt_path}" dump badging "${apk_path}")"
           test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
-          test "$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_CODE}"
-          if ! grep -a -F -- "${EXPECTED_SHA:0:7}" "${apk_path}" >/dev/null; then
-            echo "::error::Candidate does not contain the expected embedded commit identity"
-            exit 1
-          fi
+          version_code="$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)"
+          test "${version_code}" -gt 0
+          echo "apk_sha256=${actual_sha256}" >> "${GITHUB_OUTPUT}"
+          echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
+
+      - name: Verify previously issued signed Build 12 through GitHub API and artifact
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
+        run: |
+          set -euo pipefail
+          baseline_run_id=40400807491
+          baseline_workflow=".github/workflows/android-signed-test-apk.yml"
+          baseline_sha="274b395fcb998e57568fa32828f12ff0959f19dc"
+          baseline_artifact_name="pingplace-signed-test-apk-1.0.0+9-274b395-build10007"
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}")"
+          test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
+          test "$(jq -r '.path' <<< "${run_json}")" = "${baseline_workflow}"
+          test "$(jq -r '.head_sha' <<< "${run_json}")" = "${baseline_sha}"
+          test "$(jq -r '.status' <<< "${run_json}")" = completed
+          test "$(jq -r '.conclusion' <<< "${run_json}")" = success
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}/artifacts")"
+          matches="$(jq --arg name "${baseline_artifact_name}" --argjson run "${baseline_run_id}" '[.artifacts[] | select(.name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
+          test "${matches}" -eq 1
+          echo "baseline_run_id=${baseline_run_id}" >> "${GITHUB_OUTPUT}"
+          echo "baseline_artifact_name=${baseline_artifact_name}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download verified Build 12 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pingplace-signed-test-apk-1.0.0+9-274b395-build10007
+          run-id: 40400807491
+          github-token: ${{ github.token }}
+          path: baseline
+
+      - name: Compare candidate against actual issued Build 12 versionCode
+        env:
+          EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
+          CANDIDATE_VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          baseline_apk="$(find baseline -type f -name '*.apk' -print)"
+          test -n "${baseline_apk}"
+          test "$(find baseline -type f -name '*.apk' | wc -l)" -eq 1
+          aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          baseline_badging="$("${aapt_path}" dump badging "${baseline_apk}")"
+          test "$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
+          baseline_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          test "${baseline_version_code}" -gt 0
+          test "${CANDIDATE_VERSION_CODE}" -gt "${baseline_version_code}"
+          echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued baseline versionCode=${baseline_version_code}"
 
       - name: Publish verified candidate for the approved signing job
         uses: actions/upload-artifact@v4
@@ -150,13 +226,20 @@ jobs:
           EXPECTED_SHA: ${{ inputs.expected_commit_sha }}
           EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
           EXPECTED_VERSION_NAME: ${{ inputs.expected_version_name }}
-          EXPECTED_VERSION_CODE: ${{ inputs.expected_version_code }}
+          EXPECTED_VERSION_CODE: ${{ needs.verify-approved-candidate.outputs.candidate_version_code }}
+          EXPECTED_BASELINE_VERSION_CODE: ${{ needs.verify-approved-candidate.outputs.baseline_version_code }}
+          EXPECTED_CANDIDATE_SHA256: ${{ needs.verify-approved-candidate.outputs.candidate_sha256 }}
           TRUSTED_CERT_SHA256: ${{ vars.PINGPLACE_TRUSTED_CERT_SHA256 }}
         run: |
           set -euo pipefail
           signing_dir="${RUNNER_TEMP}/pingplace-signing"
           input_apk="$(find verified -type f -name '*.apk' -print)"
+          manifest_path="$(find verified -type f -name manifest.json -print)"
           test -n "${input_apk}"
+          test -n "${manifest_path}"
+          test "$(sha256sum "${input_apk}" | awk '{print $1}')" = "${EXPECTED_CANDIDATE_SHA256}"
+          test "$(jq -r .source_sha "${manifest_path}")" = "${EXPECTED_SHA:0:40}"
+          test "${EXPECTED_VERSION_CODE}" -gt "${EXPECTED_BASELINE_VERSION_CODE}"
           cp "${input_apk}" "${signing_dir}/unsigned.apk"
           zip -d "${signing_dir}/unsigned.apk" 'META-INF/*' >/dev/null 2>&1 || true
           apksigner_path="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
@@ -174,14 +257,7 @@ jobs:
           test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
           test "$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_CODE}"
-          if (( EXPECTED_VERSION_CODE <= 10007 )); then
-            echo "::error::Signed versionCode is not newer than Build 12"
-            exit 1
-          fi
-          if ! grep -a -F -- "${EXPECTED_SHA:0:7}" "${signing_dir}/signed.apk" >/dev/null; then
-            echo "::error::Signed APK does not contain the expected embedded commit identity"
-            exit 1
-          fi
+          test "${EXPECTED_VERSION_CODE}" -gt "${EXPECTED_BASELINE_VERSION_CODE}"
           echo "Verified certificate SHA-256: ${fingerprint}"
           echo "Verified package=${EXPECTED_PACKAGE_ID} versionName=${EXPECTED_VERSION_NAME} versionCode=${EXPECTED_VERSION_CODE} commit=${EXPECTED_SHA:0:7}"
           mkdir -p signed
