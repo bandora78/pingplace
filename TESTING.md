@@ -413,3 +413,10 @@ concurrent migration and repository writes, idempotent migration, and the
 absence of platform register/remove calls. A migration initialization failure
 is exposed through the coordinator diagnostic field and must be recorded with
 its type and reason.
+## APP-09 multi-place validation
+
+Verify multiple enabled places, overlapping regions, per-place cooldown/rearm,
+removed/disabled IDs, duplicate ENTER/EXIT delivery, process/reboot recovery,
+partial registration failure, and the copyable Developer Mode report. Android's
+simultaneous geofence limit and Xiaomi/HyperOS delivery behavior must be recorded
+from a physical device; automated tests do not prove OEM delivery.

@@ -14,7 +14,7 @@ import java.time.Instant
 
 /** Serializes all platform mutations in this process, including Activity recreation. */
 internal object GeofenceLifecycleCoordinator {
-    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL }
+    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL, MULTI_RECONCILE }
 
     data class Completion(
         val generation: Long,
@@ -87,6 +87,7 @@ internal object GeofenceLifecycleCoordinator {
         when (kind) {
             Kind.REGISTER, Kind.RESTORE -> "Geofence registration failed"
             Kind.REMOVE, Kind.RETRY_REMOVAL -> "Platform removal failed"
+            Kind.MULTI_RECONCILE -> "Multi-place geofence reconciliation failed"
         }
 }
 

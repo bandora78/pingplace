@@ -9,7 +9,8 @@ final class PlacePersistenceCoordinator {
   PlacePersistenceCoordinator({
     required this.database,
     required this.migration,
-  });
+    GeofenceService? geofenceService,
+  }) : geofenceService = geofenceService ?? MethodChannelGeofenceService();
 
   factory PlacePersistenceCoordinator.production() {
     final database = PlaceDatabase(MethodChannelPlaceDataStore());
@@ -22,15 +23,31 @@ final class PlacePersistenceCoordinator {
           geofenceService: MethodChannelGeofenceService(),
         ),
       ),
+      geofenceService: MethodChannelGeofenceService(),
     );
   }
 
   final PlaceDatabase database;
   final PlaceMigration migration;
+  final GeofenceService geofenceService;
   String? initializationFailure;
 
   PlaceRepository get places => PlaceRepository(database);
   ReminderRepository get reminders => ReminderRepository(database);
+
+  Future<void> reconcileEnabledPlaces() async {
+    final places = await this.places.list();
+    await geofenceService.registerPlaces(
+      places.where((place) => place.enabled).map(
+        (place) => GeofencePlaceRegistration(
+          placeId: place.id,
+          latitude: place.latitude,
+          longitude: place.longitude,
+          radius: place.outerRadius,
+        ),
+      ),
+    );
+  }
 
   Future<bool> initialize() async {
     try {

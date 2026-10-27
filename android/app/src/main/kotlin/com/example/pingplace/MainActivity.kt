@@ -38,6 +38,7 @@ class MainActivity : FlutterActivity() {
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
+                    "registerPlaces" -> registerPlaces(call, result)
                     "remove" -> remove(result)
                     else -> result.notImplemented()
                 }
@@ -91,7 +92,11 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 ArrivalNotificationBridge.handle(this, this, call, result)
             }
-        restoreRegistration()
+        if (MultiPlaceGeofenceRegistration.hasDesired(this)) {
+            MultiPlaceGeofenceRegistration.restore(this) { success, error ->
+                if (!success) GeofenceRecovery.recordDiagnostic(this, "MULTI_GEOFENCE_STARTUP_FAILED ${error ?: "unknown"}")
+            }
+        } else restoreRegistration()
     }
 
     private fun startPreciseLocation(result: MethodChannel.Result) {
@@ -192,6 +197,29 @@ class MainActivity : FlutterActivity() {
                 else if (error?.startsWith("Desired geofence state:") == true) result.error("PERSISTENCE_FAILED", error, null)
                 else result.error("GEOFENCE_REGISTRATION_FAILED", error, null)
             }
+        }
+    }
+
+    private fun registerPlaces(call: MethodCall, result: MethodChannel.Result) {
+        if (permissionStatus() != "backgroundAllowed") {
+            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
+            return
+        }
+        val raw = call.argument<List<Map<String, Any?>>>("places") ?: emptyList()
+        val targets = raw.mapNotNull { item ->
+            val id = item["placeId"] as? String
+            val latitude = (item["latitude"] as? Number)?.toDouble()
+            val longitude = (item["longitude"] as? Number)?.toDouble()
+            val radius = (item["radius"] as? Number)?.toFloat()
+            if (id == null || latitude == null || longitude == null || radius == null) null
+            else MultiPlaceGeofenceRegistration.Target(id, latitude, longitude, radius)
+        }
+        if (targets.size != raw.size) {
+            result.error("INVALID_ARGUMENT", "Every place must have an id, coordinates, and radius", null)
+            return
+        }
+        MultiPlaceGeofenceRegistration.register(this, targets) { success, error ->
+            runOnUiThread { if (success) result.success(null) else result.error("GEOFENCE_MULTI_RECONCILE_FAILED", error, null) }
         }
     }
 

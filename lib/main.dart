@@ -35,7 +35,15 @@ final class _PingPlaceAppState extends State<PingPlaceApp> {
   }
 
   Future<void> _initializePlacePersistence() async {
-    await placePersistence.initialize();
+    final initialized = await placePersistence.initialize();
+    if (initialized) {
+      try {
+        await placePersistence.reconcileEnabledPlaces();
+      } catch (error) {
+        placePersistence.initializationFailure =
+            'Place registration reconciliation failed: $error';
+      }
+    }
     geofenceController.setPersistenceInitializationFailure(
       placePersistence.initializationFailure,
     );
