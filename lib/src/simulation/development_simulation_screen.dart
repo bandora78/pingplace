@@ -6,9 +6,7 @@ import '../geofence/geofence_service.dart';
 import 'development_simulation_controller.dart';
 
 final class DevelopmentSimulationScreen extends StatefulWidget {
-  const DevelopmentSimulationScreen({required this.realGeofence, super.key});
-
-  final DevelopmentGeofenceController realGeofence;
+  const DevelopmentSimulationScreen({super.key});
 
   @override
   State<DevelopmentSimulationScreen> createState() =>
@@ -18,7 +16,8 @@ final class DevelopmentSimulationScreen extends StatefulWidget {
 final class _DevelopmentSimulationScreenState
     extends State<DevelopmentSimulationScreen> {
   final SimulationController controller = SimulationController();
-  late final DevelopmentGeofenceController realGeofence = widget.realGeofence;
+  final DevelopmentGeofenceController realGeofence =
+      DevelopmentGeofenceController();
   late final TextEditingController latitudeController;
   late final TextEditingController longitudeController;
   late final TextEditingController reminderController;
@@ -35,6 +34,13 @@ final class _DevelopmentSimulationScreenState
       text: realGeofence.longitude.toString(),
     );
     reminderController = TextEditingController(text: realGeofence.reminderText);
+    realGeofence.initialize().then((_) {
+      if (!mounted) return;
+      latitudeController.text = realGeofence.latitude.toString();
+      longitudeController.text = realGeofence.longitude.toString();
+      reminderController.text = realGeofence.reminderText;
+      setState(() {});
+    });
   }
 
   @override
@@ -42,6 +48,7 @@ final class _DevelopmentSimulationScreenState
     controller.removeListener(_refresh);
     controller.dispose();
     realGeofence.removeListener(_refresh);
+    realGeofence.dispose();
     latitudeController.dispose();
     longitudeController.dispose();
     reminderController.dispose();

@@ -32,6 +32,8 @@ class MainActivity : FlutterActivity() {
                     "checkPermission" -> result.success(permissionStatus())
                     "registrationStatus" -> result.success(GeofenceRecovery.isRegistrationConfirmed(this))
                     "registrationDetails" -> result.success(registrationDetails())
+                    "desiredRegistrationDetails" -> result.success(desiredRegistrationDetails())
+                    "desiredMonitoring" -> result.success(GeofenceRecovery.isDesiredMonitoring(this))
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
@@ -80,6 +82,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformRuntimeBridge.RUNTIME_CHANNEL)
             .setMethodCallHandler { call, result ->
                 PlatformRuntimeBridge.handleRuntime(this, call, result)
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlaceDataBridge.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                PlaceDataBridge.handle(this, call, result)
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformRuntimeBridge.NOTIFICATION_CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -209,6 +215,15 @@ class MainActivity : FlutterActivity() {
             if (success) result.success(true)
             else result.error("GEOFENCE_RECOVERY_FAILED", error, null)
         }
+    }
+
+    private fun desiredRegistrationDetails(): Map<String, Any?>? {
+        val registration = GeofenceRecovery.readDesiredRegistration(this) ?: return null
+        return mapOf(
+            "latitude" to registration.latitude,
+            "longitude" to registration.longitude,
+            "radius" to registration.radius.toDouble(),
+        )
     }
 
     private fun registrationDetails(): Map<String, Any?>? {

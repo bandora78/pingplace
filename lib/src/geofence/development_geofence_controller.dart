@@ -51,7 +51,6 @@ final class DevelopmentGeofenceController {
   Timer? _approachTimer;
   Timer? _cooldownTimer;
   int _locationGeneration = 0;
-  Future<void>? _initialization;
 
   double latitude = 32;
   double longitude = 34.8;
@@ -88,9 +87,7 @@ final class DevelopmentGeofenceController {
 
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
 
-  Future<void> initialize() => _initialization ??= _initialize();
-
-  Future<void> _initialize() async {
+  Future<void> initialize() async {
     initialized = false;
     await _restoreRuntime();
     try {
@@ -209,89 +206,9 @@ final class DevelopmentGeofenceController {
     _notifyListeners();
   }
 
-  Future<bool> registerTarget({
-    required double targetLatitude,
-    required double targetLongitude,
-    required double targetRadius,
-    required String targetReminderText,
-  }) async {
-    if (!_validTargetValues(targetLatitude, targetLongitude, targetRadius)) {
-      return false;
-    }
-
-    final previousLatitude = latitude;
-    final previousLongitude = longitude;
-    final previousRadius = radius;
-    final previousReminderText = reminderText;
-    final previousConfig = _config;
-    final previousEngine = engine;
-    final previousRuntimeSnapshot = engine.runtimeSnapshot;
-    final previousRegistered = registered;
-
-    latitude = targetLatitude;
-    longitude = targetLongitude;
-    radius = targetRadius;
-    reminderText = targetReminderText;
-
-    final succeeded = await register();
-    if (!succeeded) {
-      latitude = previousLatitude;
-      longitude = previousLongitude;
-      radius = previousRadius;
-      reminderText = previousReminderText;
-      _config = previousConfig;
-      engine = previousEngine;
-      _notifyListeners();
-      return false;
-    }
-
-    try {
-      await runtimeStore.saveReminderText(targetReminderText);
-      return true;
-    } catch (error) {
-      var rollbackFailure = false;
-      try {
-        await service.remove();
-        registered = false;
-        if (previousRegistered) {
-          await service.register(
-            latitude: previousLatitude,
-            longitude: previousLongitude,
-            radius: previousRadius,
-            reminderText: previousReminderText,
-          );
-          registered = true;
-        }
-      } catch (_) {
-        rollbackFailure = true;
-      }
-      latitude = previousLatitude;
-      longitude = previousLongitude;
-      radius = previousRadius;
-      reminderText = previousReminderText;
-      _config = previousConfig;
-      engine = previousEngine;
-      try {
-        await runtimeStore.save(previousRuntimeSnapshot);
-        await runtimeStore.saveReminderText(previousReminderText);
-      } catch (_) {
-        rollbackFailure = true;
-      }
-      _fail(
-        rollbackFailure
-            ? 'REGISTRATION_ROLLBACK_FAILED: ${error.runtimeType}'
-            : 'REMINDER_SAVE_FAILED: ${error.runtimeType}',
-      );
-      return false;
-    }
-  }
-
-  Future<bool> register() {
+  Future<void> register() {
     _desiredMonitoring = true;
-    var succeeded = false;
-    final generation = ++_operationGeneration;
-    final next = _operationTail.then((_) async {
-      if (generation != _operationGeneration && !_desiredMonitoring) return;
+    return _enqueueOperation(() async {
       lastError = null;
       if (!initialized) {
         _fail(
@@ -319,7 +236,6 @@ final class DevelopmentGeofenceController {
           return;
         }
         registered = true;
-        succeeded = true;
         _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
         await _dispatch(const Arm());
       } catch (error) {
@@ -328,9 +244,8 @@ final class DevelopmentGeofenceController {
         }
       }
     });
-    _operationTail = next.catchError((Object _) {});
-    return next.then((_) => succeeded);
   }
+
   Future<void> remove() {
     _desiredMonitoring = false;
     return _enqueueOperation(() async {
@@ -558,11 +473,7 @@ final class DevelopmentGeofenceController {
       final snapshot = await runtimeStore.load();
       if (snapshot == null) return;
       final target = snapshot.target;
-      if (target != null) {
-        _config = _config.copyWith(target: target);
-        latitude = target.latitude;
-        longitude = target.longitude;
-      }
+      if (target != null) _config = _config.copyWith(target: target);
       engine = SmartArrivalDetectionEngine(_config, snapshot: snapshot);
       currentVisitId = snapshot.visitId;
       if (engine.state == DetectionState.approaching) {
@@ -628,21 +539,6 @@ final class DevelopmentGeofenceController {
     }
   }
 
-  bool _validTargetValues(double targetLatitude, double targetLongitude, double targetRadius) {
-    if (!targetLatitude.isFinite || targetLatitude < -90 || targetLatitude > 90) {
-      _fail('INVALID_COORDINATES: latitude must be between -90 and 90.');
-      return false;
-    }
-    if (!targetLongitude.isFinite || targetLongitude < -180 || targetLongitude > 180) {
-      _fail('INVALID_COORDINATES: longitude must be between -180 and 180.');
-      return false;
-    }
-    if (!targetRadius.isFinite || targetRadius <= 0) {
-      _fail('INVALID_COORDINATES: radius must be greater than zero.');
-      return false;
-    }
-    return true;
-  }
   bool _syncTarget() {
     if (!latitude.isFinite || latitude < -90 || latitude > 90) {
       _fail('INVALID_COORDINATES: latitude must be between -90 and 90.');
@@ -686,3 +582,4 @@ final class DevelopmentGeofenceController {
     }
   }
 }
+

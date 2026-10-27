@@ -28,6 +28,6 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-certificate-fingerprint.sh
 
-      - name: Run Build 11 version metadata tests
+      - name: Run Build 12 version metadata tests
         shell: bash
         run: bash .github/scripts/test-build-10-version.sh
