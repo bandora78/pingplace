@@ -135,6 +135,7 @@ jobs:
           test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
           version_code="$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)"
           test "${version_code}" -gt 0
+          bash .github/scripts/verify-apk-build-identity.sh "${apk_path}" "${EXPECTED_SHA}" "${EXPECTED_PACKAGE_ID}" "${EXPECTED_VERSION_NAME}" "${version_code}"
           echo "apk_sha256=${actual_sha256}" >> "${GITHUB_OUTPUT}"
           echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
 
@@ -257,6 +258,12 @@ jobs:
           test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
           test "$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_CODE}"
+          identity_json="$(unzip -p "${signing_dir}/signed.apk" assets/pingplace-build-identity.json)"
+          test "$(jq -r .source_sha <<< "${identity_json}")" = "${EXPECTED_SHA}"
+          test "$(jq -r .embedded_commit_sha <<< "${identity_json}")" = "${EXPECTED_SHA:0:7}"
+          test "$(jq -r .package_id <<< "${identity_json}")" = "${EXPECTED_PACKAGE_ID}"
+          test "$(jq -r .version_name <<< "${identity_json}")" = "${EXPECTED_VERSION_NAME}"
+          test "$(jq -r .version_code <<< "${identity_json}")" = "${EXPECTED_VERSION_CODE}"
           test "${EXPECTED_VERSION_CODE}" -gt "${EXPECTED_BASELINE_VERSION_CODE}"
           echo "Verified certificate SHA-256: ${fingerprint}"
           echo "Verified package=${EXPECTED_PACKAGE_ID} versionName=${EXPECTED_VERSION_NAME} versionCode=${EXPECTED_VERSION_CODE} commit=${EXPECTED_SHA:0:7}"

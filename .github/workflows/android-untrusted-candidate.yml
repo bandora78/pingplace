@@ -114,10 +114,18 @@ jobs:
           test "${package_id}" = "${EXPECTED_PACKAGE_ID}"
           test "${version_name}" = "${EXPECTED_BUILD_NAME}"
           test "${version_code}" = "${EXPECTED_VERSION_CODE}"
-          if ! grep -a -F -- "${EXPECTED_SHORT_SHA}" "${apk_path}" >/dev/null; then
-            echo "::error::Embedded commit SHA ${EXPECTED_SHORT_SHA} was not found in the APK"
-            exit 1
-          fi
+          mkdir -p identity/assets
+          cat > identity/assets/pingplace-build-identity.json <<EOF
+          {
+            "source_sha": "${EXPECTED_SOURCE_SHA}",
+            "embedded_commit_sha": "${EXPECTED_SHORT_SHA}",
+            "package_id": "${package_id}",
+            "version_name": "${version_name}",
+            "version_code": ${version_code}
+          }
+          EOF
+          (cd identity && zip -q "${GITHUB_WORKSPACE}/${apk_path}" assets/pingplace-build-identity.json)
+          bash .github/scripts/verify-apk-build-identity.sh "${apk_path}" "${EXPECTED_SOURCE_SHA}" "${EXPECTED_PACKAGE_ID}" "${EXPECTED_BUILD_NAME}" "${EXPECTED_VERSION_CODE}"
           mkdir -p candidate
           cp "${apk_path}" "candidate/pingplace-candidate.apk"
           apk_sha256="$(sha256sum "candidate/pingplace-candidate.apk" | awk '{print $1}')"
