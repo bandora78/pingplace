@@ -252,8 +252,9 @@ final class MethodChannelGeofenceService implements GeofenceService {
     final type = value['type'] as String?;
     final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
     final rawError = value['error'];
-    final error = rawError is String && rawError.trim().isNotEmpty
-        ? rawError
+    final rawText = rawError is String ? rawError.trim() : '';
+    final error = rawText.isNotEmpty && rawText.toLowerCase() != 'null'
+        ? rawText
         : null;
     final eventType = switch (type) {
       'enter' => GeofenceEventType.enter,
@@ -266,7 +267,7 @@ final class MethodChannelGeofenceService implements GeofenceService {
       error:
           error ??
           (eventType == GeofenceEventType.error
-              ? 'Unknown geofence event type: $type'
+              ? 'MISSING_ERROR_DETAIL (event_type=$type)'
               : null),
       placeId: value['placeId'] as String?,
     );

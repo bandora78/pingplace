@@ -394,6 +394,32 @@ void main() {
   );
 
   test(
+    'literal null platform error becomes actionable missing-detail diagnostic',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.error,
+          at: DateTime.utc(2026, 1, 1),
+          error: 'null',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.lastError, 'GEOFENCE_EVENT_FAILED: MISSING_ERROR_DETAIL');
+      expect(controller.lastError, isNot(contains(': null')));
+      controller.dispose();
+    },
+  );
+
+  test(
     'unknown platform event is treated as an error, never as ENTER',
     () async {
       final service = FakeGeofenceService();
@@ -413,7 +439,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(controller.state, DetectionState.armed);
-      expect(controller.lastError, contains('Unknown geofence event'));
+      expect(controller.lastError, contains('MISSING_ERROR_DETAIL'));
       controller.dispose();
     },
   );

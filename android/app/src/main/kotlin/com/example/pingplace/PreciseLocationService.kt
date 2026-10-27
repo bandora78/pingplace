@@ -48,6 +48,7 @@ class PreciseLocationService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopUpdates()
             ACTION_START_FROM_GEOFENCE -> {
+                recordDiagnostic("PRECISE_LOCATION_START_REQUESTED place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 intent.getStringExtra(EXTRA_PLACE_ID)?.let { activePlaceIds.add(it) }
                 pendingBackgroundEvents.add(
                     mapOf(
@@ -70,6 +71,7 @@ class PreciseLocationService : Service() {
                 watchdog.postDelayed(watchdogStop, BACKGROUND_WATCHDOG_MS)
             }
             ACTION_BACKGROUND_EVENT -> {
+                recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
                 if (placeId != null) activePlaceIds.add(placeId)
                 pendingBackgroundEvents.add(
@@ -206,6 +208,7 @@ class PreciseLocationService : Service() {
                 result.locations.forEach { location ->
                     val ids = activePlaceIds.toList().ifEmpty { listOf<String?>(null) }
                     ids.forEach { placeId ->
+                        recordDiagnostic("LOCATION_SAMPLE_RECEIVED accuracy=${location.accuracy}")
                         val payload = mapOf<String, Any?>(
                             "type" to "location",
                             "latitude" to location.latitude,
@@ -226,7 +229,10 @@ class PreciseLocationService : Service() {
                 request,
                 locationCallback!!,
                 Looper.getMainLooper(),
-            ).addOnFailureListener { error ->
+            ).addOnSuccessListener {
+                recordDiagnostic("PRECISE_LOCATION_UPDATES_STARTED")
+            }.addOnFailureListener { error ->
+                recordDiagnostic("PRECISE_LOCATION_START_FAILED ${error.message ?: error}")
                 val message = error.message ?: error.toString()
                 val payload = mapOf(
                     "type" to "error",
@@ -271,6 +277,7 @@ class PreciseLocationService : Service() {
     }
 
     private fun stopUpdates(stopService: Boolean = true) {
+        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)

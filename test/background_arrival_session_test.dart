@@ -75,7 +75,32 @@ void main() {
       session.dispose();
     },
   );
-  test('missing background failure detail is diagnosed without null', () async {
+  test('ENTER without an accurate inner sample does not notify', () async {
+    final diagnostics = <String>[];
+    final notifications = InMemoryNotificationService();
+    final session = BackgroundArrivalSession(
+      onDiagnostic: diagnostics.add,
+      onCommand: (_) async {},
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+      notificationService: notifications,
+    );
+
+    await session.handleEvent({
+      'type': 'enter',
+      'targetLatitude': 32.0,
+      'targetLongitude': 34.8,
+      'timestamp': DateTime.utc(2026, 10, 27, 13).toIso8601String(),
+    });
+    await session.handleEvent({'type': 'exit'});
+
+    expect(notifications.deliveredVisitIds, isEmpty);
+    expect(diagnostics, contains('BACKGROUND_ENTER_RECEIVED'));
+    expect(diagnostics, contains('PRECISE_LOCATION_STARTED'));
+    expect(diagnostics, contains('BACKGROUND_EXIT_RECEIVED'));
+    session.dispose();
+  });
+
+  test('literal null background failure detail is diagnosed without null', () async {
     final diagnostics = <String>[];
     final session = BackgroundArrivalSession(
       onDiagnostic: diagnostics.add,
@@ -84,7 +109,7 @@ void main() {
       notificationService: InMemoryNotificationService(),
     );
 
-    await session.handleEvent({'type': 'error', 'error': null});
+    await session.handleEvent({'type': 'error', 'error': 'null'});
 
     expect(
       diagnostics,

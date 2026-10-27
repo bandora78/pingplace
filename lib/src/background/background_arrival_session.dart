@@ -51,12 +51,14 @@ final class BackgroundArrivalSession {
     final type = payload['type'] as String?;
     if (type == 'error') {
       final rawError = payload['error'];
-      final detail = rawError is String && rawError.trim().isNotEmpty
-          ? rawError.trim()
+      final rawText = rawError is String ? rawError.trim() : '';
+      final detail = rawText.isNotEmpty && rawText.toLowerCase() != 'null'
+          ? rawText
           : 'MISSING_ERROR_DETAIL';
       onDiagnostic('BACKGROUND_EVENT_FAILED: $detail');
       await onCommand('stop');
     } else if (type == 'enter') {
+      onDiagnostic('BACKGROUND_ENTER_RECEIVED');
       final latitude = (payload['targetLatitude'] as num?)?.toDouble();
       final longitude = (payload['targetLongitude'] as num?)?.toDouble();
       final timestamp = DateTime.tryParse(
@@ -92,6 +94,7 @@ final class BackgroundArrivalSession {
       await _process(engine!.dispatch(const Arm()));
       await _process(engine!.dispatch(OuterEnter(at: timestamp)));
     } else if (type == 'exit') {
+      onDiagnostic('BACKGROUND_EXIT_RECEIVED');
       if (engine != null) {
         await _process(engine!.dispatch(const OuterExit()));
         if (engine!.state == DetectionState.cooldown ||
