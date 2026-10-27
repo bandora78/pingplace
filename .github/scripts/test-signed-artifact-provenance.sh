@@ -9,23 +9,25 @@ expect_failure() {
 }
 verify_run() {
   local repo="$1" path="$2" event="$3" head="$4" expected="$5" status="$6" conclusion="$7"
-  test "$repo" = "bandora78/pingplace"
-  test "$path" = ".github/workflows/android-untrusted-candidate.yml"
-  test "$event" = "pull_request"
-  test "$head" = "$expected"
-  test "$status" = "completed"
-  test "$conclusion" = "success"
+  [[ "$repo" == "bandora78/pingplace" &&
+     "$path" == ".github/workflows/android-untrusted-candidate.yml" &&
+     "$event" == "pull_request" &&
+     "$head" == "$expected" &&
+     "$status" == "completed" &&
+     "$conclusion" == "success" ]]
 }
 verify_artifact() {
   local artifact_run="$1" expected_run="$2" artifact_name="$3" expected_name="$4" expired="$5"
-  test "$artifact_run" = "$expected_run"
-  test "$artifact_name" = "$expected_name"
-  test "$expired" = "false"
+  [[ "$artifact_run" == "$expected_run" &&
+     "$artifact_name" == "$expected_name" &&
+     "$expired" == "false" ]]
 }
 verify_upgrade() {
   local baseline="$1" candidate="$2"
-  test "$baseline" -gt 0
-  test "$candidate" -gt "$baseline"
+  [[ "$baseline" =~ ^[0-9]+$ &&
+     "$candidate" =~ ^[0-9]+$ &&
+     "$baseline" -gt 0 &&
+     "$candidate" -gt "$baseline" ]]
 }
 
 verify_run bandora78/pingplace .github/workflows/android-untrusted-candidate.yml pull_request abc abc completed success
