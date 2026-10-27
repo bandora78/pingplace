@@ -1,3 +1,38 @@
-1ëa¡Ñ1qêmŠ‰ËŠw¶º)]Šwèuªí²Ä^¦VœyÈZ¯]þr«×G!j½t
-‰ïx&§ž‹\¢{Þ®Ö«‚éžžÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
-«	©ç¢×(ž÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·žÅ§-—*'yÈZ­§-z¹hžf–æÂ6Æ72'V–ÆD–æfò°Ð¢6öç7B'V–ÆD–æfò‡°Ð¢&WV—&VBF†—2çfW'6–öâÀÐ¢&WV—&VBF†—2æ'V–ÆDçVÖ&W"ÀÐ¢&WV—&VBF†—2æ6öÖÖ—BÀÐ¢&WV—&VBF†—2æ'V–ÆEG—RÀÐ¢Ò“°Ð Ð¢7FF–26öç7B7W'&VçBÒ'V–ÆD–æfò€Ð¢fW'6–öã¢7G&–æræg&öÔVçf—&öæÖVçB€Ð¢u”äuÄ4UôõdU%4”ôârÀÐ¢FVfVÇEfÇVS¢sããrÀÐ¢’ÀÐ¢'V–ÆDçVÖ&W#¢7G&–æræg&öÔVçf—&öæÖVçB€Ð¢u”äuÄ4Uô%T”ÄEôåTÔ$U"rÀÐ¢FVfVÇEfÇVS¢s"rÀÐ¢’ÀÐ¢6öÖÖ—C¢7G&–æræg&öÔVçf—&öæÖVçB€Ð¢u”äuÄ4Uôt•Eõ4„rÀÐ¢FVfVÇEfÇVS¢wVæ¶æ÷vârÀÐ¢’ÀÐ¢'V–ÆEG—S¢7G&–æræg&öÔVçf—&öæÖVçB€Ð¢u”äuÄ4Uô%T”ÄEõE•RrÀÐ¢FVfVÇEfÇVS¢vFV'VrrÀÐ¢’ÀÐ¢“°Ð Ð¢f–æÂ7G&–ærfW'6–öã°Ð¢f–æÂ7G&–ær'V–ÆDçVÖ&W#°Ð¢f–æÂ7G&–ær6öÖÖ—C°Ð¢f–æÂ7G&–ær'V–ÆEG—S°Ð Ð¢7G&–ærvWBfW'6–öäÆ&VÂÓâu–æuÆ6RGfW'6–öâ„'V–ÆBF'V–ÆDçVÖ&W"’s°Ð Ð¢7G&–ærvWB6öÖÖ—DÆ&VÂÓât6öÖÖ—C¢F6öÖÖ—Bs°Ð Ð¢7G&–ærvWB'V–ÆEG—TÆ&VÂÓât'V–ÆBG—S¢F'V–ÆEG—Rs°Ð§ÐÐ
+final class BuildInfo {
+  const BuildInfo({
+    required this.version,
+    required this.buildNumber,
+    required this.commit,
+    required this.buildType,
+  });
+
+  static const current = BuildInfo(
+    version: String.fromEnvironment(
+      'PINGPLACE_APP_VERSION',
+      defaultValue: '1.0.0',
+    ),
+    buildNumber: String.fromEnvironment(
+      'PINGPLACE_BUILD_NUMBER',
+      defaultValue: '12',
+    ),
+    commit: String.fromEnvironment(
+      'PINGPLACE_GIT_SHA',
+      defaultValue: 'unknown',
+    ),
+    buildType: String.fromEnvironment(
+      'PINGPLACE_BUILD_TYPE',
+      defaultValue: 'debug',
+    ),
+  );
+
+  final String version;
+  final String buildNumber;
+  final String commit;
+  final String buildType;
+
+  String get versionLabel => 'PingPlace $version (Build $buildNumber)';
+
+  String get commitLabel => 'Commit: $commit';
+
+  String get buildTypeLabel => 'Build type: $buildType';
+}

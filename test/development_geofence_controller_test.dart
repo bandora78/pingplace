@@ -1,3 +1,632 @@
-1ëa¡Ñ1qêmŠ‰ËŠw¶–W«µë-uªí²Ä^¦VœyÈZ¯]şr«×G!j½t
-‰ïx&§‹\¢{Ş®Ö«‚éÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
-«	©ç¢×(÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·Å§-—*'yÈZ­§-z¹h–×÷'BvF'C¦7–æ2s°Ğ Ğ¦–×÷'Bw6¶vS¦fÇWGFW%÷FW7BöfÇWGFW%÷FW7BæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2öFöÖ–â÷6Ö'Eö'&—fÅöFWFV7F–öâæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2övVöfVæ6RöFWfVÆ÷ÖVçEövVöfVæ6Uö6öçG&öÆÆW"æF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2övVöfVæ6RövVöfVæ6U÷6W'f–6RæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2öÆö6F–öâöÆö6F–öå÷6W'f–6RæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2öæ÷F–f–6F–öâöæ÷F–f–6F–öå÷6W'f–6RæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2÷'VçF–ÖRö'&—fÅ÷'VçF–ÖU÷7F÷&RæF'Bs°Ğ Ğ¦f–æÂ6Æ72f¶TvVöfVæ6U6W'f–6R–×ÆVÖVçG2vVöfVæ6U6W'f–6R°Ğ¢f–æÂ7G&VÔ6öçG&öÆÆW#ÄvVöfVæ6TWfVçCâWfVçG46öçG&öÆÆW"ĞĞ¢7G&VÔ6öçG&öÆÆW#ÄvVöfVæ6TWfVçCâæ'&öF67B‚“°Ğ¢vVöfVæ6UW&Ö—76–öå7FGW27FGW2ÒvVöfVæ6UW&Ö—76–öå7FGW2æ&6¶w&÷VæDÆÆ÷vVC°Ğ¢&ööÂ&Vv—7FW&VBÒfÇ6S°Ğ¢7G&–æsò&Vv—7FW&VE&VÖ–æFW%FW‡C°Ğ¢vVöfVæ6U&Vv—7G&F–öãò6fVE&Vv—7G&F–öã°Ğ¢vVöfVæ6U&V6÷fW'•7FGW2&V6÷fW'’Ò6öç7BvVöfVæ6U&V6÷fW'•7FGW2‚“°Ğ¢–çB&W7F÷&T6÷VçBÒ°Ğ¢–çB7F—fU&W7F÷&T6÷VçBÒ°Ğ¢–çBÖ„7F—fU&W7F÷&T6÷VçBÒ°Ğ¢GW&F–öâ&W7F÷&TFVÆ’ÒGW&F–öâç¦W&ó°Ğ Ğ¢÷fW'&–FPĞ¢7G&VÓÄvVöfVæ6TWfVçCâvWBWfVçG2ÓâWfVçG46öçG&öÆÆW"ç7G&VÓ°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â6†V6µW&Ö—76–öâ‚’7–æ2Óâ7FGW3°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â&WVW7EW&Ö—76–öâ‚’7–æ2Óâ7FGW3°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâvWB&Vv—7G&F–öå7FGW27–æ2Óâ&Vv—7FW&VC°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWBFW6—&VE&Vv—7G&F–öâ7–æ2ÓàĞ¢6fVE&Vv—7G&F–öã°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâvWBFW6—&VDÖöæ—F÷&–ær7–æ2Óâ&Vv—7FW&VC°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWB&Vv—7G&F–öâ7–æ2Óâ6fVE&Vv—7G&F–öã°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&V6÷fW'•7FGW3âvWB&V6÷fW'•7FGW27–æ2Óâ&V6÷fW'“°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâ&W7F÷&U&Vv—7G&F–öâ‚’7–æ2°Ğ¢&W7F÷&T6÷VçB²³°Ğ¢7F—fU&W7F÷&T6÷VçB²³°Ğ¢–b†7F—fU&W7F÷&T6÷VçBâÖ„7F—fU&W7F÷&T6÷VçB’°Ğ¢Ö„7F—fU&W7F÷&T6÷VçBÒ7F—fU&W7F÷&T6÷VçC°Ğ¢ĞĞ¢v—BgWGW&SÇfö–CâæFVÆ–VB‡&W7F÷&TFVÆ’“°Ğ¢&Vv—7FW&VBÒ&V6÷fW'’ç&Vv—7G&F–öä6öæf—&ÖVC°Ğ¢7F—fU&W7F÷&T6÷VçBÒÓ°Ğ¢&WGW&â&Vv—7FW&VC°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ&Vv—7FW"‡°Ğ¢&WV—&VBF÷V&ÆRÆF—GVFRÀĞ¢&WV—&VBF÷V&ÆRÆöæv—GVFRÀĞ¢&WV—&VBF÷V&ÆR&F—W2ÀĞ¢7G&–æsò&VÖ–æFW%FW‡BÀĞ¢Ò’7–æ2°Ğ¢&Vv—7FW&VBÒG'VS°Ğ¢&Vv—7FW&VE&VÖ–æFW%FW‡BÒ&VÖ–æFW%FW‡C°Ğ¢6fVE&Vv—7G&F–öâÒvVöfVæ6U&Vv—7G&F–öâ€Ğ¢ÆF—GVFS¢ÆF—GVFRÀĞ¢Æöæv—GVFS¢Æöæv—GVFRÀĞ¢&F—W3¢&F—W2ÀĞ¢“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ&VÖ÷fR‚’7–æ2°Ğ¢&Vv—7FW&VBÒfÇ6S°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢fö–BF—7÷6R‚’°Ğ¢WfVçG46öçG&öÆÆW"æ6Æ÷6R‚“°Ğ¢ĞĞ§ĞĞ Ğ¦f–æÂ6Æ72f¶TÆö6F–öå6W'f–6R–×ÆVÖVçG2Æö6F–öå6W'f–6R°Ğ¢f–æÂ7G&VÔ6öçG&öÆÆW#ÄÆö6F–öå6W'f–6TWfVçCâWfVçG46öçG&öÆÆW"ĞĞ¢7G&VÔ6öçG&öÆÆW#ÄÆö6F–öå6W'f–6TWfVçCâæ'&öF67B‚“°Ğ¢–çB7F'D6÷VçBÒ°Ğ¢–çB7F÷6÷VçBÒ°Ğ¢ö&¦V7Cò7F'DW'&÷#°Ğ Ğ¢÷fW'&–FPĞ¢7G&VÓÄÆö6F–öå6W'f–6TWfVçCâvWBWfVçG2ÓâWfVçG46öçG&öÆÆW"ç7G&VÓ°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ7F'B‚’7–æ2°Ğ¢7F'D6÷VçB²³°Ğ¢–b‡7F'DW'&÷"ÒçVÆÂ’F‡&÷r7F'DW'&÷"°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ7F÷‚’7–æ2°Ğ¢7F÷6÷VçB²³°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢fö–BF—7÷6R‚’°Ğ¢WfVçG46öçG&öÆÆW"æ6Æ÷6R‚“°Ğ¢ĞĞ§ĞĞ Ğ¤vVöfVæ6TWfVçBVçFW$WfVçB…´FFUF–ÖSòEÒ’ÓàĞ¢vVöfVæ6TWfVçB‡G—S¢vVöfVæ6TWfVçEG—RæVçFW"ÂC¢BóòFFUF–ÖRææ÷r‚’“°Ğ Ğ¤Æö6F–öå6W'f–6TWfVçBÆö6F–öäWfVçB€Ğ¢F÷V&ÆRÖWFW'2Â°Ğ¢F÷V&ÆR67W&7’ÒÀĞ¢FFUF–ÖSòBÀĞ§Ò’°Ğ¢6öç7BF&vWBÒF&vWDÆö6F–öâ†ÆF—GVFS¢3"ÂÆöæv—GVFS¢3Bã‚“°Ğ¢&WGW&âÆö6F–öå6W'f–6TWfVçBç6×ÆR€Ğ¢Æö6F–öå6×ÆR€Ğ¢ÆF—GVFS¢F&vWBæÆF—GVFR²ÖWFW'2ò3#ÀĞ¢Æöæv—GVFS¢F&vWBæÆöæv—GVFRÀĞ¢67W&7“¢67W&7’ÀĞ¢F–ÖW7F×¢BóòFFUF–ÖRææ÷r‚’ÀĞ¢’ÀĞ¢“°Ğ§ĞĞ Ğ§fö–BÖ–â‚’°Ğ¢FW7B‚w&Vv—7G&F–öâf÷'v&G2F†R7W'&VçB&VÖ–æFW"Væ6†ævVBrÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç6WE&VÖ–æFW%FW‡B‚rz­ymy½y]zz¢zyíy]zyBr“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢W‡V7B‡6W'f–6Rç&Vv—7FW&VE&VÖ–æFW%FW‡BÂrz­ymy½y]zz¢zyíy]zyBr“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&Vv—7FW&VBÂ—5G'VR“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B€Ğ¢vÖçVÂ&V6÷fW'’—2f—6–&ÆRæBFöW2æ÷BÇFW"FWFV7F–öâ7FFRrÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç&V6÷fW'’Ò6öç7BvVöfVæ6U&V6÷fW'•7FGW2‡&Vv—7G&F–öä6öæf—&ÖVC¢G'VR“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&W7F÷&TvVöfVæ6R‚“°Ğ Ğ¢W‡V7B‡6W'f–6Rç&W7F÷&T6÷VçBÂ“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&Vv—7FW&VBÂ—5G'VR“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæF—6&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"æWfVçDÆörÂ6öçF–ç2†6öçF–ç2‚ttTôdTä4Uõ$U5Dõ$TBr’’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B‚w&V6÷fW'’f–ÇW&R—27W&f6VBv—F†÷WB7&VF–ærâ'&—fÂrÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç&V6÷fW'’Ò6öç7BvVöfVæ6U&V6÷fW'•7FGW2€Ğ¢&Vv—7G&F–öä6öæf—&ÖVC¢fÇ6RÀĞ¢Æ7E&V6÷fW'”f–ÇW&S¢tÆö6F–öâ6W'f–6W2&RF—6&ÆVBrÀĞ¢“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&W7F÷&TvVöfVæ6R‚“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç&Vv—7FW&VBÂ—4fÇ6R“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæF—6&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"æWfVçDÆörÂ6öçF–ç2†6öçF–ç2‚t$ôõEõ$T4õdU%•ôd”ÄTBr’’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B‚w&V6÷fW'’&WV—&W2&6¶w&÷VæBÆö6F–öâW&Ö—76–öârÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç7FGW2ÒvVöfVæ6UW&Ö—76–öå7FGW2æf÷&Vw&÷VæDöæÇ“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&W7F÷&TvVöfVæ6R‚“°Ğ Ğ¢W‡V7B‡6W'f–6Rç&W7F÷&T6÷VçBÂ“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚v&6¶w&÷VæBÆö6F–öâW&Ö—76–öâr’“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæF—6&ÖVB“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B‚w&WVFVB&V6÷fW'’7F–öç2&R6W&–Æ—¦VBrÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç&V6÷fW'’Ò6öç7BvVöfVæ6U&V6÷fW'•7FGW2‡&Vv—7G&F–öä6öæf—&ÖVC¢G'VRĞ¢âç&W7F÷&TFVÆ’Ò6öç7BGW&F–öâ†Ö–ÆÆ—6V6öæG3¢“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ Ğ¢v—BgWGW&Rçv—B…°Ğ¢6öçG&öÆÆW"ç&W7F÷&TvVöfVæ6R‚’ÀĞ¢6öçG&öÆÆW"ç&W7F÷&TvVöfVæ6R‚’ÀĞ¢Ò“°Ğ Ğ¢W‡V7B‡6W'f–6Rç&W7F÷&T6÷VçBÂ"“°Ğ¢W‡V7B‡6W'f–6RæÖ„7F—fU&W7F÷&T6÷VçBÂ“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B‚vf—'7B–æ—F–Æ—¦F–öâ¶VW2FVfVÇB6ö÷&F–æFW2–â7–æ2rÂ‚’7–æ2°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢f¶TvVöfVæ6U6W'f–6R‚’ÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"æ–æ—F–Æ—¦VBÂ—5G'VR“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆF—GVFRÂ3"“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆöæv—GVFRÂ3Bã‚“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B‚w&W7F÷&VB&Vv—7G&F–öâ6ö÷&F–æFW2&RW‡÷6VB6öç6—7FVçFÇ’rÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç&Vv—7FW&VBÒG'VPĞ¢âç6fVE&Vv—7G&F–öâÒ6öç7BvVöfVæ6U&Vv—7G&F–öâ€Ğ¢ÆF—GVFS¢3ãccC“2ÀĞ¢Æöæv—GVFS¢3Bã‚ÀĞ¢&F—W3¢3ÀĞ¢“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"æÆF—GVFRÂ3ãccC“2“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆöæv—GVFRÂ3Bã‚“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&F—W2Â3“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B€Ğ¢v–çfÆ–B6ö÷&F–æFW2&R&V¦V7FVB&Vf÷&RvVöfVæ6R&Vv—7G&F–öârÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ Ğ¢6öçG&öÆÆW"æÆF—GVFRÒ3°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢W‡V7B‡6W'f–6Rç&Vv—7FW&VBÂ—4fÇ6R“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚vÆF—GVFR×W7B&R&WGvVVâr’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B€Ğ¢w&VÂTåDU"G&ç6ÆFW2FòF†RW†—7F–ærVæv–æR÷WFW$VçFW"F‚rÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB€Ğ¢G—S¢vVöfVæ6TWfVçEG—RæVçFW"ÀĞ¢C¢FFUF–ÖRçWF2ƒ##bÂÂÂ"’ÀĞ¢’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç&Vv—7FW&VBÂ—5G'VR“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ö6†–ær“°Ğ¢W‡V7B†Æö6F–öâç7F'D6÷VçBÂ“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—5G'VR“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’€Ğ¢†VçG'’’ÓâVçG'’æ6öçF–ç2‚tõUDU%ôTåDU%õ$T4T•dTBr’ÀĞ¢’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B‚wW&Ö—76–öâÖ—76–ær—2f—6–&ÆRæB&Æö6·2&Vv—7G&F–öârÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚Ğ¢âç7FGW2ÒvVöfVæ6UW&Ö—76–öå7FGW2æf÷&Vw&÷VæDöæÇ“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç&Vv—7FW&VBÂ—4fÇ6R“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚t&6¶w&÷VæBÆö6F–öâr’“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚uU$Ô•54”ôåôÔ•54”ärr’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B‚w&VÂU„•BG&ç6ÆFW2Fò÷WFW$W†—BæB&WGW&ç2Fò&ÖVBrÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB€Ğ¢G—S¢vVöfVæ6TWfVçEG—RæVçFW"ÀĞ¢C¢FFUF–ÖRçWF2ƒ##bÂÂ’ÀĞ¢’ÀĞ¢“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB€Ğ¢G—S¢vVöfVæ6TWfVçEG—RæW†—BÀĞ¢C¢FFUF–ÖRçWF2ƒ##bÂÂÂÂ’ÀĞ¢’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚tõUDU%ôU„•Eõ$T4T•dTBr’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B€Ğ¢wÆFf÷&ÒW'&÷"—2f—6–&ÆRæB6ææ÷BÖ÷fR&ÖVBVæv–æRFò&ö6†–ærrÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB€Ğ¢G—S¢vVöfVæ6TWfVçEG—RæW'&÷"ÀĞ¢C¢FFUF–ÖRçWF2ƒ##bÂÂ’ÀĞ¢W'&÷#¢uVç7W÷'FVBvVöfVæ6RG&ç6—F–öâ“’rÀĞ¢’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚uVç7W÷'FVBvVöfVæ6RG&ç6—F–öâr’“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’€Ğ¢†VçG'’’ÓâVçG'’æ6öçF–ç2‚ttTôdTä4UôUdTåEôd”ÄTBr’ÀĞ¢’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B€Ğ¢wVæ¶æ÷vâÆFf÷&ÒWfVçB—2G&VFVB2âW'&÷"ÂæWfW"2TåDU"rÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢f¶TÆö6F–öå6W'f–6R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB€Ğ¢G—S¢vVöfVæ6TWfVçEG—RæW'&÷"ÀĞ¢C¢FFUF–ÖRçWF2ƒ##bÂÂ’ÀĞ¢’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚uVæ¶æ÷vâvVöfVæ6RWfVçBr’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B€Ğ¢wfÆ–B6×ÆR÷WG6–FR–ææW"&F—W2&VÖ–ç2&ö6†–æræB7F—fRrÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB†Æö6F–öäWfVçBƒS’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ö6†–ær“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—5G'VR“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆFW7DF—7Fæ6RÂw&VFW%F†âƒƒ’“°Ğ¢W‡V7B†Æö6F–öâç7F÷6÷VçBÂ“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B€Ğ¢wfÆ–B–ææW"6×ÆR6öæf—&×2'&—fÂæB7F÷2&V6—6RÆö6F–öârÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB†Æö6F–öäWfVçBƒs’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ6ööÆF÷vâ“°Ğ¢W‡V7B†6öçG&öÆÆW"æ'&—fÄ6öæf—&ÖVBÂ—5G'VR“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚t”ääU%õ$T4„TBr’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—4fÇ6R“°Ğ¢W‡V7B†Æö6F–öâç7F÷6÷VçBÂw&VFW%F†ä÷$WVÅFòƒ’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B‚vf÷&Vw&÷VæB'&—fÂFVÆ—fW'2W†7FÇ’öæRæ÷F–f–6F–öârÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂæ÷F–f–6F–öç2Ò–äÖVÖ÷'”æ÷F–f–6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢æ÷F–f–6F–öå6W'f–6S¢æ÷F–f–6F–öç2ÀĞ¢'VçF–ÖU7F÷&S¢–äÖVÖ÷'”'&—fÅ'VçF–ÖU7F÷&R‚’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB„FFUF–ÖRçWF2ƒ##bÂÂ’’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB€Ğ¢Æö6F–öäWfVçBƒsÂC¢FFUF–ÖRçWF2ƒ##bÂÂÂÂ’’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†æ÷F–f–6F–öç2æFVÆ—fW&VEf—6—D–G2Â†4ÆVæwF‚ƒ’“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚täõD”d”4D”ôåõ4TåBr’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B€Ğ¢wö÷"67W&7’–ç6–FR–ææW"&F—W2—2&V¦V7FVBæB&VÖ–ç27F—fRrÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢6öæf–s¢6öç7B6Ö'D'&—fÄ6öæf–r€Ğ¢F&vWC¢F&vWDÆö6F–öâ†ÆF—GVFS¢3"ÂÆöæv—GVFS¢3Bã‚’ÀĞ¢Ö„66WFVD67W&7“¢#RÀĞ¢’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB†Æö6F–öäWfVçBƒCÂ67W&7“¢#b’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ö6†–ær“°Ğ¢W‡V7B†6öçG&öÆÆW"æ'&—fÄ6öæf—&ÖVBÂ—4fÇ6R“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—5G'VR“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚tÄõuô45U$5’r’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B‚v÷WFW"U„•Bv†–ÆR&ö6†–ær7F÷2&V6—6RÆö6F–öârÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB€Ğ¢vVöfVæ6TWfVçB‡G—S¢vVöfVæ6TWfVçEG—RæW†—BÂC¢FFUF–ÖRææ÷r‚’’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—4fÇ6R“°Ğ¢W‡V7B†Æö6F–öâç7F÷6÷VçBÂw&VFW%F†ä÷$WVÅFòƒ’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ Ğ¢FW7B€Ğ¢v&ö6‚F–ÖV÷WB&WGW&ç2Fò&ÖVBæB7F÷2&V6—6RÆö6F–öârÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢6öæf–s¢6öç7B6Ö'D'&—fÄ6öæf–r€Ğ¢F&vWC¢F&vWDÆö6F–öâ†ÆF—GVFS¢3"ÂÆöæv—GVFS¢3Bã‚’ÀĞ¢&ö6…F–ÖV÷WC¢GW&F–öâ†Ö–ÆÆ—6V6öæG3¢#’ÀĞ¢’ÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB†6öç7BGW&F–öâ†Ö–ÆÆ—6V6öæG3¢S’“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæ&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"ç&V6—6TÆö6F–öä7F—fRÂ—4fÇ6R“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆöræç’‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚t$ô4…õD”ÔTõUBr’’ÀĞ¢—5G'VRÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B€Ğ¢vÆö6F–öâ6W'f–6Rf–ÇW&R—2f—6–&ÆRæB6ææ÷B6öæf—&Ò'&—fÂrÀĞ¢‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB€Ğ¢6öç7BÆö6F–öå6W'f–6TWfVçBæf–ÇW&R‚vÆö6F–öâ&÷f–FW"Væf–Æ&ÆRr’ÀĞ¢“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"æ'&—fÄ6öæf—&ÖVBÂ—4fÇ6R“°Ğ¢W‡V7B†6öçG&öÆÆW"ç7FFRÂFWFV7F–öå7FFRæF—6&ÖVB“°Ğ¢W‡V7B†6öçG&öÆÆW"æÆ7DW'&÷"Â6öçF–ç2‚vÆö6F–öâ&÷f–FW"Væf–Æ&ÆRr’“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢ÒÀĞ¢“°Ğ Ğ¢FW7B‚vÆFRÆö6F–öâ6×ÆRgFW"7F÷—2–væ÷&VBrÂ‚’7–æ2°Ğ¢f–æÂ6W'f–6RÒf¶TvVöfVæ6U6W'f–6R‚“°Ğ¢f–æÂÆö6F–öâÒf¶TÆö6F–öå6W'f–6R‚“°Ğ¢f–æÂ6öçG&öÆÆW"ÒFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"€Ğ¢6W'f–6S¢6W'f–6RÀĞ¢Æö6F–öå6W'f–6S¢Æö6F–öâÀĞ¢“°Ğ¢v—B6öçG&öÆÆW"æ–æ—F–Æ—¦R‚“°Ğ¢v—B6öçG&öÆÆW"ç&Vv—7FW"‚“°Ğ¢6W'f–6RæWfVçG46öçG&öÆÆW"æFB†VçFW$WfVçB‚’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB†Æö6F–öäWfVçBƒs’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ¢f–æÂ'&—fÄ6÷VçBÒ6öçG&öÆÆW"æWfVçDÆöpĞ¢çv†W&R‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚t”ääU%õ$T4„TBr’Ğ¢æÆVæwFƒ°Ğ¢Æö6F–öâæWfVçG46öçG&öÆÆW"æFB†Æö6F–öäWfVçBƒC’“°Ğ¢v—BgWGW&SÇfö–CâæFVÆ–VB„GW&F–öâç¦W&ò“°Ğ Ğ¢W‡V7B†6öçG&öÆÆW"æ'&—fÄ6öæf—&ÖVBÂ—5G'VR“°Ğ¢W‡V7B€Ğ¢6öçG&öÆÆW"æWfVçDÆörçv†W&R‚†VçG'’’ÓâVçG'’æ6öçF–ç2‚t”ääU%õ$T4„TBr’’ÀĞ¢†4ÆVæwF‚†'&—fÄ6÷VçB’ÀĞ¢“°Ğ¢6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢Ò“°Ğ§ĞĞ
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pingplace/src/domain/smart_arrival_detection.dart';
+import 'package:pingplace/src/geofence/development_geofence_controller.dart';
+import 'package:pingplace/src/geofence/geofence_service.dart';
+import 'package:pingplace/src/location/location_service.dart';
+import 'package:pingplace/src/notification/notification_service.dart';
+import 'package:pingplace/src/runtime/arrival_runtime_store.dart';
+
+final class FakeGeofenceService implements GeofenceService {
+  final StreamController<GeofenceEvent> eventsController =
+      StreamController<GeofenceEvent>.broadcast();
+  GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
+  bool registered = false;
+  String? registeredReminderText;
+  GeofenceRegistration? savedRegistration;
+  GeofenceRecoveryStatus recovery = const GeofenceRecoveryStatus();
+  int restoreCount = 0;
+  int activeRestoreCount = 0;
+  int maxActiveRestoreCount = 0;
+  Duration restoreDelay = Duration.zero;
+
+  @override
+  Stream<GeofenceEvent> get events => eventsController.stream;
+
+  @override
+  Future<GeofencePermissionStatus> checkPermission() async => status;
+
+  @override
+  Future<GeofencePermissionStatus> requestPermission() async => status;
+
+  @override
+  Future<bool> get registrationStatus async => registered;
+
+  @override
+  Future<GeofenceRegistration?> get desiredRegistration async =>
+      savedRegistration;
+
+  @override
+  Future<bool> get desiredMonitoring async => registered;
+
+  @override
+  Future<GeofenceRegistration?> get registration async => savedRegistration;
+
+  @override
+  Future<GeofenceRecoveryStatus> get recoveryStatus async => recovery;
+
+  @override
+  Future<bool> restoreRegistration() async {
+    restoreCount++;
+    activeRestoreCount++;
+    if (activeRestoreCount > maxActiveRestoreCount) {
+      maxActiveRestoreCount = activeRestoreCount;
+    }
+    await Future<void>.delayed(restoreDelay);
+    registered = recovery.registrationConfirmed;
+    activeRestoreCount--;
+    return registered;
+  }
+
+  @override
+  Future<void> register({
+    required double latitude,
+    required double longitude,
+    required double radius,
+    String? reminderText,
+  }) async {
+    registered = true;
+    registeredReminderText = reminderText;
+    savedRegistration = GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
+  }
+
+  @override
+  Future<void> remove() async {
+    registered = false;
+  }
+
+  @override
+  void dispose() {
+    eventsController.close();
+  }
+}
+
+final class FakeLocationService implements LocationService {
+  final StreamController<LocationServiceEvent> eventsController =
+      StreamController<LocationServiceEvent>.broadcast();
+  int startCount = 0;
+  int stopCount = 0;
+  Object? startError;
+
+  @override
+  Stream<LocationServiceEvent> get events => eventsController.stream;
+
+  @override
+  Future<void> start() async {
+    startCount++;
+    if (startError != null) throw startError!;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCount++;
+  }
+
+  @override
+  void dispose() {
+    eventsController.close();
+  }
+}
+
+GeofenceEvent enterEvent([DateTime? at]) =>
+    GeofenceEvent(type: GeofenceEventType.enter, at: at ?? DateTime.now());
+
+LocationServiceEvent locationEvent(
+  double meters, {
+  double accuracy = 10,
+  DateTime? at,
+}) {
+  const target = TargetLocation(latitude: 32, longitude: 34.8);
+  return LocationServiceEvent.sample(
+    LocationSample(
+      latitude: target.latitude + meters / 111320,
+      longitude: target.longitude,
+      accuracy: accuracy,
+      timestamp: at ?? DateTime.now(),
+    ),
+  );
+}
+
+void main() {
+  test('registration forwards the current reminder unchanged', () async {
+    final service = FakeGeofenceService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.setReminderText('  ×ª×–×›×•×¨×ª ×©××•×¨×”  ');
+    await controller.register();
+
+    expect(service.registeredReminderText, '  ×ª×–×›×•×¨×ª ×©××•×¨×”  ');
+    expect(controller.registered, isTrue);
+    expect(controller.state, DetectionState.armed);
+    controller.dispose();
+  });
+
+  test(
+    'manual recovery is visible and does not alter detection state',
+    () async {
+      final service = FakeGeofenceService()
+        ..recovery = const GeofenceRecoveryStatus(registrationConfirmed: true);
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+      await controller.restoreGeofence();
+
+      expect(service.restoreCount, 1);
+      expect(controller.registered, isTrue);
+      expect(controller.state, DetectionState.disarmed);
+      expect(controller.eventLog, contains(contains('GEOFENCE_RESTORED')));
+      controller.dispose();
+    },
+  );
+
+  test('recovery failure is surfaced without creating an arrival', () async {
+    final service = FakeGeofenceService()
+      ..recovery = const GeofenceRecoveryStatus(
+        registrationConfirmed: false,
+        lastRecoveryFailure: 'Location services are disabled',
+      );
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.restoreGeofence();
+
+    expect(controller.registered, isFalse);
+    expect(controller.state, DetectionState.disarmed);
+    expect(controller.eventLog, contains(contains('BOOT_RECOVERY_FAILED')));
+    controller.dispose();
+  });
+
+  test('recovery requires background location permission', () async {
+    final service = FakeGeofenceService()
+      ..status = GeofencePermissionStatus.foregroundOnly;
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.restoreGeofence();
+
+    expect(service.restoreCount, 0);
+    expect(controller.lastError, contains('background location permission'));
+    expect(controller.state, DetectionState.disarmed);
+    controller.dispose();
+  });
+
+  test('repeated recovery actions are serialized', () async {
+    final service = FakeGeofenceService()
+      ..recovery = const GeofenceRecoveryStatus(registrationConfirmed: true)
+      ..restoreDelay = const Duration(milliseconds: 10);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+
+    await Future.wait([
+      controller.restoreGeofence(),
+      controller.restoreGeofence(),
+    ]);
+
+    expect(service.restoreCount, 2);
+    expect(service.maxActiveRestoreCount, 1);
+    controller.dispose();
+  });
+
+  test('first initialization keeps default coordinates in sync', () async {
+    final controller = DevelopmentGeofenceController(
+      service: FakeGeofenceService(),
+      locationService: FakeLocationService(),
+    );
+
+    await controller.initialize();
+
+    expect(controller.initialized, isTrue);
+    expect(controller.latitude, 32);
+    expect(controller.longitude, 34.8);
+    controller.dispose();
+  });
+
+  test('restored registration coordinates are exposed consistently', () async {
+    final service = FakeGeofenceService()
+      ..registered = true
+      ..savedRegistration = const GeofenceRegistration(
+        latitude: 31.664913,
+        longitude: 34.8,
+        radius: 300,
+      );
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+
+    await controller.initialize();
+
+    expect(controller.latitude, 31.664913);
+    expect(controller.longitude, 34.8);
+    expect(controller.radius, 300);
+    controller.dispose();
+  });
+
+  test(
+    'invalid coordinates are rejected before geofence registration',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+
+      controller.latitude = 310000000;
+      await controller.register();
+
+      expect(service.registered, isFalse);
+      expect(controller.lastError, contains('latitude must be between'));
+      controller.dispose();
+    },
+  );
+
+  test(
+    'real ENTER translates to the existing engine OuterEnter path',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.enter,
+          at: DateTime.utc(2026, 10, 10, 12),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.registered, isTrue);
+      expect(controller.state, DetectionState.approaching);
+      expect(location.startCount, 1);
+      expect(controller.preciseLocationActive, isTrue);
+      expect(
+        controller.eventLog.any(
+          (entry) => entry.contains('OUTER_ENTER_RECEIVED'),
+        ),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('permission missing is visible and blocks registration', () async {
+    final service = FakeGeofenceService()
+      ..status = GeofencePermissionStatus.foregroundOnly;
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+
+    expect(controller.registered, isFalse);
+    expect(controller.lastError, contains('Background location'));
+    expect(
+      controller.eventLog.any((entry) => entry.contains('PERMISSION_MISSING')),
+      isTrue,
+    );
+    controller.dispose();
+  });
+
+  test('real EXIT translates to OuterExit and returns to armed', () async {
+    final service = FakeGeofenceService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(
+      GeofenceEvent(
+        type: GeofenceEventType.enter,
+        at: DateTime.utc(2026, 1, 1),
+      ),
+    );
+    service.eventsController.add(
+      GeofenceEvent(
+        type: GeofenceEventType.exit,
+        at: DateTime.utc(2026, 1, 1, 0, 1),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state, DetectionState.armed);
+    expect(
+      controller.eventLog.any((entry) => entry.contains('OUTER_EXIT_RECEIVED')),
+      isTrue,
+    );
+    controller.dispose();
+  });
+
+  test(
+    'platform error is visible and cannot move armed engine to approaching',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.error,
+          at: DateTime.utc(2026, 1, 1),
+          error: 'Unsupported geofence transition 99',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.lastError, contains('Unsupported geofence transition'));
+      expect(
+        controller.eventLog.any(
+          (entry) => entry.contains('GEOFENCE_EVENT_FAILED'),
+        ),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test(
+    'unknown platform event is treated as an error, never as ENTER',
+    () async {
+      final service = FakeGeofenceService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: FakeLocationService(),
+      );
+      await controller.initialize();
+      await controller.register();
+
+      service.eventsController.add(
+        GeofenceEvent(
+          type: GeofenceEventType.error,
+          at: DateTime.utc(2026, 1, 1),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.lastError, contains('Unknown geofence event'));
+      controller.dispose();
+    },
+  );
+
+  test(
+    'valid sample outside inner radius remains approaching and active',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(150));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.approaching);
+      expect(controller.preciseLocationActive, isTrue);
+      expect(controller.latestDistance, greaterThan(80));
+      expect(location.stopCount, 0);
+      controller.dispose();
+    },
+  );
+
+  test(
+    'valid inner sample confirms arrival and stops precise location',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(70));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.cooldown);
+      expect(controller.arrivalConfirmed, isTrue);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('INNER_REACHED')),
+        isTrue,
+      );
+      expect(controller.preciseLocationActive, isFalse);
+      expect(location.stopCount, greaterThanOrEqualTo(1));
+      controller.dispose();
+    },
+  );
+
+  test('foreground arrival delivers exactly one notification', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final notifications = InMemoryNotificationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+      notificationService: notifications,
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent(DateTime.utc(2026, 1, 1)));
+    await Future<void>.delayed(Duration.zero);
+    location.eventsController.add(
+      locationEvent(70, at: DateTime.utc(2026, 1, 1, 0, 1)),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifications.deliveredVisitIds, hasLength(1));
+    expect(
+      controller.eventLog.any((entry) => entry.contains('NOTIFICATION_SENT')),
+      isTrue,
+    );
+    controller.dispose();
+  });
+
+  test(
+    'poor accuracy inside inner radius is rejected and remains active',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+        config: const SmartArrivalConfig(
+          target: TargetLocation(latitude: 32, longitude: 34.8),
+          maxAcceptedAccuracy: 25,
+        ),
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(locationEvent(40, accuracy: 26));
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state, DetectionState.approaching);
+      expect(controller.arrivalConfirmed, isFalse);
+      expect(controller.preciseLocationActive, isTrue);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('LOW_ACCURACY')),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test('outer EXIT while approaching stops precise location', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent());
+    await Future<void>.delayed(Duration.zero);
+    service.eventsController.add(
+      GeofenceEvent(type: GeofenceEventType.exit, at: DateTime.now()),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.state, DetectionState.armed);
+    expect(controller.preciseLocationActive, isFalse);
+    expect(location.stopCount, greaterThanOrEqualTo(1));
+    controller.dispose();
+  });
+
+  test(
+    'approach timeout returns to armed and stops precise location',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+        config: const SmartArrivalConfig(
+          target: TargetLocation(latitude: 32, longitude: 34.8),
+          approachTimeout: Duration(milliseconds: 20),
+        ),
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(controller.state, DetectionState.armed);
+      expect(controller.preciseLocationActive, isFalse);
+      expect(
+        controller.eventLog.any((entry) => entry.contains('APPROACH_TIMEOUT')),
+        isTrue,
+      );
+      controller.dispose();
+    },
+  );
+
+  test(
+    'location service failure is visible and cannot confirm arrival',
+    () async {
+      final service = FakeGeofenceService();
+      final location = FakeLocationService();
+      final controller = DevelopmentGeofenceController(
+        service: service,
+        locationService: location,
+      );
+      await controller.initialize();
+      await controller.register();
+      service.eventsController.add(enterEvent());
+      await Future<void>.delayed(Duration.zero);
+      location.eventsController.add(
+        const LocationServiceEvent.failure('location provider unavailable'),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.arrivalConfirmed, isFalse);
+      expect(controller.state, DetectionState.disarmed);
+      expect(controller.lastError, contains('location provider unavailable'));
+      controller.dispose();
+    },
+  );
+
+  test('late location sample after stop is ignored', () async {
+    final service = FakeGeofenceService();
+    final location = FakeLocationService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: location,
+    );
+    await controller.initialize();
+    await controller.register();
+    service.eventsController.add(enterEvent());
+    await Future<void>.delayed(Duration.zero);
+    location.eventsController.add(locationEvent(70));
+    await Future<void>.delayed(Duration.zero);
+    final arrivalCount = controller.eventLog
+        .where((entry) => entry.contains('INNER_REACHED'))
+        .length;
+    location.eventsController.add(locationEvent(40));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(controller.arrivalConfirmed, isTrue);
+    expect(
+      controller.eventLog.where((entry) => entry.contains('INNER_REACHED')),
+      hasLength(arrivalCount),
+    );
+    controller.dispose();
+  });
+}

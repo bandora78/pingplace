@@ -1,3 +1,51 @@
-1ëa¡Ñ1qêmŠ‰ËŠw¶–&ÿ™¨§uªí²Ä^¦VœyÈZ¯]şr«×G!j½t
-‰ïx&§‹\¢{Ş®Ö«‚éÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
-«	©ç¢×(÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·Å§-—*'yÈZ­§-z¹h–×÷'BvF'C¦7–æ2s°Ğ Ğ¦–×÷'Bw6¶vS¦fÇWGFW"öÖFW&–ÂæF'Bs°Ğ Ğ¦–×÷'Bw7&2ö&6¶w&÷VæBö&6¶w&÷VæEö'&—fÂæF'Bs°Ğ¦–×÷'Bw7&2övVöfVæ6RöFWfVÆ÷ÖVçEövVöfVæ6Uö6öçG&öÆÆW"æF'Bs°Ğ¦–×÷'Bw7&2ö†öÖR÷–æwÆ6Uö†öÖU÷67&VVâæF'Bs°Ğ¦–×÷'Bw7&2÷W'6—7FVæ6R÷Æ6U÷W'6—7FVæ6RæF'Bs°Ğ Ğ§fö–BÖ–â‚’°Ğ¢'Vä†6öç7B–æuÆ6T‚’“°Ğ§ĞĞ Ğ¤&vÖ‚wfÓ¦VçG'’×ö–çBrĞ¤gWGW&SÇfö–Câ&6¶w&÷VæDÖ–â‚’Óâ'Vä&6¶w&÷VæD'&—fÂ‚“°Ğ Ğ¦f–æÂ6Æ72–æuÆ6TW‡FVæG27FFVgVÅv–FvWB°Ğ¢6öç7B–æuÆ6T‡·7WW"æ¶W—Ò“°Ğ Ğ¢÷fW'&–FPĞ¢7FFSÅ–æuÆ6Tâ7&VFU7FFR‚’Óâõ–æuÆ6T7FFR‚“°Ğ§ĞĞ Ğ¦f–æÂ6Æ72õ–æuÆ6T7FFRW‡FVæG27FFSÅ–æuÆ6Tâ°Ğ¢f–æÂFWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"vVöfVæ6T6öçG&öÆÆW"ĞĞ¢FWfVÆ÷ÖVçDvVöfVæ6T6öçG&öÆÆW"‚“°Ğ¢f–æÂÆ6UW'6—7FVæ6T6ö÷&F–æF÷"Æ6UW'6—7FVæ6RĞĞ¢Æ6UW'6—7FVæ6T6ö÷&F–æF÷"ç&öGV7F–öâ‚“°Ğ Ğ¢÷fW'&–FPĞ¢fö–B–æ—E7FFR‚’°Ğ¢7WW"æ–æ—E7FFR‚“°Ğ¢Væv—FVB†vVöfVæ6T6öçG&öÆÆW"æ–æ—F–Æ—¦R‚’“°Ğ¢Væv—FVB‡Æ6UW'6—7FVæ6Ræ–æ—F–Æ—¦R‚’“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢fö–BF—7÷6R‚’°Ğ¢vVöfVæ6T6öçG&öÆÆW"æF—7÷6R‚“°Ğ¢7WW"æF—7÷6R‚“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢v–FvWB'V–ÆB„'V–ÆD6öçFW‡B6öçFW‡B’°Ğ¢&WGW&âÖFW&–Ä€Ğ¢F—FÆS¢u–æuÆ6RrÀĞ¢F†VÖS¢F†VÖTFF†6öÆ÷%66†VÖU6VVC¢6öÆ÷'2æ–æF–vòÂW6TÖFW&–Ã3¢G'VR’ÀĞ¢†öÖS¢–æuÆ6T†öÖU67&VVâ†6öçG&öÆÆW#¢vVöfVæ6T6öçG&öÆÆW"’ÀĞ¢“°Ğ¢ĞĞ§ĞĞ 
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import 'src/background/background_arrival.dart';
+import 'src/geofence/development_geofence_controller.dart';
+import 'src/home/pingplace_home_screen.dart';
+import 'src/persistence/place_persistence.dart';
+
+void main() {
+  runApp(const PingPlaceApp());
+}
+
+@pragma('vm:entry-point')
+Future<void> backgroundMain() => runBackgroundArrival();
+
+final class PingPlaceApp extends StatefulWidget {
+  const PingPlaceApp({super.key});
+
+  @override
+  State<PingPlaceApp> createState() => _PingPlaceAppState();
+}
+
+final class _PingPlaceAppState extends State<PingPlaceApp> {
+  final DevelopmentGeofenceController geofenceController =
+      DevelopmentGeofenceController();
+  final PlacePersistenceCoordinator placePersistence =
+      PlacePersistenceCoordinator.production();
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(geofenceController.initialize());
+    unawaited(placePersistence.initialize());
+  }
+
+  @override
+  void dispose() {
+    geofenceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'PingPlace',
+      theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
+      home: PingPlaceHomeScreen(controller: geofenceController),
+    );
+  }
+}

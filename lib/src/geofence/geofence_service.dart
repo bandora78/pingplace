@@ -1,3 +1,228 @@
-1ëa¡Ñ1qêmŠ‰ËŠw¶zÇ«¾'uªí²Ä^¦VœyÈZ¯]şr«×G!j½t
-‰ïx&§‹\¢{Ş®Ö«‚éÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
-«	©ç¢×(÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·Å§-—*'yÈZ­§-z¹h–×÷'Bw6¶vS¦fÇWGFW"÷6W'f–6W2æF'Bs°Ğ Ğ¦VçVÒvVöfVæ6UW&Ö—76–öå7FGW2²FVæ–VBÂf÷&Vw&÷VæDöæÇ’Â&6¶w&÷VæDÆÆ÷vVBĞĞ Ğ¦VçVÒvVöfVæ6TWfVçEG—R²VçFW"ÂW†—BÂW'&÷"ĞĞ Ğ¦f–æÂ6Æ72vVöfVæ6TWfVçB°Ğ¢6öç7BvVöfVæ6TWfVçB‡·&WV—&VBF†—2çG—RÂ&WV—&VBF†—2æBÂF†—2æW'&÷'Ò“°Ğ Ğ¢f–æÂvVöfVæ6TWfVçEG—RG—S°Ğ¢f–æÂFFUF–ÖRC°Ğ¢f–æÂ7G&–æsòW'&÷#°Ğ§ĞĞ Ğ¦f–æÂ6Æ72vVöfVæ6U&Vv—7G&F–öâ°Ğ¢6öç7BvVöfVæ6U&Vv—7G&F–öâ‡°Ğ¢&WV—&VBF†—2æÆF—GVFRÀĞ¢&WV—&VBF†—2æÆöæv—GVFRÀĞ¢&WV—&VBF†—2ç&F—W2ÀĞ¢Ò“°Ğ Ğ¢f–æÂF÷V&ÆRÆF—GVFS°Ğ¢f–æÂF÷V&ÆRÆöæv—GVFS°Ğ¢f–æÂF÷V&ÆR&F—W3°Ğ§ĞĞ Ğ¦f–æÂ6Æ72vVöfVæ6U&V6÷fW'•7FGW2°Ğ¢6öç7BvVöfVæ6U&V6÷fW'•7FGW2‡°Ğ¢F†—2ç&Vv—7G&F–öä6öæf—&ÖVBÒfÇ6RÀĞ¢F†—2æÆ7E&V6÷fW'”GFV×BÀĞ¢F†—2æÆ7E&V6÷fW'•7V66W72ÀĞ¢F†—2æÆ7E&V6÷fW'”f–ÇW&RÀĞ¢F†—2æÆ7D&6¶w&÷VæDWfVçBÀĞ¢F†—2æÆ7D&6¶w&÷VæDf–ÇW&RÀĞ¢F†—2æF–væ÷7F–72Ò6öç7BµÒÀĞ¢Ò“°Ğ Ğ¢f–æÂ&ööÂ&Vv—7G&F–öä6öæf—&ÖVC°Ğ¢f–æÂFFUF–ÖSòÆ7E&V6÷fW'”GFV×C°Ğ¢f–æÂFFUF–ÖSòÆ7E&V6÷fW'•7V66W73°Ğ¢f–æÂ7G&–æsòÆ7E&V6÷fW'”f–ÇW&S°Ğ¢f–æÂFFUF–ÖSòÆ7D&6¶w&÷VæDWfVçC°Ğ¢f–æÂ7G&–æsòÆ7D&6¶w&÷VæDf–ÇW&S°Ğ¢f–æÂÆ—7CÅ7G&–æsâF–væ÷7F–73°Ğ§ĞĞ Ğ¦'7G&7B–çFW&f6R6Æ72vVöfVæ6U6W'f–6R°Ğ¢7G&VÓÄvVöfVæ6TWfVçCâvWBWfVçG3°Ğ Ğ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â6†V6µW&Ö—76–öâ‚“°Ğ Ğ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â&WVW7EW&Ö—76–öâ‚“°Ğ Ğ¢gWGW&SÆ&ööÃâvWB&Vv—7G&F–öå7FGW3°Ğ Ğ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWB&Vv—7G&F–öâ7–æ2ÓâçVÆÃ°Ğ Ğ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWBFW6—&VE&Vv—7G&F–öâ7–æ2Óâ&Vv—7G&F–öã°Ğ Ğ¢gWGW&SÆ&ööÃâvWBFW6—&VDÖöæ—F÷&–ær7–æ2Óâ&Vv—7G&F–öå7FGW3°Ğ Ğ¢gWGW&SÄvVöfVæ6U&V6÷fW'•7FGW3âvWB&V6÷fW'•7FGW27–æ2ÓàĞ¢6öç7BvVöfVæ6U&V6÷fW'•7FGW2‚“°Ğ Ğ¢gWGW&SÆ&ööÃâ&W7F÷&U&Vv—7G&F–öâ‚’7–æ2ÓâfÇ6S°Ğ Ğ¢gWGW&SÇfö–Câ&Vv—7FW"‡°Ğ¢&WV—&VBF÷V&ÆRÆF—GVFRÀĞ¢&WV—&VBF÷V&ÆRÆöæv—GVFRÀĞ¢&WV—&VBF÷V&ÆR&F—W2ÀĞ¢7G&–æsò&VÖ–æFW%FW‡BÀĞ¢Ò“°Ğ Ğ¢gWGW&SÇfö–Câ&VÖ÷fR‚“°Ğ Ğ¢fö–BF—7÷6R‚“°Ğ§ĞĞ Ğ¦f–æÂ6Æ72ÖWF†öD6†ææVÄvVöfVæ6U6W'f–6R–×ÆVÖVçG2vVöfVæ6U6W'f–6R°Ğ¢ÖWF†öD6†ææVÄvVöfVæ6U6W'f–6R‡°Ğ¢ÖWF†öD6†ææVÃòÖWF†öD6†ææVÂÀĞ¢WfVçD6†ææVÃòWfVçD6†ææVÂÀĞ¢Ò’¢öÖWF†öD6†ææVÂÒÖWF†öD6†ææVÂóò6öç7BÖWF†öD6†ææVÂ…öÖWF†öDæÖR’ÀĞ¢öWfVçD6†ææVÂÒWfVçD6†ææVÂóò6öç7BWfVçD6†ææVÂ…öWfVçDæÖR“°Ğ Ğ¢7FF–26öç7BöÖWF†öDæÖRÒw–æwÆ6RövVöfVæ6Rs°Ğ¢7FF–26öç7BöWfVçDæÖRÒw–æwÆ6RövVöfVæ6RöWfVçG2s°Ğ Ğ¢f–æÂÖWF†öD6†ææVÂöÖWF†öD6†ææVÃ°Ğ¢f–æÂWfVçD6†ææVÂöWfVçD6†ææVÃ°Ğ¢7G&VÓÄvVöfVæ6TWfVçCãòöWfVçG3°Ğ Ğ¢÷fW'&–FPĞ¢7G&VÓÄvVöfVæ6TWfVçCâvWBWfVçG2ÓâöWfVçG2óóÒöWfVçD6†ææVÀĞ¢ç&V6V—fT'&öF67E7G&VÒ‚Ğ¢æÖ‚†WfVçB’Óâ÷'6TWfVçB†WfVçB2ÖÆG–æÖ–2ÂG–æÖ–3â’“°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â6†V6µW&Ö—76–öâ‚’7–æ2°Ğ¢f–æÂfÇVRÒv—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÅ7G&–æsâ‚v6†V6µW&Ö—76–öâr“°Ğ¢&WGW&â÷'6UW&Ö—76–öâ‡fÇVR“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6UW&Ö—76–öå7FGW3â&WVW7EW&Ö—76–öâ‚’7–æ2°Ğ¢f–æÂfÇVRÒv—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÅ7G&–æsâ€Ğ¢w&WVW7EW&Ö—76–öârÀĞ¢“°Ğ¢&WGW&â÷'6UW&Ö—76–öâ‡fÇVR“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâvWB&Vv—7G&F–öå7FGW27–æ2ÓàĞ¢v—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÆ&ööÃâ‚w&Vv—7G&F–öå7FGW2r’óòfÇ6S°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWB&Vv—7G&F–öâ7–æ2°Ğ¢f–æÂfÇVRÒv—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÄÖÆG–æÖ–2ÂG–æÖ–3ãâ€Ğ¢w&Vv—7G&F–öäFWF–Ç2rÀĞ¢“°Ğ¢–b‡fÇVRÓÒçVÆÂ’&WGW&âçVÆÃ°Ğ¢f–æÂÆF—GVFRÒ‡fÇVU²vÆF—GVFRuÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢f–æÂÆöæv—GVFRÒ‡fÇVU²vÆöæv—GVFRuÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢f–æÂ&F—W2Ò‡fÇVU²w&F—W2uÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢–b†ÆF—GVFRÓÒçVÆÂÇÂÆöæv—GVFRÓÒçVÆÂÇÂ&F—W2ÓÒçVÆÂ’&WGW&âçVÆÃ°Ğ¢&WGW&âvVöfVæ6U&Vv—7G&F–öâ€Ğ¢ÆF—GVFS¢ÆF—GVFRÀĞ¢Æöæv—GVFS¢Æöæv—GVFRÀĞ¢&F—W3¢&F—W2ÀĞ¢“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&Vv—7G&F–öãóâvWBFW6—&VE&Vv—7G&F–öâ7–æ2°Ğ¢f–æÂfÇVRÒv—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÄÖÆG–æÖ–2ÂG–æÖ–3ãâ€Ğ¢vFW6—&VE&Vv—7G&F–öäFWF–Ç2rÀĞ¢“°Ğ¢–b‡fÇVRÓÒçVÆÂ’&WGW&âçVÆÃ°Ğ¢f–æÂÆF—GVFRÒ‡fÇVU²vÆF—GVFRuÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢f–æÂÆöæv—GVFRÒ‡fÇVU²vÆöæv—GVFRuÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢f–æÂ&F—W2Ò‡fÇVU²w&F—W2uÒ2çVÓò“òçFôF÷V&ÆR‚“°Ğ¢–b†ÆF—GVFRÓÒçVÆÂÇÂÆöæv—GVFRÓÒçVÆÂÇÂ&F—W2ÓÒçVÆÂ’&WGW&âçVÆÃ°Ğ¢&WGW&âvVöfVæ6U&Vv—7G&F–öâ€Ğ¢ÆF—GVFS¢ÆF—GVFRÀĞ¢Æöæv—GVFS¢Æöæv—GVFRÀĞ¢&F—W3¢&F—W2ÀĞ¢“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâvWBFW6—&VDÖöæ—F÷&–ær7–æ2ÓàĞ¢v—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÆ&ööÃâ‚vFW6—&VDÖöæ—F÷&–ærr’óòfÇ6S°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÄvVöfVæ6U&V6÷fW'•7FGW3âvWB&V6÷fW'•7FGW27–æ2°Ğ¢f–æÂfÇVRÒv—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÄÖÆG–æÖ–2ÂG–æÖ–3ãâ€Ğ¢w&V6÷fW'•7FGW2rÀĞ¢“°Ğ¢f–æÂÖÒfÇVRóò6öç7B·Ó°Ğ¢FFUF–ÖSò'6TFFR„ö&¦V7Cò&r’ÓàĞ¢&r—27G&–æròFFUF–ÖRçG'•'6R‡&r’¢çVÆÃ°Ğ¢&WGW&âvVöfVæ6U&V6÷fW'•7FGW2€Ğ¢&Vv—7G&F–öä6öæf—&ÖVC¢Ö²w&Vv—7G&F–öä6öæf—&ÖVBuÒÓÒG'VRÀĞ¢Æ7E&V6÷fW'”GFV×C¢'6TFFR†Ö²vÆ7E&V6÷fW'”GFV×BuÒ’ÀĞ¢Æ7E&V6÷fW'•7V66W73¢'6TFFR†Ö²vÆ7E&V6÷fW'•7V66W72uÒ’ÀĞ¢Æ7E&V6÷fW'”f–ÇW&S¢Ö²vÆ7E&V6÷fW'”f–ÇW&RuÒ27G&–æsòÀĞ¢Æ7D&6¶w&÷VæDWfVçC¢'6TFFR†Ö²vÆ7D&6¶w&÷VæDWfVçBuÒ’ÀĞ¢Æ7D&6¶w&÷VæDf–ÇW&S¢Ö²vÆ7D&6¶w&÷VæDf–ÇW&RuÒ27G&–æsòÀĞ¢F–væ÷7F–73¢†Ö²vF–væ÷7F–72uÒ2Æ—7CÆG–æÖ–3ãòóò6öç7BµÒĞ¢çv†W&UG—SÅ7G&–æsâ‚Ğ¢çFôÆ—7B†w&÷v&ÆS¢fÇ6R’ÀĞ¢“°Ğ¢ĞĞ Ğ¢÷fW'&–FPĞ¢gWGW&SÆ&ööÃâ&W7F÷&U&Vv—7G&F–öâ‚’7–æ2ÓàĞ¢v—BöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÆ&ööÃâ‚w&W7F÷&TvVöfVæ6Rr’óòfÇ6S°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ&Vv—7FW"‡°Ğ¢&WV—&VBF÷V&ÆRÆF—GVFRÀĞ¢&WV—&VBF÷V&ÆRÆöæv—GVFRÀĞ¢&WV—&VBF÷V&ÆR&F—W2ÀĞ¢7G&–æsò&VÖ–æFW%FW‡BÀĞ¢Ò’ÓâöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÇfö–Câ‚w&Vv—7FW"rÂ°Ğ¢vÆF—GVFRs¢ÆF—GVFRÀĞ¢vÆöæv—GVFRs¢Æöæv—GVFRÀĞ¢w&F—W2s¢&F—W2ÀĞ¢w&VÖ–æFW%FW‡Bs¢&VÖ–æFW%FW‡BÀĞ¢Ò“°Ğ Ğ¢÷fW'&–FPĞ¢gWGW&SÇfö–Câ&VÖ÷fR‚’ÓâöÖWF†öD6†ææVÂæ–çfö¶TÖWF†öCÇfö–Câ‚w&VÖ÷fRr“°Ğ Ğ¢÷fW'&–FPĞ¢fö–BF—7÷6R‚’·ĞĞ Ğ¢7FF–2vVöfVæ6UW&Ö—76–öå7FGW2÷'6UW&Ö—76–öâ…7G&–æsòfÇVR’°Ğ¢&WGW&â7v—F6‚‡fÇVR’°Ğ¢v&6¶w&÷VæDÆÆ÷vVBrÓâvVöfVæ6UW&Ö—76–öå7FGW2æ&6¶w&÷VæDÆÆ÷vVBÀĞ¢vf÷&Vw&÷VæDöæÇ’rÓâvVöfVæ6UW&Ö—76–öå7FGW2æf÷&Vw&÷VæDöæÇ’ÀĞ¢òÓâvVöfVæ6UW&Ö—76–öå7FGW2æFVæ–VBÀĞ¢Ó°Ğ¢ĞĞ Ğ¢7FF–2vVöfVæ6TWfVçB÷'6TWfVçB„ÖÆG–æÖ–2ÂG–æÖ–3âfÇVR’°Ğ¢f–æÂG—RÒfÇVU²wG—RuÒ27G&–æsó°Ğ¢f–æÂF–ÖW7F×ÒFFUF–ÖRçG'•'6R‡fÇVU²wF–ÖW7F×uÒ27G&–æsòóòrr“°Ğ¢f–æÂ&tW'&÷"ÒfÇVU²vW'&÷"uÓ°Ğ¢f–æÂW'&÷"Ò&tW'&÷"—27G&–ærbb&tW'&÷"çG&–Ò‚’æ—4æ÷DV×GĞ¢ò&tW'&÷ Ğ¢¢çVÆÃ°Ğ¢f–æÂWfVçEG—RÒ7v—F6‚‡G—R’°Ğ¢vVçFW"rÓâvVöfVæ6TWfVçEG—RæVçFW"ÀĞ¢vW†—BrÓâvVöfVæ6TWfVçEG—RæW†—BÀĞ¢òÓâvVöfVæ6TWfVçEG—RæW'&÷"ÀĞ¢Ó°Ğ¢&WGW&âvVöfVæ6TWfVçB€Ğ¢G—S¢WfVçEG—RÀĞ¢C¢F–ÖW7F×óòFFUF–ÖRææ÷r‚’ÀĞ¢W'&÷# Ğ¢W'&÷"óğĞ¢†WfVçEG—RÓÒvVöfVæ6TWfVçEG—RæW'&÷ Ğ¢òuVæ¶æ÷vâvVöfVæ6RWfVçBG—S¢GG—RpĞ¢¢çVÆÂ’ÀĞ¢“°Ğ¢ĞĞ§ĞĞ
+import 'package:flutter/services.dart';
+
+enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
+
+enum GeofenceEventType { enter, exit, error }
+
+final class GeofenceEvent {
+  const GeofenceEvent({required this.type, required this.at, this.error});
+
+  final GeofenceEventType type;
+  final DateTime at;
+  final String? error;
+}
+
+final class GeofenceRegistration {
+  const GeofenceRegistration({
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+  });
+
+  final double latitude;
+  final double longitude;
+  final double radius;
+}
+
+final class GeofenceRecoveryStatus {
+  const GeofenceRecoveryStatus({
+    this.registrationConfirmed = false,
+    this.lastRecoveryAttempt,
+    this.lastRecoverySuccess,
+    this.lastRecoveryFailure,
+    this.lastBackgroundEvent,
+    this.lastBackgroundFailure,
+    this.diagnostics = const [],
+  });
+
+  final bool registrationConfirmed;
+  final DateTime? lastRecoveryAttempt;
+  final DateTime? lastRecoverySuccess;
+  final String? lastRecoveryFailure;
+  final DateTime? lastBackgroundEvent;
+  final String? lastBackgroundFailure;
+  final List<String> diagnostics;
+}
+
+abstract interface class GeofenceService {
+  Stream<GeofenceEvent> get events;
+
+  Future<GeofencePermissionStatus> checkPermission();
+
+  Future<GeofencePermissionStatus> requestPermission();
+
+  Future<bool> get registrationStatus;
+
+  Future<GeofenceRegistration?> get registration async => null;
+
+  Future<GeofenceRegistration?> get desiredRegistration async => registration;
+
+  Future<bool> get desiredMonitoring async => registrationStatus;
+
+  Future<GeofenceRecoveryStatus> get recoveryStatus async =>
+      const GeofenceRecoveryStatus();
+
+  Future<bool> restoreRegistration() async => false;
+
+  Future<void> register({
+    required double latitude,
+    required double longitude,
+    required double radius,
+    String? reminderText,
+  });
+
+  Future<void> remove();
+
+  void dispose();
+}
+
+final class MethodChannelGeofenceService implements GeofenceService {
+  MethodChannelGeofenceService({
+    MethodChannel? methodChannel,
+    EventChannel? eventChannel,
+  }) : _methodChannel = methodChannel ?? const MethodChannel(_methodName),
+       _eventChannel = eventChannel ?? const EventChannel(_eventName);
+
+  static const _methodName = 'pingplace/geofence';
+  static const _eventName = 'pingplace/geofence/events';
+
+  final MethodChannel _methodChannel;
+  final EventChannel _eventChannel;
+  Stream<GeofenceEvent>? _events;
+
+  @override
+  Stream<GeofenceEvent> get events => _events ??= _eventChannel
+      .receiveBroadcastStream()
+      .map((event) => _parseEvent(event as Map<dynamic, dynamic>));
+
+  @override
+  Future<GeofencePermissionStatus> checkPermission() async {
+    final value = await _methodChannel.invokeMethod<String>('checkPermission');
+    return _parsePermission(value);
+  }
+
+  @override
+  Future<GeofencePermissionStatus> requestPermission() async {
+    final value = await _methodChannel.invokeMethod<String>(
+      'requestPermission',
+    );
+    return _parsePermission(value);
+  }
+
+  @override
+  Future<bool> get registrationStatus async =>
+      await _methodChannel.invokeMethod<bool>('registrationStatus') ?? false;
+
+  @override
+  Future<GeofenceRegistration?> get registration async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'registrationDetails',
+    );
+    if (value == null) return null;
+    final latitude = (value['latitude'] as num?)?.toDouble();
+    final longitude = (value['longitude'] as num?)?.toDouble();
+    final radius = (value['radius'] as num?)?.toDouble();
+    if (latitude == null || longitude == null || radius == null) return null;
+    return GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
+  }
+
+  @override
+  Future<GeofenceRegistration?> get desiredRegistration async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'desiredRegistrationDetails',
+    );
+    if (value == null) return null;
+    final latitude = (value['latitude'] as num?)?.toDouble();
+    final longitude = (value['longitude'] as num?)?.toDouble();
+    final radius = (value['radius'] as num?)?.toDouble();
+    if (latitude == null || longitude == null || radius == null) return null;
+    return GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
+  }
+
+  @override
+  Future<bool> get desiredMonitoring async =>
+      await _methodChannel.invokeMethod<bool>('desiredMonitoring') ?? false;
+
+  @override
+  Future<GeofenceRecoveryStatus> get recoveryStatus async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'recoveryStatus',
+    );
+    final map = value ?? const {};
+    DateTime? parseDate(Object? raw) =>
+        raw is String ? DateTime.tryParse(raw) : null;
+    return GeofenceRecoveryStatus(
+      registrationConfirmed: map['registrationConfirmed'] == true,
+      lastRecoveryAttempt: parseDate(map['lastRecoveryAttempt']),
+      lastRecoverySuccess: parseDate(map['lastRecoverySuccess']),
+      lastRecoveryFailure: map['lastRecoveryFailure'] as String?,
+      lastBackgroundEvent: parseDate(map['lastBackgroundEvent']),
+      lastBackgroundFailure: map['lastBackgroundFailure'] as String?,
+      diagnostics: (map['diagnostics'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+    );
+  }
+
+  @override
+  Future<bool> restoreRegistration() async =>
+      await _methodChannel.invokeMethod<bool>('restoreGeofence') ?? false;
+
+  @override
+  Future<void> register({
+    required double latitude,
+    required double longitude,
+    required double radius,
+    String? reminderText,
+  }) => _methodChannel.invokeMethod<void>('register', {
+    'latitude': latitude,
+    'longitude': longitude,
+    'radius': radius,
+    'reminderText': reminderText,
+  });
+
+  @override
+  Future<void> remove() => _methodChannel.invokeMethod<void>('remove');
+
+  @override
+  void dispose() {}
+
+  static GeofencePermissionStatus _parsePermission(String? value) {
+    return switch (value) {
+      'backgroundAllowed' => GeofencePermissionStatus.backgroundAllowed,
+      'foregroundOnly' => GeofencePermissionStatus.foregroundOnly,
+      _ => GeofencePermissionStatus.denied,
+    };
+  }
+
+  static GeofenceEvent _parseEvent(Map<dynamic, dynamic> value) {
+    final type = value['type'] as String?;
+    final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
+    final rawError = value['error'];
+    final error = rawError is String && rawError.trim().isNotEmpty
+        ? rawError
+        : null;
+    final eventType = switch (type) {
+      'enter' => GeofenceEventType.enter,
+      'exit' => GeofenceEventType.exit,
+      _ => GeofenceEventType.error,
+    };
+    return GeofenceEvent(
+      type: eventType,
+      at: timestamp ?? DateTime.now(),
+      error:
+          error ??
+          (eventType == GeofenceEventType.error
+              ? 'Unknown geofence event type: $type'
+              : null),
+    );
+  }
+}
