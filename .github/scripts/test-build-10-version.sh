@@ -1,52 +1,2 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-pubspec_file="pubspec.yaml"
-build_info_file="lib/src/build_info.dart"
-workflow_file=".github/workflows/android-signed-test-apk.yml"
-
-version_line="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*$/\1/p' "${pubspec_file}" | head -n 1)"
-if [[ "${version_line}" != "1.0.0+12" ]]; then
-  echo "Expected pubspec version 1.0.0+12, got ${version_line}" >&2
-  exit 1
-fi
-
-if ! grep -Fq "defaultValue: '12'" "${build_info_file}"; then
-  echo "BuildInfo default build number is not 12" >&2
-  exit 1
-fi
-
-if ! grep -Fq 'build_number="$((10000 + GITHUB_RUN_NUMBER))"' "${workflow_file}"; then
-  echo "Signed workflow no longer uses the increasing versionCode strategy" >&2
-  exit 1
-fi
-
-if ! grep -Fq -- '--build-number "${{ steps.version.outputs.build_number }}"' "${workflow_file}"; then
-  echo "Signed APK does not use the workflow versionCode output" >&2
-  exit 1
-fi
-
-if ! grep -Fq 'display_build_number="${version_line##*+}"' "${workflow_file}"; then
-  echo "Signed workflow does not derive the displayed build number from pubspec.yaml" >&2
-  exit 1
-fi
-
-if ! grep -Fq -- '--dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.display_build_number }}"' "${workflow_file}"; then
-  echo "Displayed build number is not synchronized with the package build number" >&2
-  exit 1
-fi
-
-if grep -Fq -- '--dart-define=PINGPLACE_BUILD_NUMBER="${{ steps.version.outputs.build_number }}"' "${workflow_file}"; then
-  echo "Displayed build number incorrectly uses Android versionCode" >&2
-  exit 1
-fi
-
-baseline_version_code=10007
-next_run_number=8
-next_version_code=$((10000 + next_run_number))
-if (( next_version_code <= baseline_version_code )); then
-  echo "The next signed APK versionCode would not upgrade Build 9" >&2
-  exit 1
-fi
-
-echo "Build 12 version metadata and signed versionCode strategy passed"
+1ëa¡Ñ1qêmŠ‰ËŠw¶×KÞ®È¨žÈl±©•§r«×œ…ªõÑÈZ¯]¢{Þ	©ç¢×(ž÷«µªàºg§¶‰]
+«Â+a½©nyú+EêeiÇ­¢Ü©y,¬µé‚…ªÂjyèµÊ'½êí½©nzÚ-Ê—’ÊË^˜(Z¬Jë¢´­®)àšë-mç±iËeÊ‰Þr«iË^®Z'€Œ„½ÕÍÈ½‰¥¸½•¹Ø‰…Í 4)Í•Ð€µ•Õ¼Á¥Á•™…¥°4(4)ÁÕ‰ÍÁ•}™¥±”ô‰ÁÕ‰ÍÁ•Œ¹å…µ°ˆ4)‰Õ¥±‘}¥¹™½}™¥±”ô‰±¥ˆ½ÍÉŒ½‰Õ¥±‘}¥¹™¼¹‘…ÉÐˆ4)Ý½É­™±½Ý}™¥±”ôˆ¹¥Ñ¡Õˆ½Ý½É­™±½ÝÌ½…¹‘É½¥µÍ¥¹•µÑ•ÍÐµ…Á¬¹åµ°ˆ4(4)Ù•ÉÍ¥½¹}±¥¹”ôˆ¡Í•€µ¹€Ì½yÙ•ÉÍ¥½¸émléÍÁ…”éut¨¡myléÍÁ…”éut¬¤¸¨½pÄ½Àœ€ˆ‘íÁÕ‰ÍÁ•}™¥±•ôˆð¡•…€µ¸€Ä¤ˆ4)¥˜ml€ˆ‘íÙ•ÉÍ¥½¹}±¥¹•ôˆ€„ô€ˆÄ¸À¸À¬ÄÈˆutìÑ¡•¸4(€•¡¼€‰áÁ•Ñ•ÁÕ‰ÍÁ•ŒÙ•ÉÍ¥½¸€Ä¸À¸À¬ÄÈ°½Ð€‘íÙ•ÉÍ¥½¹}±¥¹•ôˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜€„É•À€µÄ€‰‘•™…Õ±ÑY…±Õ”è€œÄÈœˆ€ˆ‘í‰Õ¥±‘}¥¹™½}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰	Õ¥±‘%¹™¼‘•™…Õ±Ð‰Õ¥±¹Õµ‰•È¥Ì¹½Ð€ÄÈˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜€„É•À€µÄ€‰Õ¥±‘}¹Õµ‰•Èôˆ  ÄÀÀÀÀ€¬%Q!U	}IU9}9U5	H¤¤ˆœ€ˆ‘íÝ½É­™±½Ý}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰M¥¹•Ý½É­™±½Ü¹¼±½¹•ÈÕÍ•ÌÑ¡”¥¹É•…Í¥¹œÙ•ÉÍ¥½¹½‘”ÍÑÉ…Ñ•äˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜€„É•À€µÄ€´´€œ´µ‰Õ¥±µ¹Õµ‰•È€ˆ‘íìÍÑ•ÁÌ¹Ù•ÉÍ¥½¸¹½ÕÑÁÕÑÌ¹‰Õ¥±‘}¹Õµ‰•Èõôˆœ€ˆ‘íÝ½É­™±½Ý}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰M¥¹•A,‘½•Ì¹½ÐÕÍ”Ñ¡”Ý½É­™±½ÜÙ•ÉÍ¥½¹½‘”½ÕÑÁÕÐˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜€„É•À€µÄ€‘¥ÍÁ±…å}‰Õ¥±‘}¹Õµ‰•Èôˆ‘íÙ•ÉÍ¥½¹}±¥¹”ŒŒ¨­ôˆœ€ˆ‘íÝ½É­™±½Ý}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰M¥¹•Ý½É­™±½Ü‘½•Ì¹½Ð‘•É¥Ù”Ñ¡”‘¥ÍÁ±…å•‰Õ¥±¹Õµ‰•È™É½´ÁÕ‰ÍÁ•Œ¹å…µ°ˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜€„É•À€µÄ€´´€œ´µ‘…ÉÐµ‘•™¥¹”õA%9A1}	U%1}9U5	Hôˆ‘íìÍÑ•ÁÌ¹Ù•ÉÍ¥½¸¹½ÕÑÁÕÑÌ¹‘¥ÍÁ±…å}‰Õ¥±‘}¹Õµ‰•Èõôˆœ€ˆ‘íÝ½É­™±½Ý}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰¥ÍÁ±…å•‰Õ¥±¹Õµ‰•È¥Ì¹½ÐÍå¹¡É½¹¥é•Ý¥Ñ Ñ¡”Á…­…”‰Õ¥±¹Õµ‰•Èˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)¥˜É•À€µÄ€´´€œ´µ‘…ÉÐµ‘•™¥¹”õA%9A1}	U%1}9U5	Hôˆ‘íìÍÑ•ÁÌ¹Ù•ÉÍ¥½¸¹½ÕÑÁÕÑÌ¹‰Õ¥±‘}¹Õµ‰•Èõôˆœ€ˆ‘íÝ½É­™±½Ý}™¥±•ôˆìÑ¡•¸4(€•¡¼€‰¥ÍÁ±…å•‰Õ¥±¹Õµ‰•È¥¹½ÉÉ•Ñ±äÕÍ•Ì¹‘É½¥Ù•ÉÍ¥½¹½‘”ˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)‰…Í•±¥¹•}Ù•ÉÍ¥½¹}½‘”ôÄÀÀÀÜ4)¹•áÑ}ÉÕ¹}¹Õµ‰•Èôà4)¹•áÑ}Ù•ÉÍ¥½¹}½‘”ô  ÄÀÀÀÀ€¬¹•áÑ}ÉÕ¹}¹Õµ‰•È¤¤4)¥˜€  ¹•áÑ}Ù•ÉÍ¥½¹}½‘”€ðô‰…Í•±¥¹•}Ù•ÉÍ¥½¹}½‘”€¤¤ìÑ¡•¸4(€•¡¼€‰Q¡”¹•áÐÍ¥¹•A,Ù•ÉÍ¥½¹½‘”Ý½Õ±¹½ÐÕÁÉ…‘”	Õ¥±€äˆ€ø˜È4(€•á¥Ð€Ä4)™¤4(4)•¡¼€‰	Õ¥±€ÄÈÙ•ÉÍ¥½¸µ•Ñ…‘…Ñ„…¹Í¥¹•Ù•ÉÍ¥½¹½‘”ÍÑÉ…Ñ•äÁ…ÍÍ•ˆ4(

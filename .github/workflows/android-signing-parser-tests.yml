@@ -1,33 +1,3 @@
-name: Android signing parser tests
-
-on:
-  pull_request:
-    paths:
-      - '.github/scripts/**'
-      - '.github/workflows/android-signed-test-apk.yml'
-      - '.github/workflows/android-signing-parser-tests.yml'
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  test-certificate-parser:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-
-      - name: Run signing configuration regression tests
-        shell: bash
-        run: bash .github/scripts/test-signing-configuration.sh
-
-      - name: Run certificate fingerprint parser tests
-        shell: bash
-        run: bash .github/scripts/test-certificate-fingerprint.sh
-
-      - name: Run Build 12 version metadata tests
-        shell: bash
-        run: bash .github/scripts/test-build-10-version.sh
+1ëa¡Ñ1qêmŠ‰ËŠw¶®Ç«µë-³)¥²Ä^¦VœyÈZ¯]þr«×G!j½t
+‰ïx&§ž‹\¢{Þ®Ö«‚éžžÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
+«	©ç¢×(ž÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·žÅ§-—*'yÈZ­§-z¹hžæÖS¢æG&ö–B6–væ–ær'6W"FW7G0Ð Ð¦öã Ð¢VÆÅ÷&WVW7C Ð¢F‡3 Ð¢Òræv—F‡V"÷67&—G2ò¢¢pÐ¢Òræv—F‡V"÷v÷&¶fÆ÷w2öæG&ö–B×6–væVB×FW7BÖ²ç–ÖÂpÐ¢Òræv—F‡V"÷v÷&¶fÆ÷w2öæG&ö–B×6–væ–ær×'6W"×FW7G2ç–ÖÂpÐ¢v÷&¶fÆ÷uöF—7F6ƒ Ð Ð§W&Ö—76–öç3 Ð¢6öçFVçG3¢&V@Ð Ð¦¦ö'3 Ð¢FW7BÖ6W'F–f–6FR×'6W# Ð¢'Vç2Ööã¢V'VçGRÖÆFW7@Ð¢7FW3 Ð¢ÒæÖS¢6†V6²÷WB6÷W&6PÐ¢W6W3¢7F–öç2ö6†V6¶÷WDcPÐ¢v—Fƒ Ð¢W'6—7BÖ7&VFVçF–Ç3¢fÇ6PÐ Ð¢ÒæÖS¢'Vâ6–væ–ær6öæf–wW&F–öâ&Vw&W76–öâFW7G0Ð¢6†VÆÃ¢&6€Ð¢'Vã¢&6‚æv—F‡V"÷67&—G2÷FW7B×6–væ–ærÖ6öæf–wW&F–öâç6€Ð Ð¢ÒæÖS¢'Vâ6W'F–f–6FRf–ævW'&–çB'6W"FW7G0Ð¢6†VÆÃ¢&6€Ð¢'Vã¢&6‚æv—F‡V"÷67&—G2÷FW7BÖ6W'F–f–6FRÖf–ævW'&–çBç6€Ð Ð¢ÒæÖS¢'Vâ'V–ÆB"fW'6–öâÖWFFFFW7G0Ð¢6†VÆÃ¢&6€Ð¢'Vã¢&6‚æv—F‡V"÷67&—G2÷FW7BÖ'V–ÆBÓ×fW'6–öâç6€Ð

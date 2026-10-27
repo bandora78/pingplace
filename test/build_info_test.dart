@@ -1,32 +1,3 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:pingplace/src/build_info.dart';
-
-void main() {
-  test('formats version and build information for the debug screen', () {
-    const info = BuildInfo(
-      version: '1.2.3',
-      buildNumber: '42',
-      commit: 'abc1234',
-      buildType: 'release',
-    );
-
-    expect(info.versionLabel, 'PingPlace 1.2.3 (Build 42)');
-    expect(info.commitLabel, 'Commit: abc1234');
-    expect(info.buildTypeLabel, 'Build type: release');
-  });
-
-  test('uses the current package build number when no define is supplied', () {
-    expect(BuildInfo.current.versionLabel, 'PingPlace 1.0.0 (Build 12)');
-  });
-
-  test('uses an explicit fallback when Git metadata is unavailable', () {
-    const info = BuildInfo(
-      version: '1.0.0',
-      buildNumber: '11',
-      commit: 'unknown',
-      buildType: 'debug',
-    );
-
-    expect(info.commitLabel, 'Commit: unknown');
-  });
-}
+1ëa¡Ñ1qêmŠ‰ËŠw¶Šwèµë-uªí²Ä^¦VœyÈZ¯]şr«×G!j½t
+‰ïx&§‹\¢{Ş®Ö«‚éÚ%t(Z¯­†ö¥¹çè­©•§¶‹r¥ä²²×¦
+«	©ç¢×(÷«¶ö¥¹ëh·*^K+-z`¡j±+®ŠÒ¶¸§‚k¬µ·Å§-—*'yÈZ­§-z¹h–×÷'Bw6¶vS¦fÇWGFW%÷FW7BöfÇWGFW%÷FW7BæF'Bs°Ğ¦–×÷'Bw6¶vS§–æwÆ6R÷7&2ö'V–ÆEö–æfòæF'Bs°Ğ Ğ§fö–BÖ–â‚’°Ğ¢FW7B‚vf÷&ÖG2fW'6–öâæB'V–ÆB–æf÷&ÖF–öâf÷"F†RFV'Vr67&VVârÂ‚’°Ğ¢6öç7B–æfòÒ'V–ÆD–æfò€Ğ¢fW'6–öã¢sã"ã2rÀĞ¢'V–ÆDçVÖ&W#¢sC"rÀĞ¢6öÖÖ—C¢v&3#3BrÀĞ¢'V–ÆEG—S¢w&VÆV6RrÀĞ¢“°Ğ Ğ¢W‡V7B†–æfòçfW'6–öäÆ&VÂÂu–æuÆ6Rã"ã2„'V–ÆBC"’r“°Ğ¢W‡V7B†–æfòæ6öÖÖ—DÆ&VÂÂt6öÖÖ—C¢&3#3Br“°Ğ¢W‡V7B†–æfòæ'V–ÆEG—TÆ&VÂÂt'V–ÆBG—S¢&VÆV6Rr“°Ğ¢Ò“°Ğ Ğ¢FW7B‚wW6W2F†R7W'&VçB6¶vR'V–ÆBçVÖ&W"v†VâæòFVf–æR—27WÆ–VBrÂ‚’°Ğ¢W‡V7B„'V–ÆD–æfòæ7W'&VçBçfW'6–öäÆ&VÂÂu–æuÆ6Rãã„'V–ÆB"’r“°Ğ¢Ò“°Ğ Ğ¢FW7B‚wW6W2âW‡Æ–6—BfÆÆ&6²v†Vâv—BÖWFFF—2Væf–Æ&ÆRrÂ‚’°Ğ¢6öç7B–æfòÒ'V–ÆD–æfò€Ğ¢fW'6–öã¢sããrÀĞ¢'V–ÆDçVÖ&W#¢srÀĞ¢6öÖÖ—C¢wVæ¶æ÷vârÀĞ¢'V–ÆEG—S¢vFV'VrrÀĞ¢“°Ğ Ğ¢W‡V7B†–æfòæ6öÖÖ—DÆ&VÂÂt6öÖÖ—C¢Væ¶æ÷vâr“°Ğ¢Ò“°Ğ§ĞĞ
