@@ -32,8 +32,9 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             return
         }
         ids.forEach { placeId ->
+            val routedPlaceId = placeId.takeUnless { it == "pingplace-phase0-outer" }
             GeofenceRecovery.recordBackgroundEvent(context, type, error)
-            GeofenceEventBus.publish(context, type, error, placeId)
+            GeofenceEventBus.publish(context, type, error, routedPlaceId)
             val target = MultiPlaceGeofenceRegistration.target(context, placeId)
             if (type == "enter") {
                 if (target != null) {
@@ -44,12 +45,12 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                     val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
                     if (latitude != null && longitude != null) {
                         PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
-                    } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", placeId)
+                    } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", routedPlaceId)
                 } else {
-                    GeofenceEventBus.publish(context, "error", "Unknown place registration", placeId)
+                    GeofenceEventBus.publish(context, "error", "Unknown place registration", routedPlaceId)
                 }
             } else if (type == "exit") {
-                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, placeId)
+                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, routedPlaceId)
             }
         }
     }
