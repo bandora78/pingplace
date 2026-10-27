@@ -40,6 +40,7 @@ internal data class MultiPlaceTransitionPlan(
 object MultiPlaceGeofenceRegistration {
     private const val PREFS = "pingplace_multi_geofences"
     private const val REQUESTS = "requests"
+    private const val APPLIED_REQUESTS = "applied_requests"
     private const val MODE = "multi_mode"
     private const val CONFIRMED = "registration_confirmed"
     private const val LEGACY_ID = "pingplace-phase0-outer"
@@ -86,14 +87,26 @@ object MultiPlaceGeofenceRegistration {
         persist: Boolean,
         callback: (Boolean, String?) -> Unit,
     ) {
+        var requestedIds = emptyList<String>()
         GeofenceLifecycleCoordinator.submit(GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE, { done ->
             val stored = read(context)
             if (stored == null) {
                 done(false, "Multi-place desired state is corrupt")
                 return@submit
             }
-            val previous = stored.map { it.placeId }
-            if (persist && stored == targets && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CONFIRMED, false)) {
+            val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val applied = readApplied(context)
+            if (preferences.contains(APPLIED_REQUESTS) && applied == null) {
+                done(false, "Multi-place applied registration journal is corrupt")
+                return@submit
+            }
+            val previous = applied ?: if (preferences.getBoolean(CONFIRMED, false)) {
+                // Compatibility with APP-09 data written before the applied journal.
+                stored.map { it.placeId }
+            } else emptyList()
+            if (persist && stored == targets && applied != null &&
+                applied == targets.map { it.placeId } && preferences.getBoolean(CONFIRMED, false)) {
+                requestedIds = applied
                 done(true, null)
                 return@submit
             }
@@ -104,18 +117,20 @@ object MultiPlaceGeofenceRegistration {
                 }
                 targets
             } else targets
+            requestedIds = desired.map { it.placeId }
             reconcile(context, desired, previous, done)
         }) { completion ->
             if (completion.stale) {
                 GeofenceRecovery.recordDiagnostic(context, "MULTI_GEOFENCE_RECONCILE_STALE generation=${completion.generation}")
                 callback(false, "Operation superseded")
+            } else if (!completion.success) {
+                setConfirmed(context, false)
+                callback(false, completion.error)
+            } else if (!persistApplied(context, requestedIds)) {
+                setConfirmed(context, false)
+                callback(false, "Multi-place applied registration persistence failed")
             } else {
-                if (completion.success) {
-                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(CONFIRMED, true).commit()
-                } else {
-                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(CONFIRMED, false).commit()
-                }
-                callback(completion.success, completion.error)
+                callback(true, null)
             }
         }
     }
@@ -180,6 +195,29 @@ object MultiPlaceGeofenceRegistration {
             !(context.getSystemService(LocationManager::class.java)?.isLocationEnabled ?: false)) return "Location services are disabled"
         return null
     }
+
+    private fun readApplied(context: Context): List<String>? {
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!preferences.contains(APPLIED_REQUESTS)) return null
+        return try {
+            val raw = preferences.getString(APPLIED_REQUESTS, null) ?: return null
+            val json = JSONArray(raw)
+            buildList { for (index in 0 until json.length()) add(json.getString(index)) }
+        } catch (_: Exception) { null }
+    }
+
+    private fun setConfirmed(context: Context, confirmed: Boolean): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean(CONFIRMED, confirmed).commit()
+
+    private fun persistApplied(context: Context, ids: List<String>): Boolean = try {
+        val json = JSONArray()
+        ids.distinct().forEach(json::put)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(APPLIED_REQUESTS, json.toString())
+            .putBoolean(CONFIRMED, true)
+            .commit()
+    } catch (_: Exception) { false }
 
     private fun write(context: Context, targets: List<Target>): Boolean = try {
         val json = JSONArray()

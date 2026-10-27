@@ -211,6 +211,16 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "mode" to preferences.getBoolean("multi_mode", false),
             "confirmed" to preferences.getBoolean("registration_confirmed", false),
+            "confirmedLocally" to preferences.getBoolean("registration_confirmed", false),
+            "platformStateVerified" to false,
+            "confirmationSource" to "platform_callback_only",
+            "appliedPlaceIds" to (preferences.getString("applied_requests", null)?.let { raw ->
+                try {
+                    org.json.JSONArray(raw).let { json ->
+                        buildList { for (index in 0 until json.length()) add(json.getString(index)) }
+                    }
+                } catch (_: Exception) { emptyList<String>() }
+            } ?: emptyList<String>()),
             "desiredPlaceIds" to (MultiPlaceGeofenceRegistration.desiredPlaceIds(this)),
         )
     }
