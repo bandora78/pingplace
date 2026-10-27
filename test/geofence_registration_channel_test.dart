@@ -62,8 +62,18 @@ void main() {
 
     expect(received?.method, 'registerPlaces');
     expect(received?.arguments['places'], [
-      {'placeId': 'home', 'latitude': 31.6, 'longitude': 34.8, 'radius': 300.0},
-      {'placeId': 'work', 'latitude': 31.7, 'longitude': 34.9, 'radius': 280.0},
+      {
+        'placeId': 'home', 'latitude': 31.6, 'longitude': 34.8, 'radius': 300.0,
+        'innerRadius': 80.0, 'rearmRadius': 350.0, 'cooldownSeconds': 600,
+        'approachTimeoutSeconds': 600, 'maxAcceptedAccuracy': 50.0,
+        'reminderText': null,
+      },
+      {
+        'placeId': 'work', 'latitude': 31.7, 'longitude': 34.9, 'radius': 280.0,
+        'innerRadius': 80.0, 'rearmRadius': 350.0, 'cooldownSeconds': 600,
+        'approachTimeoutSeconds': 600, 'maxAcceptedAccuracy': 50.0,
+        'reminderText': null,
+      },
     ]);
   });
 

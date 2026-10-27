@@ -47,6 +47,13 @@ final class _PingPlaceAppState extends State<PingPlaceApp> {
     geofenceController.setPersistenceInitializationFailure(
       placePersistence.initializationFailure,
     );
+    if (initialized) {
+      try {
+        geofenceController.setPersistenceDiagnostics(
+          await placePersistence.diagnostics(),
+        );
+      } catch (_) {}
+    }
   }
 
   @override

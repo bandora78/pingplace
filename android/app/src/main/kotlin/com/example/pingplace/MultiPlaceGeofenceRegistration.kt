@@ -21,6 +21,7 @@ object MultiPlaceGeofenceRegistration {
     private const val PREFS = "pingplace_multi_geofences"
     private const val REQUESTS = "requests"
     private const val MODE = "multi_mode"
+    private const val CONFIRMED = "registration_confirmed"
     private const val LEGACY_ID = "pingplace-phase0-outer"
     private const val MAX_GEOFENCES = 100
 
@@ -29,6 +30,12 @@ object MultiPlaceGeofenceRegistration {
         val latitude: Double,
         val longitude: Double,
         val radius: Float,
+        val innerRadius: Float = 80f,
+        val rearmRadius: Float = 350f,
+        val cooldownSeconds: Long = 600,
+        val approachTimeoutSeconds: Long = 600,
+        val maxAcceptedAccuracy: Float = 50f,
+        val reminderText: String? = null,
     )
 
     fun register(context: Context, targets: List<Target>, callback: (Boolean, String?) -> Unit) {
@@ -36,10 +43,22 @@ object MultiPlaceGeofenceRegistration {
     }
 
     fun restore(context: Context, callback: (Boolean, String?) -> Unit) {
-        submit(context, read(context), persist = false, callback)
+        val desired = read(context)
+        if (desired == null) {
+            GeofenceRecovery.recordDiagnostic(context, "MULTI_GEOFENCE_DESIRED_STATE_CORRUPT")
+            callback(false, "Multi-place desired state is corrupt")
+            return
+        }
+        submit(context, desired, persist = false, callback)
     }
 
+    fun target(context: Context, placeId: String): Target? = read(context)?.firstOrNull { it.placeId == placeId }
+
+    fun desiredPlaceIds(context: Context): List<String> = read(context)?.map { it.placeId } ?: emptyList()
+
     fun hasDesired(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(MODE, false)
+
+    fun isMultiMode(context: Context): Boolean = hasDesired(context)
 
     private fun submit(
         context: Context,
@@ -48,7 +67,16 @@ object MultiPlaceGeofenceRegistration {
         callback: (Boolean, String?) -> Unit,
     ) {
         GeofenceLifecycleCoordinator.submit(GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE, { done ->
-            val previous = read(context).map { it.placeId }
+            val stored = read(context)
+            if (stored == null) {
+                done(false, "Multi-place desired state is corrupt")
+                return@submit
+            }
+            val previous = stored.map { it.placeId }
+            if (persist && stored == targets && context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(CONFIRMED, false)) {
+                done(true, null)
+                return@submit
+            }
             val desired = if (persist) {
                 if (!write(context, targets)) {
                     done(false, "Multi-place desired state persistence failed")
@@ -61,7 +89,14 @@ object MultiPlaceGeofenceRegistration {
             if (completion.stale) {
                 GeofenceRecovery.recordDiagnostic(context, "MULTI_GEOFENCE_RECONCILE_STALE generation=${completion.generation}")
                 callback(false, "Operation superseded")
-            } else callback(completion.success, completion.error)
+            } else {
+                if (completion.success) {
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(CONFIRMED, true).commit()
+                } else {
+                    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(CONFIRMED, false).commit()
+                }
+                callback(completion.success, completion.error)
+            }
         }
     }
 
@@ -132,16 +167,24 @@ object MultiPlaceGeofenceRegistration {
         targets.forEach { target -> json.put(JSONObject().apply {
             put("placeId", target.placeId); put("latitude", target.latitude)
             put("longitude", target.longitude); put("radius", target.radius.toDouble())
+            put("innerRadius", target.innerRadius.toDouble()); put("rearmRadius", target.rearmRadius.toDouble())
+            put("cooldownSeconds", target.cooldownSeconds); put("approachTimeoutSeconds", target.approachTimeoutSeconds)
+            put("maxAcceptedAccuracy", target.maxAcceptedAccuracy.toDouble()); put("reminderText", target.reminderText ?: "")
         }) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(MODE, true).putString(REQUESTS, json.toString()).commit()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(MODE, true).putBoolean(CONFIRMED, false).putString(REQUESTS, json.toString()).commit()
     } catch (_: Exception) { false }
 
-    private fun read(context: Context): List<Target> = try {
+    private fun read(context: Context): List<Target>? = try {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(REQUESTS, null) ?: return emptyList()
         val json = JSONArray(raw)
         buildList { for (index in 0 until json.length()) {
             val item = json.getJSONObject(index)
-            add(Target(item.getString("placeId"), item.getDouble("latitude"), item.getDouble("longitude"), item.getDouble("radius").toFloat()))
+            add(Target(
+                item.getString("placeId"), item.getDouble("latitude"), item.getDouble("longitude"), item.getDouble("radius").toFloat(),
+                item.optDouble("innerRadius", 80.0).toFloat(), item.optDouble("rearmRadius", 350.0).toFloat(),
+                item.optLong("cooldownSeconds", 600L), item.optLong("approachTimeoutSeconds", 600L),
+                item.optDouble("maxAcceptedAccuracy", 50.0).toFloat(), item.optString("reminderText").ifEmpty { null },
+            ))
         } }
-    } catch (_: Exception) { emptyList() }
+    } catch (_: Exception) { null }
 }

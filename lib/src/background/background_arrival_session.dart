@@ -84,6 +84,10 @@ final class BackgroundArrivalSession {
               ),
         );
       }
+      final payloadReminder = payload['reminderText'];
+      if (payloadReminder is String && payloadReminder.trim().isNotEmpty) {
+        _reminderText = payloadReminder.trim();
+      }
       _enteredAt = timestamp;
       await _process(engine!.dispatch(const Arm()));
       await _process(engine!.dispatch(OuterEnter(at: timestamp)));

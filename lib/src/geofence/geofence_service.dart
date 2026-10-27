@@ -10,12 +10,24 @@ final class GeofencePlaceRegistration {
     required this.latitude,
     required this.longitude,
     required this.radius,
+    this.innerRadius = 80,
+    this.rearmRadius = 350,
+    this.cooldownSeconds = 600,
+    this.approachTimeoutSeconds = 600,
+    this.maxAcceptedAccuracy = 50,
+    this.reminderText,
   });
 
   final String placeId;
   final double latitude;
   final double longitude;
   final double radius;
+  final double innerRadius;
+  final double rearmRadius;
+  final int cooldownSeconds;
+  final int approachTimeoutSeconds;
+  final double maxAcceptedAccuracy;
+  final String? reminderText;
 }
 
 final class GeofenceEvent {
@@ -212,6 +224,12 @@ final class MethodChannelGeofenceService implements GeofenceService {
                   'latitude': place.latitude,
                   'longitude': place.longitude,
                   'radius': place.radius,
+                  'innerRadius': place.innerRadius,
+                  'rearmRadius': place.rearmRadius,
+                  'cooldownSeconds': place.cooldownSeconds,
+                  'approachTimeoutSeconds': place.approachTimeoutSeconds,
+                  'maxAcceptedAccuracy': place.maxAcceptedAccuracy,
+                  'reminderText': place.reminderText,
                 })
             .toList(growable: false),
       });
@@ -256,6 +274,16 @@ final class MethodChannelGeofenceService implements GeofenceService {
 }
 
 extension GeofenceServiceMultiPlace on GeofenceService {
+  Future<Map<String, Object?>> multiRegistrationStatus() async {
+    if (this is MethodChannelGeofenceService) {
+      final value = await (this as MethodChannelGeofenceService)
+          ._methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('multiRegistrationStatus');
+      return Map<String, Object?>.from(value ?? const {});
+    }
+    return const {};
+  }
+
   Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) async {
     if (this is MethodChannelGeofenceService) {
       await (this as MethodChannelGeofenceService).registerPlaces(places);

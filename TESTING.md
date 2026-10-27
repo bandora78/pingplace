@@ -420,3 +420,17 @@ removed/disabled IDs, duplicate ENTER/EXIT delivery, process/reboot recovery,
 partial registration failure, and the copyable Developer Mode report. Android's
 simultaneous geofence limit and Xiaomi/HyperOS delivery behavior must be recorded
 from a physical device; automated tests do not prove OEM delivery.
+
+
+## APP-09 multi-place background validation
+
+Use at least two enabled places with different coordinates and reminders. Confirm
+that an Android transition containing multiple triggering IDs produces one event
+per Place ID, that each place starts temporary precise verification, and that
+location samples do not change another place's state. Cross the inner radius for
+both places and confirm exactly one notification per place with reminder text
+joined in saved order. Kill the UI process, repeat the transition, reboot, and
+confirm per-place runtime state, cooldown/rearm and notification deduplication
+remain intact. Corrupt the multi-place desired document in a test build and
+confirm diagnostics show failure while the legacy target remains active. Record
+actual Xiaomi 15/HyperOS results; automated tests do not replace this evidence.

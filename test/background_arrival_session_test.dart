@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pingplace/src/background/background_arrival_session.dart';
+import 'package:pingplace/src/background/multi_place_background_arrival_session.dart';
 import 'package:pingplace/src/domain/smart_arrival_detection.dart';
 import 'package:pingplace/src/notification/notification_service.dart';
 import 'package:pingplace/src/runtime/arrival_runtime_store.dart';
@@ -115,5 +116,46 @@ void main() {
     expect(diagnostics, isNot(contains('MISSING_ERROR_DETAIL')));
     session.dispose();
   });
+  test('headless multi-place routing persists independent state and notifications', () async {
+    final runtime = InMemoryArrivalRuntimeStore();
+    final notifications = InMemoryNotificationService();
+    final session = MultiPlaceBackgroundArrivalSession(
+      onDiagnostic: (_) {},
+      onCommand: (_) async {},
+      runtimeStore: runtime,
+      notificationService: notifications,
+    );
+    final at = DateTime.utc(2026, 10, 10, 12);
+
+    for (final place in [
+      ('home', 32.0, 34.8, 'Home reminder'),
+      ('work', 32.01, 34.8, 'Work reminder'),
+    ]) {
+      await session.handleEvent({
+        'type': 'enter',
+        'placeId': place.$1,
+        'targetLatitude': place.$2,
+        'targetLongitude': place.$3,
+        'reminderText': place.$4,
+        'timestamp': at.toIso8601String(),
+      });
+      await session.handleEvent({
+        'type': 'location',
+        'placeId': place.$1,
+        'latitude': place.$2 + 0.00063,
+        'longitude': place.$3,
+        'accuracy': 10.0,
+        'timestamp': at.add(const Duration(minutes: 1)).toIso8601String(),
+      });
+    }
+
+    expect(runtime.placeSnapshots.keys, containsAll(<String>['home', 'work']));
+    expect(runtime.placeSnapshots['home']?.state, DetectionState.cooldown);
+    expect(runtime.placeSnapshots['work']?.state, DetectionState.cooldown);
+    expect(notifications.deliveredVisitIds, hasLength(2));
+    expect(notifications.deliveredVisitIds.toSet(), hasLength(2));
+    session.dispose();
+  });
+
 }
 

@@ -16,8 +16,8 @@ void main() {
         Reminder(id: 'ra', placeId: 'a', text: 'A reminder'),
         Reminder(id: 'rb', placeId: 'b', text: 'B reminder'),
       ],
-      notify: (place, reminder) async =>
-          notifications.add('a:ra'),
+      notify: (place, reminderText) async =>
+          notifications.add('${place.id}:$reminderText'),
     );
 
     for (final id in ['a', 'b']) {
@@ -38,7 +38,7 @@ void main() {
 
     expect(coordinator.stateFor('a'), DetectionState.cooldown);
     expect(coordinator.stateFor('b'), DetectionState.approaching);
-    expect(notifications, ['a:ra']);
+    expect(notifications, ['a:A reminder']);
   });
 
   test('duplicate callbacks do not duplicate a place visit notification', () async {
@@ -64,4 +64,30 @@ void main() {
     await coordinator.handle('a', sample);
     expect(count, 1);
   });
+
+  test('multiple reminders become one deterministic place notification', () async {
+    String? text;
+    final coordinator = MultiPlaceDetectionCoordinator(
+      places: const [
+        Place(id: 'a', name: 'A', latitude: 32, longitude: 34.8, enabled: true),
+      ],
+      reminders: const [
+        Reminder(id: 'r1', placeId: 'a', text: 'first'),
+        Reminder(id: 'r2', placeId: 'a', text: 'second'),
+      ],
+      notify: (_, reminderText) async => text = reminderText,
+    );
+    await coordinator.handle('a', const Arm());
+    await coordinator.handle('a', OuterEnter(at: DateTime(2026)));
+    await coordinator.handle(
+      'a',
+      LocationReceived(
+        LocationSample(
+          latitude: 32, longitude: 34.8, accuracy: 5, timestamp: DateTime(2026),
+        ),
+      ),
+    );
+    expect(text, 'first • second');
+  });
+
 }

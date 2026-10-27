@@ -1,7 +1,7 @@
 import '../domain/smart_arrival_detection.dart';
 import '../persistence/place.dart';
 
-typedef PlaceNotification = Future<void> Function(Place place, Reminder reminder);
+typedef PlaceNotification = Future<void> Function(Place place, String reminderText);
 
 final class MultiPlaceDetectionCoordinator {
   MultiPlaceDetectionCoordinator({
@@ -62,8 +62,13 @@ final class MultiPlaceDetectionCoordinator {
     final visit = engine.visitId;
     if (visit == null || _lastNotificationVisit[placeId] == visit) return;
     _lastNotificationVisit[placeId] = visit;
-    for (final reminder in _reminders[placeId] ?? const <Reminder>[]) {
-      await notify(place, reminder);
-    }
+    final reminderText = (_reminders[placeId] ?? const <Reminder>[])
+        .map((reminder) => reminder.text.trim())
+        .where((text) => text.isNotEmpty)
+        .join(' • ');
+    await notify(
+      place,
+      reminderText.isEmpty ? 'הגעת למקום שהגדרת' : reminderText,
+    );
   }
 }

@@ -13,47 +13,52 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
-            val message = "Invalid geofencing intent"
-            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
-            GeofenceEventBus.publish(context, "error", message)
-            if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
-            }
+            publishFailure(context, "Invalid geofencing intent")
             return
         }
         if (event.hasError()) {
-            val message = "GeofencingEvent error ${event.errorCode}"
-            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
-            GeofenceEventBus.publish(context, "error", message)
-            if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
-            }
+            publishFailure(context, "GeofencingEvent error ${event.errorCode}")
             return
         }
-        val placeId = event.triggeringGeofences?.firstOrNull()?.requestId
         val type = when (event.geofenceTransition) {
             Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
             Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
             else -> "error"
         }
-        val error = if (type == "error") {
-            "Unsupported geofence transition ${event.geofenceTransition}"
-        } else {
-            null
+        val error = if (type == "error") "Unsupported geofence transition ${event.geofenceTransition}" else null
+        val ids = event.triggeringGeofences.orEmpty().mapNotNull { it.requestId }.distinct()
+        if (ids.isEmpty()) {
+            publishFailure(context, error ?: "Geofence transition contained no request IDs")
+            return
         }
-        GeofenceRecovery.recordBackgroundEvent(context, type, error)
-        GeofenceEventBus.publish(context, type, error, placeId)
-        if (type == "enter") {
-            val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
-            val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
-            val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
-            if (latitude == null || longitude == null) {
-                GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted")
-            } else if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.startFromGeofence(context, latitude, longitude)
+        ids.forEach { placeId ->
+            GeofenceRecovery.recordBackgroundEvent(context, type, error)
+            GeofenceEventBus.publish(context, type, error, placeId)
+            val target = MultiPlaceGeofenceRegistration.target(context, placeId)
+            if (type == "enter") {
+                if (target != null) {
+                    PreciseLocationService.startFromGeofence(context, target)
+                } else if (placeId == "pingplace-phase0-outer") {
+                    val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
+                    val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
+                    val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
+                    if (latitude != null && longitude != null) {
+                        PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
+                    } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", placeId)
+                } else {
+                    GeofenceEventBus.publish(context, "error", "Unknown place registration", placeId)
+                }
+            } else if (type == "exit") {
+                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, placeId)
             }
-        } else if (type == "exit" && !GeofenceEventBus.isAttached()) {
-            PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null)
+        }
+    }
+
+    private fun publishFailure(context: Context, message: String) {
+        GeofenceRecovery.recordBackgroundEvent(context, "error", message)
+        GeofenceEventBus.publish(context, "error", message)
+        if (!GeofenceEventBus.isAttached()) {
+            PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null, null)
         }
     }
 }

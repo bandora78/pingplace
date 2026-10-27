@@ -67,6 +67,8 @@ final class _DevelopmentSimulationScreenState
               'Persistence initialization failure: ${realGeofence.persistenceInitializationFailure}',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          if (realGeofence.persistenceDiagnostics.isNotEmpty)
+            SelectableText(realGeofence.persistenceDiagnostics.join('\n')),
           const SizedBox(height: 12),
           _RealGeofenceSection(
             controller: realGeofence,

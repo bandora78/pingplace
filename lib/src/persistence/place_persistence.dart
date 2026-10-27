@@ -35,8 +35,23 @@ final class PlacePersistenceCoordinator {
   PlaceRepository get places => PlaceRepository(database);
   ReminderRepository get reminders => ReminderRepository(database);
 
+  Future<List<String>> diagnostics() async {
+    final data = await database.read();
+    return [
+      'MIGRATION_STATUS: completed',
+      'PERSISTED_PLACES: ${data.places.length}',
+      'PERSISTED_REMINDERS: ${data.reminders.length}',
+      ...((await geofenceService.multiRegistrationStatus()).entries.map(
+        (entry) => 'REGISTRATION_${entry.key.toUpperCase()}: ${entry.value}',
+      )),
+      ...data.places.map((place) =>
+          'PLACE ${place.id} name=${place.name} enabled=${place.enabled} desiredRegistration=${place.enabled}'),
+    ];
+  }
+
   Future<void> reconcileEnabledPlaces() async {
     final places = await this.places.list();
+    final reminders = await this.reminders.list();
     await geofenceService.registerPlaces(
       places.where((place) => place.enabled).map(
         (place) => GeofencePlaceRegistration(
@@ -44,6 +59,16 @@ final class PlacePersistenceCoordinator {
           latitude: place.latitude,
           longitude: place.longitude,
           radius: place.outerRadius,
+          innerRadius: place.innerRadius,
+          rearmRadius: place.rearmRadius,
+          cooldownSeconds: place.cooldown.inSeconds,
+          approachTimeoutSeconds: place.approachTimeout.inSeconds,
+          maxAcceptedAccuracy: place.maxAcceptedAccuracy,
+          reminderText: reminders
+              .where((reminder) => reminder.placeId == place.id)
+              .map((reminder) => reminder.text.trim())
+              .where((text) => text.isNotEmpty)
+              .join(' • '),
         ),
       ),
     );

@@ -132,3 +132,26 @@ using the place's stable notification identity; reminder text is combined by the
 notification adapter according to its explicit presentation policy. Events with
 an unknown or stale Place ID are diagnostic-only and cannot change another
 place's state. No permanent background GPS is introduced.
+
+
+## Phase 1 APP-09 multi-place runtime
+
+Enabled places are registered with Android using their stable Place IDs as
+request IDs. A transition may contain several triggering IDs; the receiver
+emits one event per distinct ID and the headless service routes each event and
+subsequent precise samples to that place's independent engine. Runtime snapshots
+are stored under per-place keys, including cooldown, rearm-related state and
+visit identity.
+
+A place's reminders are presented as one notification per arrival visit. The
+deterministic policy is stored reminder order, trimmed non-empty text joined by
+` • `; if no reminder exists, the default arrival text is used. Notification
+deduplication uses `placeId:visitId`, so simultaneous places cannot collide.
+
+The desired multi-registration document is validated fail-closed. Corrupt data
+never becomes an empty set; startup records a diagnostic and falls back to the
+last known legacy target. A confirmed identical desired set is a no-op; recovery
+reconciles platform state. The legacy request is removed only after replacement
+registration succeeds. Android geofence quotas are device/service dependent;
+this implementation rejects more than 100 enabled places and reports partial
+reconciliation failures.
