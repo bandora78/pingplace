@@ -122,13 +122,24 @@ object GeofenceRecovery {
         try { recordDiagnostic(context, message) } catch (_: Exception) { }
     }
 
-    fun readRegistration(context: Context): Registration? =
+    fun readDesiredRegistration(context: Context): Registration? =
         try {
-            desiredStore(context).load()?.takeIf { it.desiredMonitoring }
+            desiredStore(context).load()
                 ?.let { Registration(it.latitude, it.longitude, it.radius) }
         } catch (error: DesiredRegistrationStore.StoreException) {
             recordPersistenceFailure(context, error)
             null
+        }
+
+    fun readRegistration(context: Context): Registration? =
+        readDesiredRegistration(context)?.takeIf { isDesiredMonitoring(context) }
+
+    fun isDesiredMonitoring(context: Context): Boolean =
+        try {
+            desiredStore(context).load()?.desiredMonitoring == true
+        } catch (error: DesiredRegistrationStore.StoreException) {
+            recordPersistenceFailure(context, error)
+            false
         }
 
     fun markRegistrationConfirmed(context: Context, confirmed: Boolean) {

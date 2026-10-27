@@ -376,3 +376,40 @@ cold-process geofence entry, arrival notification exactly-once behavior, exit
 beyond 350 m and re-entry, reboot recovery, permission revocation, location
 services disabled, and HyperOS battery/autostart restrictions. APP-07 does not
 claim those checks passed.
+
+
+## APP-08 Build 11 -> Build 12 persistence upgrade
+
+Build 12 (1.0.0+12) introduces the local place/reminder persistence document.
+The first launch after upgrading from Build 11 must be tested without uninstalling
+the app:
+
+1. Install signed Build 11 and save a target, reminder, and monitoring state.
+2. Confirm the target coordinates, radius, reminder, and monitoring intent in
+   Geofence Diagnostics.
+3. Install signed Build 12 over Build 11 without clearing app data.
+4. Confirm one migrated place and reminder are present and the displayed version
+   is Build 12.
+5. Restart the app and reboot once; confirm migration does not create a duplicate
+   place and the original target/reminder remain unchanged.
+6. Confirm a disabled Build 11 target remains disabled and is not re-registered.
+7. Confirm migration does not produce a register/remove operation. Multi-place
+   simultaneous monitoring is intentionally not part of APP-08.
+8. Record the actual device, Android version, installed APK metadata, target
+   preservation, reminder preservation, duplicate count, and diagnostics.
+
+Automated tests cover repository CRUD, persistence across repository
+reinitialization, write failures, valid/idempotent migration, missing legacy
+data, corrupt/partial-write fail-closed behavior, and the no-mutation migration
+boundary. They do not prove SharedPreferences power-loss durability or OEM
+process/reboot behavior; record those only from a physical device.
+
+### APP-08 review regression coverage
+
+The automated persistence tests cover conflicting Android/runtime legacy
+records, disabled desired monitoring, corrupt and malformed documents,
+validation of IDs/references/coordinates/radii/durations, failed commits,
+concurrent migration and repository writes, idempotent migration, and the
+absence of platform register/remove calls. A migration initialization failure
+is exposed through the coordinator diagnostic field and must be recorded with
+its type and reason.

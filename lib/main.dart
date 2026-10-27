@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'src/background/background_arrival.dart';
 import 'src/geofence/development_geofence_controller.dart';
 import 'src/home/pingplace_home_screen.dart';
+import 'src/persistence/place_persistence.dart';
 
 void main() {
   runApp(const PingPlaceApp());
@@ -23,11 +24,21 @@ final class PingPlaceApp extends StatefulWidget {
 final class _PingPlaceAppState extends State<PingPlaceApp> {
   final DevelopmentGeofenceController geofenceController =
       DevelopmentGeofenceController();
+  final PlacePersistenceCoordinator placePersistence =
+      PlacePersistenceCoordinator.production();
 
   @override
   void initState() {
     super.initState();
     unawaited(geofenceController.initialize());
+    unawaited(_initializePlacePersistence());
+  }
+
+  Future<void> _initializePlacePersistence() async {
+    await placePersistence.initialize();
+    geofenceController.setPersistenceInitializationFailure(
+      placePersistence.initializationFailure,
+    );
   }
 
   @override

@@ -55,6 +55,10 @@ abstract interface class GeofenceService {
 
   Future<GeofenceRegistration?> get registration async => null;
 
+  Future<GeofenceRegistration?> get desiredRegistration async => registration;
+
+  Future<bool> get desiredMonitoring async => registrationStatus;
+
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
 
@@ -125,6 +129,27 @@ final class MethodChannelGeofenceService implements GeofenceService {
       radius: radius,
     );
   }
+
+  @override
+  Future<GeofenceRegistration?> get desiredRegistration async {
+    final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
+      'desiredRegistrationDetails',
+    );
+    if (value == null) return null;
+    final latitude = (value['latitude'] as num?)?.toDouble();
+    final longitude = (value['longitude'] as num?)?.toDouble();
+    final radius = (value['radius'] as num?)?.toDouble();
+    if (latitude == null || longitude == null || radius == null) return null;
+    return GeofenceRegistration(
+      latitude: latitude,
+      longitude: longitude,
+      radius: radius,
+    );
+  }
+
+  @override
+  Future<bool> get desiredMonitoring async =>
+      await _methodChannel.invokeMethod<bool>('desiredMonitoring') ?? false;
 
   @override
   Future<GeofenceRecoveryStatus> get recoveryStatus async {
@@ -201,4 +226,3 @@ final class MethodChannelGeofenceService implements GeofenceService {
     );
   }
 }
-

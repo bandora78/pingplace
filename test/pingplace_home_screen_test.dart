@@ -35,6 +35,14 @@ final class HomeFakeGeofenceService implements GeofenceService {
   Future<bool> get registrationStatus async => registered;
 
   @override
+  Future<GeofenceRegistration?> get desiredRegistration async =>
+      savedRegistration;
+
+  @override
+  Future<bool> get desiredMonitoring async => registered;
+
+
+  @override
   Future<GeofenceRegistration?> get registration async => savedRegistration;
 
   @override

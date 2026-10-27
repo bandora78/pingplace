@@ -49,3 +49,64 @@ Debug Mode is mandatory from Phase 0. Expose target, distance, accuracy, state, 
 
 ## Engineering North Star
 Ask “Has the condition for this reminder become true?” — not “Where is the user all day?”
+
+
+## Phase 1 APP-08 persistence
+
+APP-08 adds a durable, Android-local place database behind PlaceRepository and
+ReminderRepository. The Flutter repositories share one serialized
+PlaceDatabase; a place write and its reminder changes are committed as one
+schema-versioned JSON document through the existing platform channel boundary.
+Android stores the document in SharedPreferences with commit() and rejects
+invalid or unsupported documents. This deliberately avoids introducing a new
+SQLite/plugin dependency in the first Phase 1 migration while retaining a
+checked, durable local store.
+
+The document schema is:
+
+- schemaVersion: 1
+- places[]: stable id, name, latitude/longitude, enabled state, outer/inner/
+  rearm radii, cooldown/approach timeout seconds, and accepted accuracy
+- reminders[]: stable id, placeId, and text
+
+Detection runtime snapshots remain separate from place/reminder records. Place
+detection ownership remains place-level as defined above; APP-08 does not enable
+multi-geofence registration or event routing.
+
+On startup, PlaceMigration reads the legacy runtime snapshot, reminder text,
+and Android desired registration only. If the new store is empty and a valid
+legacy target exists, it commits one stable legacy-place-1 place and
+legacy-reminder-1 in one write. It preserves monitoring intent and geofence
+radius, does not use default coordinates when legacy target data is absent or
+invalid, and does not call register/remove. Existing new data makes migration a
+no-op, so reboot and repeated startup are idempotent. A failed commit leaves
+legacy data untouched and the new store unchanged.
+
+The single-target controller and Android desired-state store remain the active
+compatibility boundary. APP-09 will decide how multiple enabled places are
+registered and routed; APP-08 only prepares durable records.
+
+### APP-08 legacy source-of-truth and failure policy
+
+When both legacy sources exist, Android's desired-registration record is the
+source of truth for the platform target and radius because it is the durable
+monitoring intent. The Dart runtime snapshot is used for coordinates only when
+Android has no desired record. If both records contain coordinates that differ
+beyond a small floating-point tolerance, migration fails closed and leaves the
+new store empty; it never combines coordinates from one source with a radius
+from the other. `desiredMonitoring=false` is preserved as a disabled migrated
+place.
+
+Build 11 persisted only the target coordinates in the runtime snapshot and the
+outer radius in Android desired state. The migration preserves every additional
+setting when a legacy source provides it. For settings that Build 11 did not
+persist, it uses the documented Phase 0 defaults (inner 80 m, rearm 350 m,
+10-minute cooldown and approach timeout, accuracy 50 m); these are not
+substitutions for a known stored value. Invalid or incomplete new documents,
+duplicate IDs, invalid coordinates/radii/durations, and dangling reminder
+references are rejected.
+
+Migration runs inside the same serialized `PlaceDatabase` transaction as
+repository writes. A failed source read or commit is reported through
+`PlacePersistenceCoordinator.initializationFailure` and does not register or
+remove a platform geofence.
