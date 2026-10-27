@@ -24,6 +24,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-signing-configuration.sh
 
+      - name: Run signed artifact provenance regression tests
+        shell: bash
+        run: bash .github/scripts/test-signed-artifact-provenance.sh
+
       - name: Run certificate fingerprint parser tests
         shell: bash
         run: bash .github/scripts/test-certificate-fingerprint.sh
