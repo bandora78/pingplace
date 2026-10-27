@@ -1,0 +1,147 @@
+name: Temporary candidate artifact signing validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/android-candidate-artifact-validation.yml'
+      - '.github/workflows/android-untrusted-candidate.yml'
+      - '.github/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  validate-candidate-artifact:
+    name: Validate candidate artifact with disposable signing key
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify source run and artifact provenance through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_RUN_ID: '40542874330'
+          EXPECTED_ARTIFACT_ID: '12751024359'
+          EXPECTED_ARTIFACT_NAME: 'pingplace-untrusted-candidate-7d534ce-v1.0.0+12'
+          EXPECTED_SOURCE_SHA: '7d534ce51bbfe52f05c8978bd0787e18ffc41eae'
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EXPECTED_RUN_ID}")"
+          test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
+          test "$(jq -r '.path' <<< "${run_json}")" = ".github/workflows/android-untrusted-candidate.yml"
+          test "$(jq -r '.head_sha' <<< "${run_json}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r '.status' <<< "${run_json}")" = completed
+          test "$(jq -r '.conclusion' <<< "${run_json}")" = success
+          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${EXPECTED_RUN_ID}/artifacts")"
+          match_count="$(jq --arg id "${EXPECTED_ARTIFACT_ID}" --arg name "${EXPECTED_ARTIFACT_NAME}" --argjson run "${EXPECTED_RUN_ID}" '[.artifacts[] | select((.id|tostring) == $id and .name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
+          test "${match_count}" -eq 1
+          echo "Verified run ${EXPECTED_RUN_ID}, source SHA ${EXPECTED_SOURCE_SHA}, artifact ${EXPECTED_ARTIFACT_ID}"
+
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pingplace-untrusted-candidate-7d534ce-v1.0.0+12
+          run-id: 40542874330
+          github-token: ${{ github.token }}
+          path: candidate
+
+      - name: Verify candidate APK hash, manifest and identity asset
+        id: candidate
+        env:
+          EXPECTED_APK_SHA256: '76878d6c16fad111ee7c6985724797ba101cff111ab2e7eec43841bc1dd05b67'
+          EXPECTED_SOURCE_SHA: '7d534ce51bbfe52f05c8978bd0787e18ffc41eae'
+          EXPECTED_PACKAGE_ID: 'com.example.pingplace'
+          EXPECTED_VERSION_NAME: '1.0.0'
+          EXPECTED_VERSION_CODE: '10012'
+        run: |
+          set -euo pipefail
+          apk_path="$(find candidate -type f -name '*.apk' -print)"
+          manifest_path="$(find candidate -type f -name manifest.json -print)"
+          test "$(find candidate -type f -name '*.apk' | wc -l)" -eq 1
+          test "$(find candidate -type f -name manifest.json | wc -l)" -eq 1
+          actual_sha256="$(sha256sum "${apk_path}" | awk '{print $1}')"
+          test "${actual_sha256}" = "${EXPECTED_APK_SHA256}"
+          test "$(jq -r .apk_sha256 "${manifest_path}")" = "${actual_sha256}"
+          test "$(jq -r .source_sha "${manifest_path}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r .embedded_commit_sha "${manifest_path}")" = "${EXPECTED_SOURCE_SHA:0:7}"
+          test "$(jq -r .package_id "${manifest_path}")" = "${EXPECTED_PACKAGE_ID}"
+          test "$(jq -r .version_name "${manifest_path}")" = "${EXPECTED_VERSION_NAME}"
+          test "$(jq -r .version_code "${manifest_path}")" = "${EXPECTED_VERSION_CODE}"
+          identity_json="$(unzip -p "${apk_path}" assets/pingplace-build-identity.json)"
+          test "$(jq -r .source_sha <<< "${identity_json}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r .embedded_commit_sha <<< "${identity_json}")" = "${EXPECTED_SOURCE_SHA:0:7}"
+          test "$(jq -r .package_id <<< "${identity_json}")" = "${EXPECTED_PACKAGE_ID}"
+          test "$(jq -r .version_name <<< "${identity_json}")" = "${EXPECTED_VERSION_NAME}"
+          test "$(jq -r .version_code <<< "${identity_json}")" = "${EXPECTED_VERSION_CODE}"
+          aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          apksigner_path="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          badging="$("${aapt_path}" dump badging "${apk_path}")"
+          test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
+          test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
+          test "$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_CODE}"
+          if "${apksigner_path}" verify "${apk_path}" >/dev/null 2>&1; then
+            echo "Candidate APK has a valid pre-existing signature"
+          else
+            echo "Candidate APK is unsigned or its original signature is not trusted; continuing to disposable re-signing"
+          fi
+          echo "apk_path=${apk_path}" >> "${GITHUB_OUTPUT}"
+          echo "package_id=${EXPECTED_PACKAGE_ID}" >> "${GITHUB_OUTPUT}"
+          echo "version_name=${EXPECTED_VERSION_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "version_code=${EXPECTED_VERSION_CODE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create disposable signing keystore
+        id: key
+        env:
+          TEMP_KEYSTORE_PASSWORD: temporary-validation-password
+        run: |
+          set -euo pipefail
+          work="${RUNNER_TEMP}/pingplace-disposable-signing"
+          mkdir -p "${work}"
+          keytool -genkeypair -noprompt             -keystore "${work}/temporary.keystore"             -storepass "${TEMP_KEYSTORE_PASSWORD}"             -keypass "${TEMP_KEYSTORE_PASSWORD}"             -alias temporary-validation             -keyalg RSA             -keysize 2048             -validity 1             -dname "CN=PingPlace CI disposable validation"
+          chmod 600 "${work}/temporary.keystore"
+          test -s "${work}/temporary.keystore"
+          echo "work=${work}" >> "${GITHUB_OUTPUT}"
+
+      - name: Re-sign and verify with disposable key
+        env:
+          TEMP_KEYSTORE_PASSWORD: temporary-validation-password
+          TEMP_KEY_ALIAS: temporary-validation
+          EXPECTED_SOURCE_SHA: '7d534ce51bbfe52f05c8978bd0787e18ffc41eae'
+          EXPECTED_PACKAGE_ID: ${{ steps.candidate.outputs.package_id }}
+          EXPECTED_VERSION_NAME: ${{ steps.candidate.outputs.version_name }}
+          EXPECTED_VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
+          CANDIDATE_APK_SHA256: '76878d6c16fad111ee7c6985724797ba101cff111ab2e7eec43841bc1dd05b67'
+          WORK: ${{ steps.key.outputs.work }}
+        run: |
+          set -euo pipefail
+          apk_path="${WORK}/candidate.apk"
+          cp "${{ steps.candidate.outputs.apk_path }}" "${apk_path}"
+          zip -d "${apk_path}" 'META-INF/*' >/dev/null 2>&1 || true
+          apksigner_path="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          test -n "${apksigner_path}"
+          test -n "${aapt_path}"
+          "${apksigner_path}" sign             --ks "${WORK}/temporary.keystore"             --ks-pass env:TEMP_KEYSTORE_PASSWORD             --ks-key-alias "${TEMP_KEY_ALIAS}"             --key-pass env:TEMP_KEYSTORE_PASSWORD             --out "${WORK}/signed.apk"             "${apk_path}"
+          "${apksigner_path}" verify --verbose --print-certs "${WORK}/signed.apk" > "${WORK}/signed-apksigner.txt"
+          fingerprint="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:\r]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' "${WORK}/signed-apksigner.txt")"
+          test "${fingerprint}" != ""
+          echo "Disposable certificate SHA-256: ${fingerprint}"
+          badging="$("${aapt_path}" dump badging "${WORK}/signed.apk")"
+          test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
+          test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
+          test "$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_CODE}"
+          identity_json="$(unzip -p "${WORK}/signed.apk" assets/pingplace-build-identity.json)"
+          test "$(jq -r .source_sha <<< "${identity_json}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r .embedded_commit_sha <<< "${identity_json}")" = "${EXPECTED_SOURCE_SHA:0:7}"
+          test "$(jq -r .package_id <<< "${identity_json}")" = "${EXPECTED_PACKAGE_ID}"
+          test "$(jq -r .version_name <<< "${identity_json}")" = "${EXPECTED_VERSION_NAME}"
+          test "$(jq -r .version_code <<< "${identity_json}")" = "${EXPECTED_VERSION_CODE}"
+          signed_sha256="$(sha256sum "${WORK}/signed.apk" | awk '{print $1}')"
+          echo "Disposable re-signed APK SHA-256: ${signed_sha256}"
+          echo "Verified disposable signature, identity asset and package metadata"
+
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/pingplace-disposable-signing"
