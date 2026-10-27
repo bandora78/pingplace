@@ -62,6 +62,11 @@ final class _DevelopmentSimulationScreenState
           Text(BuildInfo.current.versionLabel),
           Text(BuildInfo.current.commitLabel),
           Text(BuildInfo.current.buildTypeLabel),
+          if (realGeofence.persistenceInitializationFailure != null)
+            Text(
+              'Persistence initialization failure: ${realGeofence.persistenceInitializationFailure}',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           const SizedBox(height: 12),
           _RealGeofenceSection(
             controller: realGeofence,

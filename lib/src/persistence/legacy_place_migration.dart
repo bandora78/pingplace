@@ -51,7 +51,8 @@ final class LegacySingleTargetReader implements LegacySingleTargetSource {
     final target = snapshot?.target;
     if (target == null && desired == null) return null;
 
-    if (target != null && desired != null &&
+    if (target != null &&
+        desired != null &&
         (_different(target.latitude, desired.latitude) ||
             _different(target.longitude, desired.longitude))) {
       throw const FormatException(
@@ -99,12 +100,12 @@ final class PlaceMigration {
 
   Future<bool> migrateIfNeeded() => _database.transact<bool>((existing) async {
     if (existing.places.isNotEmpty) {
-      return PlaceDatabaseChange(data: existing, result: false);
+      return PlaceDatabaseChange(data: existing, result: false, persist: false);
     }
 
     final legacy = await _source.read();
     if (legacy == null) {
-      return PlaceDatabaseChange(data: existing, result: false);
+      return PlaceDatabaseChange(data: existing, result: false, persist: false);
     }
 
     final place = Place(
@@ -115,14 +116,10 @@ final class PlaceMigration {
       enabled: legacy.monitoringEnabled,
       outerRadius: legacy.radius,
       innerRadius: legacy.innerRadius ?? 80,
-      rearmRadius:
-          legacy.rearmRadius ?? 350,
-      cooldown:
-          legacy.cooldown ?? const Duration(minutes: 10),
-      approachTimeout:
-          legacy.approachTimeout ?? const Duration(minutes: 10),
-      maxAcceptedAccuracy: legacy.maxAcceptedAccuracy ??
-          50,
+      rearmRadius: legacy.rearmRadius ?? 350,
+      cooldown: legacy.cooldown ?? const Duration(minutes: 10),
+      approachTimeout: legacy.approachTimeout ?? const Duration(minutes: 10),
+      maxAcceptedAccuracy: legacy.maxAcceptedAccuracy ?? 50,
     );
     final reminder = Reminder(
       id: legacyReminderId,

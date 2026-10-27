@@ -54,6 +54,7 @@ final class MethodChannelPlaceDataStore implements PlaceDataStore {
 final class InMemoryPlaceDataStore implements PlaceDataStore {
   PlaceData? data;
   bool failWrites = false;
+  int writes = 0;
 
   @override
   Future<PlaceData?> load() async => data;
@@ -65,13 +66,19 @@ final class InMemoryPlaceDataStore implements PlaceDataStore {
       throw const PlacePersistenceException('Place data commit failed');
     }
     data = value;
+    writes++;
   }
 }
 
 final class PlaceDatabaseChange<T> {
-  const PlaceDatabaseChange({required this.data, required this.result});
+  const PlaceDatabaseChange({
+    required this.data,
+    required this.result,
+    this.persist = true,
+  });
   final PlaceData data;
   final T result;
+  final bool persist;
 }
 
 final class PlaceDatabase {
@@ -95,7 +102,9 @@ final class PlaceDatabase {
       current.validate();
       final updated = await change(current);
       updated.data.validate();
-      await store.save(updated.data);
+      if (updated.persist) {
+        await store.save(updated.data);
+      }
       return updated.result;
     });
     _tail = next.then<void>((_) {}).catchError((Object _) {});
@@ -108,13 +117,10 @@ final class PlaceDatabase {
     );
   }
 
-  Future<T> update<T>(PlaceData Function(PlaceData data) change) =>
-      transact<T>(
-        (current) async => PlaceDatabaseChange<T>(
-          data: change(current),
-          result: null as T,
-        ),
-      );
+  Future<T> update<T>(PlaceData Function(PlaceData data) change) => transact<T>(
+    (current) async =>
+        PlaceDatabaseChange<T>(data: change(current), result: null as T),
+  );
 }
 
 final class PlaceRepository {

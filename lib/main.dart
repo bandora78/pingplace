@@ -31,7 +31,14 @@ final class _PingPlaceAppState extends State<PingPlaceApp> {
   void initState() {
     super.initState();
     unawaited(geofenceController.initialize());
-    unawaited(placePersistence.initialize());
+    unawaited(_initializePlacePersistence());
+  }
+
+  Future<void> _initializePlacePersistence() async {
+    await placePersistence.initialize();
+    geofenceController.setPersistenceInitializationFailure(
+      placePersistence.initializationFailure,
+    );
   }
 
   @override

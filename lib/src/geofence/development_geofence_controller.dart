@@ -79,6 +79,7 @@ final class DevelopmentGeofenceController {
   List<String> backgroundDiagnostics = const [];
   GeofenceRecoveryStatus recoveryStatus = const GeofenceRecoveryStatus();
   bool initialized = false;
+  String? persistenceInitializationFailure;
 
   SmartArrivalConfig get config => _config;
   List<String> get eventLog => List.unmodifiable(_eventLog);
@@ -87,6 +88,11 @@ final class DevelopmentGeofenceController {
   void addListener(GeofenceListener listener) => _listeners.add(listener);
 
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
+
+  void setPersistenceInitializationFailure(String? failure) {
+    persistenceInitializationFailure = failure;
+    _notifyListeners();
+  }
 
   Future<void> initialize() => _initialization ??= _initialize();
 
@@ -331,6 +337,7 @@ final class DevelopmentGeofenceController {
     _operationTail = next.catchError((Object _) {});
     return next.then((_) => succeeded);
   }
+
   Future<void> remove() {
     _desiredMonitoring = false;
     return _enqueueOperation(() async {
@@ -628,12 +635,20 @@ final class DevelopmentGeofenceController {
     }
   }
 
-  bool _validTargetValues(double targetLatitude, double targetLongitude, double targetRadius) {
-    if (!targetLatitude.isFinite || targetLatitude < -90 || targetLatitude > 90) {
+  bool _validTargetValues(
+    double targetLatitude,
+    double targetLongitude,
+    double targetRadius,
+  ) {
+    if (!targetLatitude.isFinite ||
+        targetLatitude < -90 ||
+        targetLatitude > 90) {
       _fail('INVALID_COORDINATES: latitude must be between -90 and 90.');
       return false;
     }
-    if (!targetLongitude.isFinite || targetLongitude < -180 || targetLongitude > 180) {
+    if (!targetLongitude.isFinite ||
+        targetLongitude < -180 ||
+        targetLongitude > 180) {
       _fail('INVALID_COORDINATES: longitude must be between -180 and 180.');
       return false;
     }
@@ -643,6 +658,7 @@ final class DevelopmentGeofenceController {
     }
     return true;
   }
+
   bool _syncTarget() {
     if (!latitude.isFinite || latitude < -90 || latitude > 90) {
       _fail('INVALID_COORDINATES: latitude must be between -90 and 90.');
