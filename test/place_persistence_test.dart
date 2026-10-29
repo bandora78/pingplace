@@ -323,6 +323,22 @@ void main() {
     expect(await store.load(), isNull);
   });
 
+  test('successful no-op initialization reports success for reconciliation', () async {
+    final store = InMemoryPlaceDataStore();
+    final migration = PlaceMigration(
+      database: PlaceDatabase(store),
+      source: FakeLegacySource(null),
+    );
+    final coordinator = PlacePersistenceCoordinator(
+      database: PlaceDatabase(store),
+      migration: migration,
+    );
+
+    final result = await coordinator.initialize();
+    expect(result.succeeded, isTrue);
+    expect(result.migrationChanged, isFalse);
+  });
+
   test('initialization exposes migration failures', () async {
     final store = InMemoryPlaceDataStore()..failWrites = true;
     final migration = PlaceMigration(
@@ -342,7 +358,9 @@ void main() {
       migration: migration,
     );
 
-    expect(await coordinator.initialize(), isFalse);
+    final result = await coordinator.initialize();
+    expect(result.succeeded, isFalse);
+    expect(result.migrationChanged, isFalse);
     expect(coordinator.initializationFailure, contains('PlacePersistenceException'));
   });
 }

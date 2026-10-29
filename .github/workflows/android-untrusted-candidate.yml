@@ -71,8 +71,22 @@ jobs:
             echo "version_code=${version_code}"
           } >> "${GITHUB_OUTPUT}"
 
+      - name: Verify pull request source identity
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${EXPECTED_SOURCE_SHA}"
+          echo "Verified checked-out source matches pull_request.head.sha"
+
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Run APK identity regression tests
+        shell: bash
+        run: bash .github/scripts/test-apk-build-identity.sh
 
       - name: Analyze Dart code
         run: flutter analyze

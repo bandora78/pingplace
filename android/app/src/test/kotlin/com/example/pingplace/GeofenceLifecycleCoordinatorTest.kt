@@ -213,6 +213,60 @@ class GeofenceLifecycleCoordinatorTest {
         assertFalse(boundary.removalPending)
     }
 
+    @Test
+    fun multiPlaceTransitionAddsBeforeRemovingObsoleteIds() {
+        val plan = MultiPlaceTransitionPlan.create(listOf("old", "keep"), listOf("keep", "new"))
+        assertEquals(listOf("keep", "new"), plan.additions)
+        assertEquals(listOf("old"), plan.removals)
+        assertTrue(plan.removeLegacy)
+    }
+
+    @Test
+    fun failedAddThenRetryStillUsesTheLastAppliedIds() {
+        val applied = listOf("old")
+        val firstAttempt = MultiPlaceTransitionPlan.create(applied, listOf("new"))
+        assertFalse(firstAttempt.confirmed(false, true, true))
+        val retry = MultiPlaceTransitionPlan.create(applied, listOf("new"))
+        assertEquals(listOf("old"), retry.removals)
+        assertEquals(listOf("new"), retry.additions)
+    }
+
+    @Test
+    fun failedRemovalKeepsAppliedIdsAcrossRestart() {
+        val appliedBeforeFailure = listOf("old", "keep")
+        val attempt = MultiPlaceTransitionPlan.create(appliedBeforeFailure, listOf("keep"))
+        assertFalse(attempt.confirmed(true, false, true))
+        val afterRestart = MultiPlaceTransitionPlan.create(appliedBeforeFailure, listOf("keep"))
+        assertEquals(listOf("old"), afterRestart.removals)
+    }
+
+    @Test
+    fun interruptedReconciliationDoesNotPromoteDesiredIdsToAppliedIds() {
+        val applied = listOf("old")
+        val desired = listOf("new")
+        val attempt = MultiPlaceTransitionPlan.create(applied, desired)
+        assertEquals(applied, listOf("old"))
+        assertFalse(attempt.confirmed(false, false, false))
+    }
+
+    @Test
+    fun failedAddOrRemoveCannotConfirmTheNewRegistration() {
+        val plan = MultiPlaceTransitionPlan.create(listOf("old"), listOf("new"))
+        assertFalse(plan.confirmed(false, true, true))
+        assertFalse(plan.confirmed(true, false, true))
+        assertFalse(plan.confirmed(true, true, false))
+        assertTrue(plan.confirmed(true, true, true))
+    }
+
+    @Test
+    fun restartReusesTheDurableDesiredIdsWithoutDroppingThemOnFailure() {
+        val desired = listOf("place-a", "place-b")
+        val plan = MultiPlaceTransitionPlan.create(desired, desired)
+        assertEquals(desired, plan.additions)
+        assertTrue(plan.removals.isEmpty())
+        assertFalse(plan.confirmed(false, true, true))
+    }
+
     private data class FakeBoundary(
         var desired: String? = null,
         var platform: String? = null,

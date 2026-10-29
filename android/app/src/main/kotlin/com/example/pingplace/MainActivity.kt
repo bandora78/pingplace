@@ -38,6 +38,8 @@ class MainActivity : FlutterActivity() {
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
                     "register" -> register(call, result)
+                    "registerPlaces" -> registerPlaces(call, result)
+                    "multiRegistrationStatus" -> result.success(multiRegistrationStatus())
                     "remove" -> remove(result)
                     else -> result.notImplemented()
                 }
@@ -68,7 +70,7 @@ class MainActivity : FlutterActivity() {
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     locationEventSink = events
-                    PreciseLocationService.handoffToForeground()
+                    PreciseLocationService.handoffToForeground(this@MainActivity)
                     LocationEventBus.attach(this@MainActivity) { payload ->
                         runOnUiThread { locationEventSink?.success(payload) }
                     }
@@ -91,7 +93,16 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 ArrivalNotificationBridge.handle(this, this, call, result)
             }
-        restoreRegistration()
+        if (MultiPlaceGeofenceRegistration.hasDesired(this)) {
+            MultiPlaceGeofenceRegistration.restore(this) { success, error ->
+                if (!success) {
+                    GeofenceRecovery.recordDiagnostic(this, "MULTI_GEOFENCE_STARTUP_FAILED ${error ?: "unknown"}")
+                    // A failed multi-place recovery must not disable the last
+                    // known-good legacy target.
+                    restoreRegistration()
+                }
+            }
+        } else restoreRegistration()
     }
 
     private fun startPreciseLocation(result: MethodChannel.Result) {
@@ -192,6 +203,54 @@ class MainActivity : FlutterActivity() {
                 else if (error?.startsWith("Desired geofence state:") == true) result.error("PERSISTENCE_FAILED", error, null)
                 else result.error("GEOFENCE_REGISTRATION_FAILED", error, null)
             }
+        }
+    }
+
+    private fun multiRegistrationStatus(): Map<String, Any?> {
+        val preferences = getSharedPreferences("pingplace_multi_geofences", MODE_PRIVATE)
+        return mapOf(
+            "mode" to preferences.getBoolean("multi_mode", false),
+            "confirmed" to preferences.getBoolean("registration_confirmed", false),
+            "confirmedLocally" to preferences.getBoolean("registration_confirmed", false),
+            "platformStateVerified" to false,
+            "confirmationSource" to "platform_callback_only",
+            "appliedPlaceIds" to (preferences.getString("applied_requests", null)?.let { raw ->
+                try {
+                    org.json.JSONArray(raw).let { json ->
+                        buildList { for (index in 0 until json.length()) add(json.getString(index)) }
+                    }
+                } catch (_: Exception) { emptyList<String>() }
+            } ?: emptyList<String>()),
+            "desiredPlaceIds" to (MultiPlaceGeofenceRegistration.desiredPlaceIds(this)),
+        )
+    }
+
+    private fun registerPlaces(call: MethodCall, result: MethodChannel.Result) {
+        if (permissionStatus() != "backgroundAllowed") {
+            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
+            return
+        }
+        val raw = call.argument<List<Map<String, Any?>>>("places") ?: emptyList()
+        val targets = raw.mapNotNull { item ->
+            val id = item["placeId"] as? String
+            val latitude = (item["latitude"] as? Number)?.toDouble()
+            val longitude = (item["longitude"] as? Number)?.toDouble()
+            val radius = (item["radius"] as? Number)?.toFloat()
+            val innerRadius = (item["innerRadius"] as? Number)?.toFloat() ?: 80f
+            val rearmRadius = (item["rearmRadius"] as? Number)?.toFloat() ?: 350f
+            val cooldownSeconds = (item["cooldownSeconds"] as? Number)?.toLong() ?: 600L
+            val approachTimeoutSeconds = (item["approachTimeoutSeconds"] as? Number)?.toLong() ?: 600L
+            val maxAccuracy = (item["maxAcceptedAccuracy"] as? Number)?.toFloat() ?: 50f
+            val reminderText = item["reminderText"] as? String
+            if (id == null || latitude == null || longitude == null || radius == null) null
+            else MultiPlaceGeofenceRegistration.Target(id, latitude, longitude, radius, innerRadius, rearmRadius, cooldownSeconds, approachTimeoutSeconds, maxAccuracy, reminderText)
+        }
+        if (targets.size != raw.size) {
+            result.error("INVALID_ARGUMENT", "Every place must have an id, coordinates, and radius", null)
+            return
+        }
+        MultiPlaceGeofenceRegistration.register(this, targets) { success, error ->
+            runOnUiThread { if (success) result.success(null) else result.error("GEOFENCE_MULTI_RECONCILE_FAILED", error, null) }
         }
     }
 

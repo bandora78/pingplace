@@ -80,6 +80,7 @@ final class DevelopmentGeofenceController {
   GeofenceRecoveryStatus recoveryStatus = const GeofenceRecoveryStatus();
   bool initialized = false;
   String? persistenceInitializationFailure;
+  List<String> persistenceDiagnostics = const [];
 
   SmartArrivalConfig get config => _config;
   List<String> get eventLog => List.unmodifiable(_eventLog);
@@ -88,6 +89,11 @@ final class DevelopmentGeofenceController {
   void addListener(GeofenceListener listener) => _listeners.add(listener);
 
   void removeListener(GeofenceListener listener) => _listeners.remove(listener);
+
+  void setPersistenceDiagnostics(List<String> diagnostics) {
+    persistenceDiagnostics = List.unmodifiable(diagnostics);
+    _notifyListeners();
+  }
 
   void setPersistenceInitializationFailure(String? failure) {
     persistenceInitializationFailure = failure;
@@ -399,14 +405,26 @@ final class DevelopmentGeofenceController {
     _listeners.clear();
   }
 
+  String _safeEventError(String? error) {
+    final detail = error?.trim();
+    if (detail == null || detail.isEmpty || detail.toLowerCase() == 'null') {
+      return 'MISSING_ERROR_DETAIL';
+    }
+    return detail;
+  }
+
   Future<void> _handleGeofenceEvent(GeofenceEvent event) async {
+    if (event.placeId != null) {
+      // Multi-place events are processed by the headless per-place pipeline.
+      // Do not feed them into the legacy single-target state machine.
+      _log('MULTI_PLACE_EVENT_ROUTED ${event.placeId}');
+      return;
+    }
     lastEvent = event;
     _log('BACKGROUND_EVENT_RECEIVED ${event.type.name.toUpperCase()}');
     final eventType = event.type;
     if (eventType == GeofenceEventType.error || event.error != null) {
-      _fail(
-        'GEOFENCE_EVENT_FAILED: ${event.error ?? 'Unknown geofence event'}',
-      );
+      _fail('GEOFENCE_EVENT_FAILED: ${_safeEventError(event.error)}');
       return;
     }
     _log(

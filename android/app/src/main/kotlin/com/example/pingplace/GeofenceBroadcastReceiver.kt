@@ -13,21 +13,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
-            val message = "Invalid geofencing intent"
-            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
-            GeofenceEventBus.publish(context, "error", message)
-            if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
-            }
+            publishFailure(context, "Invalid geofencing intent")
             return
         }
         if (event.hasError()) {
-            val message = "GeofencingEvent error ${event.errorCode}"
-            GeofenceRecovery.recordBackgroundEvent(context, "error", message)
-            GeofenceEventBus.publish(context, "error", message)
-            if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null)
-            }
+            publishFailure(context, "GeofencingEvent error ${event.errorCode}")
             return
         }
         val type = when (event.geofenceTransition) {
@@ -35,24 +25,41 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
             else -> "error"
         }
-        val error = if (type == "error") {
-            "Unsupported geofence transition ${event.geofenceTransition}"
-        } else {
-            null
+        val error = if (type == "error") "Unsupported geofence transition ${event.geofenceTransition}" else null
+        val ids = event.triggeringGeofences.orEmpty().mapNotNull { it.requestId }.distinct()
+        if (ids.isEmpty()) {
+            publishFailure(context, error ?: "Geofence transition contained no request IDs")
+            return
         }
-        GeofenceRecovery.recordBackgroundEvent(context, type, error)
-        GeofenceEventBus.publish(context, type, error)
-        if (type == "enter") {
-            val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
-            val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
-            val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
-            if (latitude == null || longitude == null) {
-                GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted")
-            } else if (!GeofenceEventBus.isAttached()) {
-                PreciseLocationService.startFromGeofence(context, latitude, longitude)
+        ids.forEach { placeId ->
+            val routedPlaceId = placeId.takeUnless { it == "pingplace-phase0-outer" }
+            GeofenceRecovery.recordBackgroundEvent(context, type, error)
+            GeofenceEventBus.publish(context, type, error, routedPlaceId)
+            val target = MultiPlaceGeofenceRegistration.target(context, placeId)
+            if (type == "enter") {
+                if (target != null) {
+                    PreciseLocationService.startFromGeofence(context, target)
+                } else if (placeId == "pingplace-phase0-outer") {
+                    val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
+                    val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
+                    val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
+                    if (latitude != null && longitude != null) {
+                        PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
+                    } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", routedPlaceId)
+                } else {
+                    GeofenceEventBus.publish(context, "error", "Unknown place registration", routedPlaceId)
+                }
+            } else if (type == "exit") {
+                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, routedPlaceId)
             }
-        } else if (type == "exit" && !GeofenceEventBus.isAttached()) {
-            PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null)
+        }
+    }
+
+    private fun publishFailure(context: Context, message: String) {
+        GeofenceRecovery.recordBackgroundEvent(context, "error", message)
+        GeofenceEventBus.publish(context, "error", message)
+        if (!GeofenceEventBus.isAttached()) {
+            PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null, null)
         }
     }
 }
@@ -90,9 +97,9 @@ object GeofenceEventBus {
     }
 
     @Synchronized
-    fun publish(context: Context, type: String, error: String?) {
+    fun publish(context: Context, type: String, error: String?, placeId: String? = null) {
         val safeError = if (type == "error" && error.isNullOrBlank()) "Missing geofence event detail" else error
-        val event = PendingGeofenceEvent(type, Instant.now().toString(), safeError)
+        val event = PendingGeofenceEvent(type, Instant.now().toString(), safeError, placeId)
         val currentSink = sink
         if (currentSink != null) {
             currentSink(event.toPayload())
@@ -119,6 +126,7 @@ object GeofenceEventBus {
                             type = item.getString("type"),
                             timestamp = item.getString("timestamp"),
                             error = item.optString("error").ifEmpty { null },
+                            placeId = item.optString("placeId").ifEmpty { null },
                         ),
                     )
                 }
@@ -136,6 +144,7 @@ object GeofenceEventBus {
                     put("type", event.type)
                     put("timestamp", event.timestamp)
                     put("error", event.error ?: JSONObject.NULL)
+                    put("placeId", event.placeId ?: JSONObject.NULL)
                 },
             )
         }
@@ -146,11 +155,13 @@ object GeofenceEventBus {
         val type: String,
         val timestamp: String,
         val error: String?,
+        val placeId: String?,
     ) {
         fun toPayload(): Map<String, Any?> = mapOf(
             "type" to type,
             "timestamp" to timestamp,
             "error" to error,
+            "placeId" to placeId,
         )
     }
 }

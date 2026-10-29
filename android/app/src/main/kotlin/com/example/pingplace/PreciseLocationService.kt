@@ -29,6 +29,7 @@ class PreciseLocationService : Service() {
     private var backgroundControl: MethodChannel? = null
     private var backgroundReady = false
     private val pendingBackgroundEvents = mutableListOf<Map<String, Any?>>()
+    private val activePlaceIds = linkedSetOf<String>()
     private val watchdog = Handler(Looper.getMainLooper())
     private val watchdogStop = Runnable {
         recordDiagnostic("BACKGROUND_VERIFICATION_WATCHDOG_STOPPED")
@@ -47,12 +48,21 @@ class PreciseLocationService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopUpdates()
             ACTION_START_FROM_GEOFENCE -> {
+                recordDiagnostic("PRECISE_LOCATION_START_REQUESTED place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
+                intent.getStringExtra(EXTRA_PLACE_ID)?.let { activePlaceIds.add(it) }
                 pendingBackgroundEvents.add(
                     mapOf(
                         "type" to "enter",
                         "targetLatitude" to intent.getDoubleExtra(EXTRA_TARGET_LATITUDE, Double.NaN),
                         "targetLongitude" to intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN),
                         "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
+                        "placeId" to intent.getStringExtra(EXTRA_PLACE_ID),
+                        "innerRadius" to intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0),
+                        "rearmRadius" to intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0),
+                        "cooldownSeconds" to intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L),
+                        "approachTimeoutSeconds" to intent.getLongExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, 600L),
+                        "maxAcceptedAccuracy" to intent.getDoubleExtra(EXTRA_MAX_ACCURACY, 50.0),
+                        "reminderText" to intent.getStringExtra(EXTRA_REMINDER_TEXT),
                     ),
                 )
                 startBackgroundEngine()
@@ -61,11 +71,15 @@ class PreciseLocationService : Service() {
                 watchdog.postDelayed(watchdogStop, BACKGROUND_WATCHDOG_MS)
             }
             ACTION_BACKGROUND_EVENT -> {
+                recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
+                val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
+                if (placeId != null) activePlaceIds.add(placeId)
                 pendingBackgroundEvents.add(
                     mapOf(
                         "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
                         "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
                         "error" to intent.getStringExtra(EXTRA_ERROR),
+                        "placeId" to placeId,
                     ),
                 )
                 startForegroundShell()
@@ -192,26 +206,21 @@ class PreciseLocationService : Service() {
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.locations.forEach { location ->
-                    LocationEventBus.publish(
-                        this@PreciseLocationService,
-                        mapOf(
+                    val ids = activePlaceIds.toList().ifEmpty { listOf<String?>(null) }
+                    ids.forEach { placeId ->
+                        recordDiagnostic("LOCATION_SAMPLE_RECEIVED accuracy=${location.accuracy}")
+                        val payload = mapOf<String, Any?>(
                             "type" to "location",
                             "latitude" to location.latitude,
                             "longitude" to location.longitude,
                             "accuracy" to location.accuracy.toDouble(),
                             "timestamp" to Instant.ofEpochMilli(location.time).toString(),
                             "error" to null,
-                        ),
-                    )
-                    sendBackgroundEvent(
-                        mapOf(
-                            "type" to "location",
-                            "latitude" to location.latitude,
-                            "longitude" to location.longitude,
-                            "accuracy" to location.accuracy.toDouble(),
-                            "timestamp" to Instant.ofEpochMilli(location.time).toString(),
-                        ),
-                    )
+                            "placeId" to placeId,
+                        )
+                        LocationEventBus.publish(this@PreciseLocationService, payload)
+                        sendBackgroundEvent(payload)
+                    }
                 }
             }
         }
@@ -220,7 +229,10 @@ class PreciseLocationService : Service() {
                 request,
                 locationCallback!!,
                 Looper.getMainLooper(),
-            ).addOnFailureListener { error ->
+            ).addOnSuccessListener {
+                recordDiagnostic("PRECISE_LOCATION_UPDATES_STARTED")
+            }.addOnFailureListener { error ->
+                recordDiagnostic("PRECISE_LOCATION_START_FAILED ${error.message ?: error}")
                 val message = error.message ?: error.toString()
                 val payload = mapOf(
                     "type" to "error",
@@ -265,6 +277,7 @@ class PreciseLocationService : Service() {
     }
 
     private fun stopUpdates(stopService: Boolean = true) {
+        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -291,6 +304,13 @@ class PreciseLocationService : Service() {
         const val EXTRA_EVENT_TYPE = "eventType"
         const val EXTRA_TIMESTAMP = "timestamp"
         const val EXTRA_ERROR = "error"
+        const val EXTRA_PLACE_ID = "placeId"
+        const val EXTRA_INNER_RADIUS = "innerRadius"
+        const val EXTRA_REARM_RADIUS = "rearmRadius"
+        const val EXTRA_COOLDOWN_SECONDS = "cooldownSeconds"
+        const val EXTRA_APPROACH_TIMEOUT_SECONDS = "approachTimeoutSeconds"
+        const val EXTRA_MAX_ACCURACY = "maxAcceptedAccuracy"
+        const val EXTRA_REMINDER_TEXT = "reminderText"
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
         private const val BACKGROUND_PREFS = "pingplace_background"
         private const val BACKGROUND_DIAGNOSTICS = "diagnostics"
@@ -303,25 +323,42 @@ class PreciseLocationService : Service() {
         var isRunning: Boolean = false
         private var instance: PreciseLocationService? = null
 
-        fun handoffToForeground() {
+        fun handoffToForeground(context: android.content.Context) {
+            // Multi-place verification remains owned by the headless service while
+            // the UI is attached; only legacy monitoring is handed off.
+            if (MultiPlaceGeofenceRegistration.isMultiMode(context)) return
             instance?.handoffToForeground()
         }
 
-        fun startFromGeofence(context: android.content.Context, latitude: Double, longitude: Double) {
+        fun startFromGeofence(context: android.content.Context, target: MultiPlaceGeofenceRegistration.Target) {
+            startFromGeofence(context, target.latitude, target.longitude, target)
+        }
+
+        fun startFromGeofence(
+            context: android.content.Context,
+            latitude: Double,
+            longitude: Double,
+            target: MultiPlaceGeofenceRegistration.Target?,
+        ) {
             val intent = Intent(context, PreciseLocationService::class.java).apply {
                 action = ACTION_START_FROM_GEOFENCE
                 putExtra(EXTRA_TARGET_LATITUDE, latitude)
                 putExtra(EXTRA_TARGET_LONGITUDE, longitude)
                 putExtra(EXTRA_TIMESTAMP, Instant.now().toString())
+                target?.let {
+                    putExtra(EXTRA_PLACE_ID, it.placeId)
+                    putExtra(EXTRA_INNER_RADIUS, it.innerRadius.toDouble())
+                    putExtra(EXTRA_REARM_RADIUS, it.rearmRadius.toDouble())
+                    putExtra(EXTRA_COOLDOWN_SECONDS, it.cooldownSeconds)
+                    putExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, it.approachTimeoutSeconds)
+                    putExtra(EXTRA_MAX_ACCURACY, it.maxAcceptedAccuracy.toDouble())
+                    putExtra(EXTRA_REMINDER_TEXT, it.reminderText)
+                }
             }
             try {
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
             } catch (error: Exception) {
-                GeofenceEventBus.publish(
-                    context,
-                    "error",
-                    "Unable to start background precise location: ${error.message ?: error}",
-                )
+                GeofenceEventBus.publish(context, "error", "Unable to start background precise location", target?.placeId)
             }
         }
 
@@ -332,6 +369,7 @@ class PreciseLocationService : Service() {
             error: String?,
             latitude: Double?,
             longitude: Double?,
+            placeId: String?,
         ) {
             val intent = Intent(context, PreciseLocationService::class.java).apply {
                 action = ACTION_BACKGROUND_EVENT
@@ -340,6 +378,7 @@ class PreciseLocationService : Service() {
                 putExtra(EXTRA_ERROR, error)
                 if (latitude != null) putExtra("latitude", latitude)
                 if (longitude != null) putExtra("longitude", longitude)
+                if (placeId != null) putExtra(EXTRA_PLACE_ID, placeId)
             }
             try {
                 if (isRunning) {

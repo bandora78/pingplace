@@ -30,7 +30,9 @@ object PlatformRuntimeBridge {
         val preferences = context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
         when (call.method) {
             "load" -> {
-                val serialized = preferences.getString(RUNTIME_STATE, null)
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                val key = stateKey(placeId)
+                val serialized = preferences.getString(key, null)
                 result.success(serialized?.let { decodeState(it) })
             }
             "save" -> {
@@ -38,17 +40,20 @@ object PlatformRuntimeBridge {
                 if (arguments == null) {
                     result.error("INVALID_ARGUMENT", "Runtime state map is required", null)
                 } else {
-                    preferences.edit().putString(RUNTIME_STATE, encodeState(arguments)).commit()
+                    val placeId = arguments["placeId"] as? String
+                    preferences.edit().putString(stateKey(placeId), encodeState(arguments)).commit()
                     result.success(null)
                 }
             }
             "clear" -> {
-                preferences.edit().remove(RUNTIME_STATE).commit()
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                preferences.edit().remove(stateKey(placeId)).commit()
                 result.success(null)
             }
-            "loadReminderText" -> result.success(
-                preferences.getString(REMINDER_TEXT, DEFAULT_REMINDER) ?: DEFAULT_REMINDER,
-            )
+            "loadReminderText" -> {
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                result.success(preferences.getString(reminderKey(placeId), DEFAULT_REMINDER) ?: DEFAULT_REMINDER)
+            }
             "saveReminderText" -> {
                 preferences.edit().putString(REMINDER_TEXT, call.arguments as? String ?: DEFAULT_REMINDER).apply()
                 result.success(null)
@@ -89,6 +94,8 @@ object PlatformRuntimeBridge {
     private const val RUNTIME_PREFS = "pingplace_runtime"
     private const val RUNTIME_STATE = "detection_state"
     private const val REMINDER_TEXT = "reminder_text"
+    private fun stateKey(placeId: String?): String = if (placeId.isNullOrBlank()) RUNTIME_STATE else "detection_state_$placeId"
+    private fun reminderKey(placeId: String?): String = if (placeId.isNullOrBlank()) REMINDER_TEXT else "reminder_text_$placeId"
     private const val DEFAULT_REMINDER = "עצור בתחנת דלק יעד"
 }
 

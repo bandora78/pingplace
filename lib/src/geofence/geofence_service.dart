@@ -4,12 +4,39 @@ enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
 
 enum GeofenceEventType { enter, exit, error }
 
+final class GeofencePlaceRegistration {
+  const GeofencePlaceRegistration({
+    required this.placeId,
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+    this.innerRadius = 80,
+    this.rearmRadius = 350,
+    this.cooldownSeconds = 600,
+    this.approachTimeoutSeconds = 600,
+    this.maxAcceptedAccuracy = 50,
+    this.reminderText,
+  });
+
+  final String placeId;
+  final double latitude;
+  final double longitude;
+  final double radius;
+  final double innerRadius;
+  final double rearmRadius;
+  final int cooldownSeconds;
+  final int approachTimeoutSeconds;
+  final double maxAcceptedAccuracy;
+  final String? reminderText;
+}
+
 final class GeofenceEvent {
-  const GeofenceEvent({required this.type, required this.at, this.error});
+  const GeofenceEvent({required this.type, required this.at, this.error, this.placeId});
 
   final GeofenceEventType type;
   final DateTime at;
   final String? error;
+  final String? placeId;
 }
 
 final class GeofenceRegistration {
@@ -189,6 +216,24 @@ final class MethodChannelGeofenceService implements GeofenceService {
     'reminderText': reminderText,
   });
 
+  Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) =>
+      _methodChannel.invokeMethod<void>('registerPlaces', {
+        'places': places
+            .map((place) => {
+                  'placeId': place.placeId,
+                  'latitude': place.latitude,
+                  'longitude': place.longitude,
+                  'radius': place.radius,
+                  'innerRadius': place.innerRadius,
+                  'rearmRadius': place.rearmRadius,
+                  'cooldownSeconds': place.cooldownSeconds,
+                  'approachTimeoutSeconds': place.approachTimeoutSeconds,
+                  'maxAcceptedAccuracy': place.maxAcceptedAccuracy,
+                  'reminderText': place.reminderText,
+                })
+            .toList(growable: false),
+      });
+
   @override
   Future<void> remove() => _methodChannel.invokeMethod<void>('remove');
 
@@ -207,8 +252,9 @@ final class MethodChannelGeofenceService implements GeofenceService {
     final type = value['type'] as String?;
     final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
     final rawError = value['error'];
-    final error = rawError is String && rawError.trim().isNotEmpty
-        ? rawError
+    final rawText = rawError is String ? rawError.trim() : '';
+    final error = rawText.isNotEmpty && rawText.toLowerCase() != 'null'
+        ? rawText
         : null;
     final eventType = switch (type) {
       'enter' => GeofenceEventType.enter,
@@ -221,8 +267,27 @@ final class MethodChannelGeofenceService implements GeofenceService {
       error:
           error ??
           (eventType == GeofenceEventType.error
-              ? 'Unknown geofence event type: $type'
+              ? 'MISSING_ERROR_DETAIL (event_type=$type)'
               : null),
+      placeId: value['placeId'] as String?,
     );
+  }
+}
+
+extension GeofenceServiceMultiPlace on GeofenceService {
+  Future<Map<String, Object?>> multiRegistrationStatus() async {
+    if (this is MethodChannelGeofenceService) {
+      final value = await (this as MethodChannelGeofenceService)
+          ._methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('multiRegistrationStatus');
+      return Map<String, Object?>.from(value ?? const {});
+    }
+    return const {};
+  }
+
+  Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) async {
+    if (this is MethodChannelGeofenceService) {
+      await (this as MethodChannelGeofenceService).registerPlaces(places);
+    }
   }
 }
