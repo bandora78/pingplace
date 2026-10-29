@@ -51,7 +51,7 @@ jobs:
     name: Verify approved candidate artifact
     runs-on: ubuntu-latest
     outputs:
-      baseline_version_code: ${{ steps.baseline.outputs.version_code }}
+      baseline_version_code: ${{ steps.baseline_version.outputs.version_code }}
       candidate_version_code: ${{ steps.candidate.outputs.version_code }}
       candidate_sha256: ${{ steps.candidate.outputs.apk_sha256 }}
 
@@ -171,6 +171,7 @@ jobs:
           path: baseline
 
       - name: Compare candidate against actual issued Build 12 versionCode
+        id: baseline_version
         env:
           EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
           CANDIDATE_VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
@@ -184,7 +185,9 @@ jobs:
           test "$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           baseline_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
           test "${baseline_version_code}" -gt 0
+          test "${baseline_version_code}" =~ ^[0-9]+$
           test "${CANDIDATE_VERSION_CODE}" -gt "${baseline_version_code}"
+          echo "version_code=${baseline_version_code}" >> "${GITHUB_OUTPUT}"
           echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued baseline versionCode=${baseline_version_code}"
 
       - name: Publish verified candidate for the approved signing job
@@ -233,6 +236,10 @@ jobs:
           TRUSTED_CERT_SHA256: ${{ vars.PINGPLACE_TRUSTED_CERT_SHA256 }}
         run: |
           set -euo pipefail
+          if [[ -z "${EXPECTED_BASELINE_VERSION_CODE}" || ! "${EXPECTED_BASELINE_VERSION_CODE}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Baseline versionCode output is missing or invalid"
+            exit 1
+          fi
           signing_dir="${RUNNER_TEMP}/pingplace-signing"
           input_apk="$(find verified -type f -name '*.apk' -print)"
           manifest_path="$(find verified -type f -name manifest.json -print)"
