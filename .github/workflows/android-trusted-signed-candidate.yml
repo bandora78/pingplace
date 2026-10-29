@@ -185,7 +185,7 @@ jobs:
           test "$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           baseline_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
           test "${baseline_version_code}" -gt 0
-          test "${baseline_version_code}" =~ ^[0-9]+$
+          [[ "${baseline_version_code}" =~ ^[0-9]+$ ]]
           test "${CANDIDATE_VERSION_CODE}" -gt "${baseline_version_code}"
           echo "version_code=${baseline_version_code}" >> "${GITHUB_OUTPUT}"
           echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued baseline versionCode=${baseline_version_code}"
