@@ -111,8 +111,12 @@ final class FakeGeofenceService implements GeofenceService {
   }
 }
 
-final class FlakyRuntimeStore extends InMemoryArrivalRuntimeStore {
+final class FlakyRuntimeStore implements ArrivalRuntimeStore {
+  final InMemoryArrivalRuntimeStore delegate = InMemoryArrivalRuntimeStore();
   bool failNextSave = false;
+
+  @override
+  Future<DetectionRuntimeSnapshot?> load() => delegate.load();
 
   @override
   Future<void> save(DetectionRuntimeSnapshot value) async {
@@ -120,8 +124,17 @@ final class FlakyRuntimeStore extends InMemoryArrivalRuntimeStore {
       failNextSave = false;
       throw StateError('runtime persistence unavailable');
     }
-    await super.save(value);
+    await delegate.save(value);
   }
+
+  @override
+  Future<void> clear() => delegate.clear();
+
+  @override
+  Future<String> loadReminderText() => delegate.loadReminderText();
+
+  @override
+  Future<void> saveReminderText(String value) => delegate.saveReminderText(value);
 }
 
 final class FakeLocationService implements LocationService {

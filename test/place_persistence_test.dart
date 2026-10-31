@@ -55,6 +55,14 @@ final class FakeGeofenceService implements GeofenceService {
   Future<bool> get desiredMonitoring async => monitoring;
 
   @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async =>
+      desired == null
+          ? DesiredMonitoringState.unknown
+          : monitoring
+          ? DesiredMonitoringState.enabled
+          : DesiredMonitoringState.disabled;
+
+  @override
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
 
