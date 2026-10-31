@@ -41,6 +41,13 @@ final class HomeFakeGeofenceService implements GeofenceService {
   @override
   Future<bool> get desiredMonitoring async => registered;
 
+  @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async =>
+      registered
+          ? DesiredMonitoringState.enabled
+          : savedRegistration != null
+          ? DesiredMonitoringState.disabled
+          : DesiredMonitoringState.unknown;
 
   @override
   Future<GeofenceRegistration?> get registration async => savedRegistration;
@@ -51,6 +58,9 @@ final class HomeFakeGeofenceService implements GeofenceService {
 
   @override
   Future<bool> restoreRegistration() async => registered;
+
+  @override
+  Stream<void> get statusChanges => const Stream<void>.empty();
 
   @override
   Future<void> register({
