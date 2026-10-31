@@ -13,7 +13,7 @@ final class FakeGeofenceService implements GeofenceService {
       StreamController<GeofenceEvent>.broadcast();
   GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
   bool registered = false;
-  bool desiredMonitoring = false;
+  bool desiredMonitoringValue = false;
   Object? desiredMonitoringError;
   String? registeredReminderText;
   GeofenceRegistration? savedRegistration;
@@ -43,16 +43,16 @@ final class FakeGeofenceService implements GeofenceService {
   @override
   Future<bool> get desiredMonitoring async {
     if (desiredMonitoringError != null) throw desiredMonitoringError!;
-    return desiredMonitoring;
+    return desiredMonitoringValue;
   }
 
   @override
   Future<DesiredMonitoringState> get desiredMonitoringState async {
     if (desiredMonitoringError != null) throw desiredMonitoringError!;
-    if (!desiredMonitoring && desiredConfiguration == null && !registered) {
+    if (!desiredMonitoringValue && desiredConfiguration == null && !registered) {
       return DesiredMonitoringState.unknown;
     }
-    return desiredMonitoring
+    return desiredMonitoringValue
         ? DesiredMonitoringState.enabled
         : DesiredMonitoringState.disabled;
   }
@@ -84,7 +84,7 @@ final class FakeGeofenceService implements GeofenceService {
     String? reminderText,
   }) async {
     registered = true;
-    desiredMonitoring = true;
+    desiredMonitoringValue = true;
     registeredReminderText = reminderText;
     savedRegistration = GeofenceRegistration(
       latitude: latitude,
@@ -102,7 +102,7 @@ final class FakeGeofenceService implements GeofenceService {
     await Future<void>.delayed(removeDelay);
     if (removeError != null) throw removeError!;
     registered = false;
-    desiredMonitoring = false;
+    desiredMonitoringValue = false;
   }
 
   @override
@@ -834,7 +834,7 @@ void main() {
     final store = InMemoryArrivalRuntimeStore()
       ..snapshot = const DetectionRuntimeSnapshot(state: DetectionState.armed);
     final service = FakeGeofenceService()
-      ..desiredMonitoring = false
+      ..desiredMonitoringValue = false
       ..desiredConfiguration = const GeofenceRegistration(
         latitude: 32,
         longitude: 34.8,
@@ -871,7 +871,7 @@ void main() {
 
   test('desired monitoring can be enabled before platform confirmation', () async {
     final service = FakeGeofenceService()
-      ..desiredMonitoring = true
+      ..desiredMonitoringValue = true
       ..desiredConfiguration = const GeofenceRegistration(
         latitude: 32,
         longitude: 34.8,
@@ -913,7 +913,7 @@ void main() {
   test('runtime persistence failure is repaired after restart', () async {
     final store = FlakyRuntimeStore();
     final service = FakeGeofenceService()
-      ..desiredMonitoring = false
+      ..desiredMonitoringValue = false
       ..desiredConfiguration = const GeofenceRegistration(
         latitude: 32,
         longitude: 34.8,
