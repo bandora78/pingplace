@@ -64,7 +64,7 @@ Code that is not yet on `main` is signed in two stages so the signing secrets ne
    - for a `workflow_dispatch` run, it was started from `main`, its commit is in the history of trusted `main`, its candidate workflow definition is byte-identical to the one on trusted `main`, and its title is exactly `Untrusted candidate APK for <source_sha>`;
    - the artifact ID and name belong to that run, are unexpired and unique;
    - the APK SHA-256, manifest, embedded identity asset, package, versionName and `versionCode = 10000 + display build number` all match;
-   - the versionCode is newer than the pinned issued baseline (signed Build 13, `10013`), whose certificate must equal `PINGPLACE_TRUSTED_CERT_SHA256`, so the result installs as an in-place update;
+   - the versionCode is newer than the pinned issued baseline in `.github/signing/issued-baseline.env` (currently signed Build 14, `10014`). The downloaded baseline APK must match the pinned SHA-256, package, versionName, versionCode and embedded source, and its certificate must equal `PINGPLACE_TRUSTED_CERT_SHA256`, so the result installs as an in-place update. After every issued build, and before the pinned artifact expires, update the pin through a reviewed PR;
    - the `pingplace-signed-test-approval` environment has required reviewers and deploys only from the `main` branch (Selected branches and tags → exactly `main`).
 
    The signing job then signs with the dedicated key and checks the certificate against `PINGPLACE_TRUSTED_CERT_SHA256`. Manual candidate runs created before this check existed (for example run `41196764279`) carry no SHA-binding title and are rejected; dispatch a new candidate run instead.

@@ -76,6 +76,10 @@ jobs:
       - name: Run provenance regression tests
         run: bash .github/scripts/test-signed-artifact-provenance.sh
 
+      - name: Run signing baseline regression tests
+        shell: bash
+        run: bash .github/scripts/test-signing-baseline.sh
+
       - name: Verify signing environment requires approval
         env:
           GH_TOKEN: ${{ github.token }}
@@ -201,47 +205,53 @@ jobs:
           echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
           echo "display_build_number=${display_build_number}" >> "${GITHUB_OUTPUT}"
 
-      # Baseline: Build 13, the latest signed APK installed on the field-test device.
-      # Its artifact expires on 2026-11-30; update this pin after each issued build.
-      - name: Verify previously issued signed Build 13 through GitHub API and artifact
+      # The upgrade baseline (latest issued signed build) is pinned in
+      # .github/signing/issued-baseline.env and changed only by reviewed PRs.
+      - name: Load pinned issued baseline
         id: baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          baseline_run_id=41187072871
-          baseline_workflow=".github/workflows/android-trusted-signed-candidate.yml"
-          baseline_sha="910575fd55a475772631c027c6029f685b42b672"
-          baseline_artifact_id=13037620842
-          baseline_artifact_name="pingplace-signed-test-build-13-c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2"
-          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}")"
-          test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
-          test "$(jq -r '.path' <<< "${run_json}")" = "${baseline_workflow}"
-          test "$(jq -r '.head_sha' <<< "${run_json}")" = "${baseline_sha}"
-          test "$(jq -r '.status' <<< "${run_json}")" = completed
-          test "$(jq -r '.conclusion' <<< "${run_json}")" = success
-          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}/artifacts")"
-          matches="$(jq --arg id "${baseline_artifact_id}" --arg name "${baseline_artifact_name}" --argjson run "${baseline_run_id}" '[.artifacts[] | select((.id|tostring) == $id and .name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
-          if [[ "${matches}" != "1" ]]; then
-            echo "::error::Signed Build 13 baseline artifact ${baseline_artifact_id} is missing or expired; pin the latest issued signed build"
-            exit 1
-          fi
+          bash .github/scripts/signing-baseline.sh load .github/signing/issued-baseline.env >> "${GITHUB_OUTPUT}"
 
-      - name: Download verified Build 13 artifact
+      - name: Verify issued baseline run and artifact through GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          BASELINE_RUN_ID: ${{ steps.baseline.outputs.run_id }}
+          BASELINE_RUN_WORKFLOW: ${{ steps.baseline.outputs.run_workflow }}
+          BASELINE_RUN_HEAD_SHA: ${{ steps.baseline.outputs.run_head_sha }}
+          BASELINE_ARTIFACT_ID: ${{ steps.baseline.outputs.artifact_id }}
+          BASELINE_ARTIFACT_NAME: ${{ steps.baseline.outputs.artifact_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/baseline"
+          mkdir -p "${evidence}"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}" > "${evidence}/run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts?per_page=100" > "${evidence}/artifacts.json"
+          RUN_JSON="${evidence}/run.json" ARTIFACTS_JSON="${evidence}/artifacts.json" bash .github/scripts/signing-baseline.sh verify-run
+
+      - name: Download issued baseline artifact
         uses: actions/download-artifact@v4
         with:
-          name: pingplace-signed-test-build-13-c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2
-          run-id: 41187072871
+          name: ${{ steps.baseline.outputs.artifact_name }}
+          run-id: ${{ steps.baseline.outputs.run_id }}
           github-token: ${{ github.token }}
           path: baseline
 
-      - name: Verify candidate can upgrade the issued Build 13 in place
+      - name: Verify candidate can upgrade the issued baseline in place
         id: baseline_version
         env:
           EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
           CANDIDATE_VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
           TRUSTED_CERT_SHA256: ${{ vars.PINGPLACE_TRUSTED_CERT_SHA256 }}
+          BASELINE_APK_SHA256: ${{ steps.baseline.outputs.apk_sha256 }}
+          BASELINE_PACKAGE_ID: ${{ steps.baseline.outputs.package_id }}
+          BASELINE_VERSION_NAME: ${{ steps.baseline.outputs.version_name }}
+          BASELINE_VERSION_CODE: ${{ steps.baseline.outputs.version_code }}
+          BASELINE_SOURCE_SHA: ${{ steps.baseline.outputs.source_sha }}
+          BASELINE_BUILD_LABEL: ${{ steps.baseline.outputs.build_label }}
         shell: bash
         run: |
           set -euo pipefail
@@ -253,21 +263,24 @@ jobs:
           test -n "${aapt_path}"
           test -n "${apksigner_path}"
           baseline_badging="$("${aapt_path}" dump badging "${baseline_apk}")"
-          test "$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
-          baseline_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
-          [[ "${baseline_version_code}" =~ ^[0-9]+$ ]]
-          test "${baseline_version_code}" -eq 10013
-          test "$(unzip -p "${baseline_apk}" assets/pingplace-build-identity.json | jq -r .source_sha)" = "c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2"
           # The installed build must carry the trusted certificate, otherwise the
           # signed candidate could not be installed over it as an update.
           "${apksigner_path}" verify --print-certs "${baseline_apk}" > baseline-certs.txt
-          baseline_fingerprint="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:\r]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' baseline-certs.txt)"
-          expected_fingerprint="$(printf '%s' "${TRUSTED_CERT_SHA256}" | tr -d '[:space:]:' | tr '[:upper:]' '[:lower:]')"
-          test -n "${expected_fingerprint}"
-          test "${baseline_fingerprint}" = "${expected_fingerprint}"
-          test "${CANDIDATE_VERSION_CODE}" -gt "${baseline_version_code}"
-          echo "version_code=${baseline_version_code}" >> "${GITHUB_OUTPUT}"
-          echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued Build 13 versionCode=${baseline_version_code} signed by ${baseline_fingerprint}"
+          observed_apk_sha256="$(sha256sum "${baseline_apk}" | awk '{print $1}')"
+          observed_package_id="$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_version_name="$(grep -o "versionName='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_source_sha="$(unzip -p "${baseline_apk}" assets/pingplace-build-identity.json | jq -r .source_sha)"
+          observed_cert_sha256="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:\r]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' baseline-certs.txt)"
+          export OBSERVED_APK_SHA256="${observed_apk_sha256}"
+          export OBSERVED_PACKAGE_ID="${observed_package_id}"
+          export OBSERVED_VERSION_NAME="${observed_version_name}"
+          export OBSERVED_VERSION_CODE="${observed_version_code}"
+          export OBSERVED_SOURCE_SHA="${observed_source_sha}"
+          export OBSERVED_CERT_SHA256="${observed_cert_sha256}"
+          bash .github/scripts/signing-baseline.sh verify-apk
+          echo "version_code=${BASELINE_VERSION_CODE}" >> "${GITHUB_OUTPUT}"
+          echo "Issued baseline: ${BASELINE_BUILD_LABEL} (versionCode ${BASELINE_VERSION_CODE})"
 
       - name: Publish verified candidate for the approved signing job
         uses: actions/upload-artifact@v4
