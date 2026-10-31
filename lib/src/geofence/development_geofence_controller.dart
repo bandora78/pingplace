@@ -50,6 +50,8 @@ final class DevelopmentGeofenceController {
   final List<String> _eventLog = [];
   StreamSubscription<GeofenceEvent>? _geofenceSubscription;
   StreamSubscription<LocationServiceEvent>? _locationSubscription;
+  StreamSubscription<void>? _statusSubscription;
+  int _diagnosticsGeneration = 0;
   Timer? _approachTimer;
   Timer? _cooldownTimer;
   int _locationGeneration = 0;
@@ -80,6 +82,13 @@ final class DevelopmentGeofenceController {
   String? currentVisitId;
   List<String> backgroundDiagnostics = const [];
   GeofenceRecoveryStatus recoveryStatus = const GeofenceRecoveryStatus();
+
+  /// Android's registration confirmation as last read from the platform.
+  /// [PlatformConfirmation.unknown] until a read succeeds, and again whenever
+  /// a refresh fails, so a stale value is never presented as current.
+  PlatformConfirmation platformConfirmation = PlatformConfirmation.unknown;
+  DateTime? diagnosticsRefreshedAt;
+  String? diagnosticsRefreshFailure;
   bool initialized = false;
   String? persistenceInitializationFailure;
   List<String> persistenceDiagnostics = const [];
@@ -126,12 +135,19 @@ final class DevelopmentGeofenceController {
       (event) => unawaited(_handleLocationEvent(event)),
       onError: (Object error) => _handleLocationFailure('$error'),
     );
+    // Subscribe before the first status read: a native change that completes
+    // earlier is visible to that read, and a later one triggers a refresh.
+    _statusSubscription = service.statusChanges.listen(
+      (_) => unawaited(refreshDiagnostics(reason: 'native_status_changed')),
+      onError: (Object error) =>
+          _log('DIAGNOSTICS_STATUS_STREAM_FAILED: ${error.runtimeType}'),
+    );
     await refreshPermission();
     try {
       registered = await service.registrationStatus;
       final desiredState = await service.desiredMonitoringState;
       _desiredMonitoring = desiredState == DesiredMonitoringState.enabled;
-      recoveryStatus = await service.recoveryStatus;
+      await refreshDiagnostics(reason: 'startup');
       final desiredRegistration = await service.desiredRegistration;
       final savedRegistration = await service.registration;
       if (savedRegistration != null) {
@@ -187,15 +203,38 @@ final class DevelopmentGeofenceController {
     }
     try {
       registered = await service.restoreRegistration();
-      recoveryStatus = await service.recoveryStatus;
       _log(registered ? 'GEOFENCE_RESTORED' : 'BOOT_RECOVERY_FAILED');
-      _notifyListeners();
+      await refreshDiagnostics(reason: 'restore');
     } catch (error) {
       _fail('BOOT_RECOVERY_FAILED: $error');
-      try {
-        recoveryStatus = await service.recoveryStatus;
-      } catch (_) {}
+      await refreshDiagnostics(reason: 'restore_failed');
     }
+  }
+
+  /// Re-reads the native recovery diagnostics, including Android's
+  /// registration confirmation. Never throws: a failed read is logged and
+  /// marks the confirmation [PlatformConfirmation.unknown]. Overlapping
+  /// refreshes are resolved by generation so an older read cannot overwrite
+  /// a newer one.
+  Future<void> refreshDiagnostics({String reason = 'manual'}) async {
+    final generation = ++_diagnosticsGeneration;
+    try {
+      final status = await service.recoveryStatus;
+      if (generation != _diagnosticsGeneration) return;
+      recoveryStatus = status;
+      platformConfirmation = status.registrationConfirmed
+          ? PlatformConfirmation.confirmed
+          : PlatformConfirmation.notConfirmed;
+      diagnosticsRefreshFailure = null;
+      diagnosticsRefreshedAt = _clock();
+    } catch (error) {
+      if (generation != _diagnosticsGeneration) return;
+      platformConfirmation = PlatformConfirmation.unknown;
+      diagnosticsRefreshFailure =
+          'DIAGNOSTICS_REFRESH_FAILED reason=$reason: ${error.runtimeType}';
+      _log(diagnosticsRefreshFailure!);
+    }
+    _notifyListeners();
   }
 
   Future<void> requestPermission() async {
@@ -311,6 +350,7 @@ final class DevelopmentGeofenceController {
             ? 'REGISTRATION_ROLLBACK_FAILED: ${error.runtimeType}'
             : 'REMINDER_SAVE_FAILED: ${error.runtimeType}',
       );
+      await refreshDiagnostics(reason: 'register_rollback');
       return false;
     }
   }
@@ -361,6 +401,10 @@ final class DevelopmentGeofenceController {
           if (_desiredMonitoring) {
             _fail('GEOFENCE_REGISTRATION_FAILED: ${error.runtimeType}');
           }
+        } finally {
+          // The native call marks the registration unconfirmed before the
+          // platform add and confirmed only after Android succeeds.
+          await refreshDiagnostics(reason: 'register');
         }
       } finally {
         _lifecycleOperationCount--;
@@ -396,6 +440,8 @@ final class DevelopmentGeofenceController {
         if (!_desiredMonitoring) {
           _fail('GEOFENCE_REMOVE_FAILED: ${error.runtimeType}');
         }
+      } finally {
+        await refreshDiagnostics(reason: 'remove');
       }
     });
   }
@@ -433,6 +479,8 @@ final class DevelopmentGeofenceController {
   void dispose() {
     _geofenceSubscription?.cancel();
     _locationSubscription?.cancel();
+    _statusSubscription?.cancel();
+    _diagnosticsGeneration++;
     _approachTimer?.cancel();
     _cooldownTimer?.cancel();
     _locationGeneration++;

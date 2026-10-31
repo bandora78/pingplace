@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../build_info.dart';
@@ -16,7 +18,8 @@ final class DevelopmentSimulationScreen extends StatefulWidget {
 }
 
 final class _DevelopmentSimulationScreenState
-    extends State<DevelopmentSimulationScreen> {
+    extends State<DevelopmentSimulationScreen>
+    with WidgetsBindingObserver {
   final SimulationController controller = SimulationController();
   late final DevelopmentGeofenceController realGeofence = widget.realGeofence;
   late final TextEditingController latitudeController;
@@ -26,6 +29,7 @@ final class _DevelopmentSimulationScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller.addListener(_refresh);
     realGeofence.addListener(_refresh);
     latitudeController = TextEditingController(
@@ -38,7 +42,17 @@ final class _DevelopmentSimulationScreenState
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Background recovery and geofence events update native diagnostics while
+    // the UI is not visible; re-read them when the user returns.
+    if (state == AppLifecycleState.resumed) {
+      unawaited(realGeofence.refreshDiagnostics(reason: 'resumed'));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller.removeListener(_refresh);
     controller.dispose();
     realGeofence.removeListener(_refresh);
@@ -184,7 +198,18 @@ final class _RealGeofenceSection extends StatelessWidget {
             Text('Permission: $permission'),
             Text(
               'Platform registration confirmed: '
-              '${controller.recoveryStatus.registrationConfirmed ? 'YES' : 'NO / UNKNOWN'}',
+              '${platformConfirmationLabel(controller.platformConfirmation)}',
+            ),
+            Text(
+              'Diagnostics refreshed: '
+              '${controller.diagnosticsRefreshedAt?.toIso8601String() ?? 'never'}',
+            ),
+            if (controller.diagnosticsRefreshFailure != null)
+              Text(controller.diagnosticsRefreshFailure!),
+            TextButton(
+              onPressed: () =>
+                  unawaited(controller.refreshDiagnostics(reason: 'manual')),
+              child: const Text('Refresh diagnostics'),
             ),
             Text(
               'Last recovery: '
@@ -387,3 +412,11 @@ final class _ControlGrid extends StatelessWidget {
     );
   }
 }
+
+/// Display label for Android's registration confirmation. Only a confirmed
+/// platform read is shown as YES.
+String platformConfirmationLabel(PlatformConfirmation value) => switch (value) {
+  PlatformConfirmation.confirmed => 'YES',
+  PlatformConfirmation.notConfirmed => 'NO (not confirmed by Android)',
+  PlatformConfirmation.unknown => 'UNKNOWN (platform state not readable)',
+};
