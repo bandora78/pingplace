@@ -39,3 +39,7 @@ jobs:
       - name: Run Build 12 version metadata tests
         shell: bash
         run: bash .github/scripts/test-build-10-version.sh
+
+      - name: Run baseline version Bash validation regression test
+        shell: bash
+        run: bash .github/scripts/test-baseline-version-validation.sh
