@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/scripts/**'
+      - '.github/signing/**'
+      - '.github/workflows/android-trusted-signed-candidate.yml'
       - '.github/workflows/android-signed-test-apk.yml'
       - '.github/workflows/android-signing-parser-tests.yml'
   workflow_dispatch:
@@ -28,6 +30,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-signed-artifact-provenance.sh
 
+      - name: Run signing baseline regression tests
+        shell: bash
+        run: bash .github/scripts/test-signing-baseline.sh
+
       - name: Run APK build identity regression tests
         shell: bash
         run: bash .github/scripts/test-apk-build-identity.sh
@@ -36,6 +42,10 @@ jobs:
         shell: bash
         run: bash .github/scripts/test-certificate-fingerprint.sh
 
-      - name: Run Build 13 version metadata tests
+      - name: Run app version metadata tests
         shell: bash
         run: bash .github/scripts/test-build-10-version.sh
+
+      - name: Run baseline version Bash validation regression test
+        shell: bash
+        run: bash .github/scripts/test-baseline-version-validation.sh
