@@ -143,7 +143,7 @@ final class PlaceRepository {
       if (data.places.any((candidate) => candidate.id == place.id)) {
         throw StateError('Place already exists: ${place.id}');
       }
-      return PlaceData(
+      return data.copyWith(
         places: [...data.places, place],
         reminders: data.reminders,
       );
@@ -156,7 +156,7 @@ final class PlaceRepository {
       if (!data.places.any((candidate) => candidate.id == place.id)) {
         throw StateError('Place does not exist: ${place.id}');
       }
-      return PlaceData(
+      return data.copyWith(
         places: [
           for (final candidate in data.places)
             candidate.id == place.id ? place : candidate,
@@ -177,7 +177,7 @@ final class PlaceRepository {
       if (!data.places.any((candidate) => candidate.id == id)) {
         throw StateError('Place does not exist: $id');
       }
-      return PlaceData(
+      return data.copyWith(
         places: data.places.where((place) => place.id != id).toList(),
         reminders: data.reminders
             .where((reminder) => reminder.placeId != id)
@@ -214,7 +214,7 @@ final class ReminderRepository {
       if (data.reminders.any((candidate) => candidate.id == reminder.id)) {
         throw StateError('Reminder already exists: ${reminder.id}');
       }
-      return PlaceData(
+      return data.copyWith(
         places: data.places,
         reminders: [...data.reminders, reminder],
       );
@@ -230,7 +230,7 @@ final class ReminderRepository {
       if (!data.places.any((place) => place.id == reminder.placeId)) {
         throw StateError('Place does not exist: ${reminder.placeId}');
       }
-      return PlaceData(
+      return data.copyWith(
         places: data.places,
         reminders: [
           for (final candidate in data.reminders)
@@ -245,7 +245,7 @@ final class ReminderRepository {
       if (!data.reminders.any((candidate) => candidate.id == id)) {
         throw StateError('Reminder does not exist: $id');
       }
-      return PlaceData(
+      return data.copyWith(
         places: data.places,
         reminders: data.reminders
             .where((reminder) => reminder.id != id)

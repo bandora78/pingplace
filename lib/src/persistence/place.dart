@@ -65,14 +65,19 @@ final class Place {
     if (!longitude.isFinite || longitude < -180 || longitude > 180) {
       throw const FormatException('Place longitude is out of bounds');
     }
-    if (!outerRadius.isFinite || outerRadius <= 0 ||
-        !innerRadius.isFinite || innerRadius <= 0 ||
-        !rearmRadius.isFinite || rearmRadius < outerRadius ||
+    if (!outerRadius.isFinite ||
+        outerRadius <= 0 ||
+        !innerRadius.isFinite ||
+        innerRadius <= 0 ||
+        !rearmRadius.isFinite ||
+        rearmRadius < outerRadius ||
         innerRadius > outerRadius) {
       throw const FormatException('Place geofence radii are invalid');
     }
-    if (cooldown.inSeconds <= 0 || approachTimeout.inSeconds <= 0 ||
-        !maxAcceptedAccuracy.isFinite || maxAcceptedAccuracy <= 0) {
+    if (cooldown.inSeconds <= 0 ||
+        approachTimeout.inSeconds <= 0 ||
+        !maxAcceptedAccuracy.isFinite ||
+        maxAcceptedAccuracy <= 0) {
       throw const FormatException('Place timing or accuracy is invalid');
     }
   }
@@ -175,7 +180,9 @@ double _requiredNumber(Map<Object?, Object?> json, String key) {
 
 int _requiredPositiveInt(Map<Object?, Object?> json, String key) {
   final value = json[key];
-  if (value is! num || !value.isFinite || value.toInt() != value ||
+  if (value is! num ||
+      !value.isFinite ||
+      value.toInt() != value ||
       value <= 0) {
     throw FormatException('Invalid persistence field: $key');
   }
@@ -183,10 +190,30 @@ int _requiredPositiveInt(Map<Object?, Object?> json, String key) {
 }
 
 final class PlaceData {
-  const PlaceData({this.places = const [], this.reminders = const []});
+  const PlaceData({
+    this.places = const [],
+    this.reminders = const [],
+    this.legacySyncCompleted = false,
+  });
 
   final List<Place> places;
   final List<Reminder> reminders;
+
+  /// Set once APP-10 has reconciled the migrated single place with the legacy
+  /// single-target data that Builds 12-15 kept editing. After this, the place
+  /// list is the only source of truth and legacy data is never read again.
+  /// Optional in the stored document, so older readers (schema 1) ignore it.
+  final bool legacySyncCompleted;
+
+  PlaceData copyWith({
+    List<Place>? places,
+    List<Reminder>? reminders,
+    bool? legacySyncCompleted,
+  }) => PlaceData(
+    places: places ?? this.places,
+    reminders: reminders ?? this.reminders,
+    legacySyncCompleted: legacySyncCompleted ?? this.legacySyncCompleted,
+  );
 
   void validate() {
     final placeIds = <String>{};
@@ -216,6 +243,7 @@ final class PlaceData {
       'schemaVersion': 1,
       'places': places.map((place) => place.toJson()).toList(),
       'reminders': reminders.map((reminder) => reminder.toJson()).toList(),
+      if (legacySyncCompleted) 'legacySyncCompleted': true,
     };
   }
 
@@ -228,22 +256,27 @@ final class PlaceData {
     if (rawPlaces is! List || rawReminders is! List) {
       throw const FormatException('Invalid place persistence collections');
     }
+    final rawSync = json['legacySyncCompleted'];
+    if (rawSync != null && rawSync is! bool) {
+      throw const FormatException(
+        'Invalid persistence field: legacySyncCompleted',
+      );
+    }
     try {
       final data = PlaceData(
         places: rawPlaces
             .map(
-              (value) => Place.fromJson(
-                Map<Object?, Object?>.from(value as Map),
-              ),
+              (value) =>
+                  Place.fromJson(Map<Object?, Object?>.from(value as Map)),
             )
             .toList(growable: false),
         reminders: rawReminders
             .map(
-              (value) => Reminder.fromJson(
-                Map<Object?, Object?>.from(value as Map),
-              ),
+              (value) =>
+                  Reminder.fromJson(Map<Object?, Object?>.from(value as Map)),
             )
             .toList(growable: false),
+        legacySyncCompleted: rawSync == true,
       );
       data.validate();
       return data;

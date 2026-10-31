@@ -181,6 +181,7 @@ object MultiPlaceGeofenceRegistration {
     private fun validate(context: Context, targets: List<Target>): String? {
         if (targets.size > MAX_GEOFENCES) return "Too many enabled places for Android geofencing limit"
         if (targets.map { it.placeId }.toSet().size != targets.size) return "Duplicate place ID"
+        if (targets.isEmpty()) return null // removal only; no permission needed
         for (target in targets) {
             if (target.placeId.isBlank() || !target.latitude.isFinite() || target.latitude !in -90.0..90.0 ||
                 !target.longitude.isFinite() || target.longitude !in -180.0..180.0 ||

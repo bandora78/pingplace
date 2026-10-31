@@ -1,28 +1,32 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
 import '../geofence/geofence_service.dart';
+import '../places/place_manager.dart';
+import '../places/places_section.dart';
 import '../simulation/development_simulation_screen.dart';
 
 final class PingPlaceHomeScreen extends StatefulWidget {
-  const PingPlaceHomeScreen({required this.controller, super.key});
+  const PingPlaceHomeScreen({
+    required this.controller,
+    required this.placeManager,
+    super.key,
+  });
 
+  /// Permission, notification and developer diagnostics.
   final DevelopmentGeofenceController controller;
+
+  /// The user's places (APP-10): the only source of geofence registrations.
+  final PlaceManager placeManager;
 
   @override
   State<PingPlaceHomeScreen> createState() => _PingPlaceHomeScreenState();
 }
 
 final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
-  late final TextEditingController latitudeController;
-  late final TextEditingController longitudeController;
-  late final TextEditingController radiusController;
-  late final TextEditingController reminderController;
-  late final FocusNode latitudeFocus;
-  late final FocusNode longitudeFocus;
-  late final FocusNode radiusFocus;
-  late final FocusNode reminderFocus;
   int _developerTapCount = 0;
 
   DevelopmentGeofenceController get controller => widget.controller;
@@ -30,79 +34,28 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
   @override
   void initState() {
     super.initState();
-    latitudeController = TextEditingController();
-    longitudeController = TextEditingController();
-    radiusController = TextEditingController();
-    reminderController = TextEditingController();
-    latitudeFocus = FocusNode();
-    longitudeFocus = FocusNode();
-    radiusFocus = FocusNode();
-    reminderFocus = FocusNode();
     controller.addListener(_refresh);
-    _syncFields();
   }
 
   @override
   void dispose() {
     controller.removeListener(_refresh);
-    latitudeController.dispose();
-    longitudeController.dispose();
-    radiusController.dispose();
-    reminderController.dispose();
-    latitudeFocus.dispose();
-    longitudeFocus.dispose();
-    radiusFocus.dispose();
-    reminderFocus.dispose();
     super.dispose();
   }
 
   void _refresh() {
-    if (!mounted) return;
-    _syncFields();
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
-  void _syncFields() {
-    if (!latitudeFocus.hasFocus) {
-      latitudeController.text = controller.latitude.toString();
-    }
-    if (!longitudeFocus.hasFocus) {
-      longitudeController.text = controller.longitude.toString();
-    }
-    if (!radiusFocus.hasFocus) {
-      radiusController.text = controller.radius.toString();
-    }
-    if (!reminderFocus.hasFocus) {
-      reminderController.text = controller.reminderText;
+  Future<void> _checkPermission() async {
+    await controller.requestPermission();
+    // Registration rejected for missing permission can succeed now.
+    if (controller.permission == GeofencePermissionStatus.backgroundAllowed &&
+        widget.placeManager.lastError != null) {
+      await widget.placeManager.retryRegistration();
     }
   }
 
-  Future<void> _saveAndRegister() async {
-    final latitude = double.tryParse(latitudeController.text.trim());
-    final longitude = double.tryParse(longitudeController.text.trim());
-    final radius = double.tryParse(radiusController.text.trim());
-    if (latitude == null || longitude == null || radius == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('נא להזין קואורדינטות ורדיוס תקינים')),
-      );
-      return;
-    }
-
-    final succeeded = await controller.registerTarget(
-      targetLatitude: latitude,
-      targetLongitude: longitude,
-      targetRadius: radius,
-      targetReminderText: reminderController.text,
-    );
-    if (!mounted || succeeded) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          controller.lastError ?? 'שמירת היעד והפעלת המעקב נכשלו',
-        ),
-      ),
-    );
-  }
   void _openDeveloperMode() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -126,7 +79,6 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
       GeofencePermissionStatus.foregroundOnly => 'נדרשת הרשאת מיקום גם ברקע',
       GeofencePermissionStatus.backgroundAllowed => 'הרשאת מיקום תקינה',
     };
-    final status = controller.registered ? 'המעקב פעיל' : 'המעקב כבוי';
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -136,11 +88,11 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
           padding: const EdgeInsets.all(20),
           children: [
             Text(
-              'תזכורת הגעה',
+              'תזכורות הגעה',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 8),
-            const Text('הגדירו יעד אחד וקבלו תזכורת כשאתם מגיעים אליו.'),
+            const Text('שמרו מקומות וקבלו תזכורת כשאתם מגיעים לכל אחד מהם.'),
             const SizedBox(height: 20),
             Card(
               child: Padding(
@@ -148,8 +100,6 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('סטטוס: $status'),
-                    const SizedBox(height: 4),
                     Text(permission),
                     if (controller.lastError != null) ...[
                       const SizedBox(height: 8),
@@ -160,16 +110,9 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
                         ),
                       ),
                     ],
-                    if (controller.recoveryStatus.lastRecoveryFailure != null)
-                      Text(
-                        controller.recoveryStatus.lastRecoveryFailure!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
                     const SizedBox(height: 12),
                     FilledButton.tonal(
-                      onPressed: controller.requestPermission,
+                      onPressed: () => unawaited(_checkPermission()),
                       child: const Text('בדיקת הרשאות'),
                     ),
                   ],
@@ -177,90 +120,7 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'היעד הפעיל',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: reminderController,
-                      focusNode: reminderFocus,
-                      decoration: const InputDecoration(
-                        labelText: 'תזכורת',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: latitudeController,
-                            focusNode: latitudeFocus,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'קו רוחב',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: longitudeController,
-                            focusNode: longitudeFocus,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                              signed: true,
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'קו אורך',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: radiusController,
-                      focusNode: radiusFocus,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'רדיוס התראה במטרים',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton(
-                      onPressed: controller.initialized
-                          ? _saveAndRegister
-                          : null,
-                      child: const Text('שמירה והפעלת מעקב'),
-                    ),
-                    OutlinedButton(
-                      onPressed: controller.remove,
-                      child: const Text('כיבוי מעקב'),
-                    ),
-                    OutlinedButton(
-                      onPressed: controller.restoreGeofence,
-                      child: const Text('שחזור מעקב'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            PlacesSection(manager: widget.placeManager),
             const SizedBox(height: 20),
             GestureDetector(
               key: const Key('developer-mode-gesture'),
