@@ -23,6 +23,17 @@ final class FakeGeofenceService implements GeofenceService {
   int activeRestoreCount = 0;
   int maxActiveRestoreCount = 0;
   Duration restoreDelay = Duration.zero;
+  final StreamController<void> statusController =
+      StreamController<void>.broadcast();
+
+  /// When true, register/remove update [recovery] the way the native layer
+  /// does: unconfirmed before the platform call, confirmed only on success.
+  bool modelNativeConfirmation = false;
+  Object? registerError;
+  Object? recoveryError;
+  int recoveryReads = 0;
+  final List<Completer<void>> pendingRecoveryReads = [];
+  bool holdRecoveryReads = false;
 
   @override
   Stream<GeofenceEvent> get events => eventsController.stream;
@@ -61,7 +72,22 @@ final class FakeGeofenceService implements GeofenceService {
   Future<GeofenceRegistration?> get registration async => savedRegistration;
 
   @override
-  Future<GeofenceRecoveryStatus> get recoveryStatus async => recovery;
+  Stream<void> get statusChanges => statusController.stream;
+
+  @override
+  Future<GeofenceRecoveryStatus> get recoveryStatus async {
+    recoveryReads++;
+    // Capture the value at read time so a held read returns stale data.
+    final snapshot = recovery;
+    final error = recoveryError;
+    if (holdRecoveryReads) {
+      final gate = Completer<void>();
+      pendingRecoveryReads.add(gate);
+      await gate.future;
+    }
+    if (error != null) throw error;
+    return snapshot;
+  }
 
   @override
   Future<bool> restoreRegistration() async {
@@ -83,6 +109,13 @@ final class FakeGeofenceService implements GeofenceService {
     required double radius,
     String? reminderText,
   }) async {
+    if (modelNativeConfirmation) {
+      recovery = const GeofenceRecoveryStatus(registrationConfirmed: false);
+    }
+    if (registerError != null) throw registerError!;
+    if (modelNativeConfirmation) {
+      recovery = const GeofenceRecoveryStatus(registrationConfirmed: true);
+    }
     registered = true;
     desiredMonitoringValue = true;
     registeredReminderText = reminderText;
@@ -99,6 +132,9 @@ final class FakeGeofenceService implements GeofenceService {
 
   @override
   Future<void> remove() async {
+    if (modelNativeConfirmation) {
+      recovery = const GeofenceRecoveryStatus(registrationConfirmed: false);
+    }
     await Future<void>.delayed(removeDelay);
     if (removeError != null) throw removeError!;
     registered = false;
@@ -108,6 +144,7 @@ final class FakeGeofenceService implements GeofenceService {
   @override
   void dispose() {
     eventsController.close();
+    statusController.close();
   }
 }
 

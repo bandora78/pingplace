@@ -434,3 +434,28 @@ confirm per-place runtime state, cooldown/rearm and notification deduplication
 remain intact. Corrupt the multi-place desired document in a test build and
 confirm diagnostics show failure while the legacy target remains active. Record
 actual Xiaomi 15/HyperOS results; automated tests do not replace this evidence.
+
+## APP-09A diagnostics refresh (Build 15)
+
+Regression: Build 14 showed `Registration: REGISTERED`, `Engine state: ARMED`
+but `Platform registration confirmed: NO / UNKNOWN` until the app was restarted.
+Diagnostics are now re-read after every register, remove and recovery attempt,
+when native startup reconciliation finishes, when the app returns to the
+foreground, and via **Refresh diagnostics**. Platform confirmation has three
+states: `YES` (Android confirmed), `NO (not confirmed by Android)`, and
+`UNKNOWN (platform state not readable)`. Only `YES` reflects an Android
+confirmation.
+
+On the Xiaomi 15, in Developer Mode:
+
+1. Cold-start the app with monitoring enabled. Within a few seconds, without
+   leaving the screen, confirmation must change from `NO` to `YES` once startup
+   reconciliation finishes, and `Diagnostics refreshed` must update.
+2. Disable monitoring. Confirmation must change to `NO` immediately and the
+   engine must be `DISARMED`.
+3. Edit the target and enable monitoring. Confirmation must change to `YES`
+   without restarting the app.
+4. Turn location services off and register. Registration must fail visibly and
+   confirmation must show `NO`, never `YES`.
+5. Background the app, cross the geofence, and return. `Last background event`
+   must update without restarting.

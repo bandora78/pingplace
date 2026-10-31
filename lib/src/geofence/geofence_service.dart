@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
@@ -5,6 +7,12 @@ enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
 enum DesiredMonitoringState { enabled, disabled, unknown }
 
 enum GeofenceEventType { enter, exit, error }
+
+/// Whether Android has confirmed the platform geofence registration.
+///
+/// [unknown] means PingPlace could not read the native state (or has not read
+/// it yet). It must never be displayed or treated as confirmed.
+enum PlatformConfirmation { confirmed, notConfirmed, unknown }
 
 final class GeofencePlaceRegistration {
   const GeofencePlaceRegistration({
@@ -33,7 +41,12 @@ final class GeofencePlaceRegistration {
 }
 
 final class GeofenceEvent {
-  const GeofenceEvent({required this.type, required this.at, this.error, this.placeId});
+  const GeofenceEvent({
+    required this.type,
+    required this.at,
+    this.error,
+    this.placeId,
+  });
 
   final GeofenceEventType type;
   final DateTime at;
@@ -90,13 +103,18 @@ abstract interface class GeofenceService {
 
   Future<DesiredMonitoringState> get desiredMonitoringState async =>
       (await desiredMonitoring)
-          ? DesiredMonitoringState.enabled
-          : DesiredMonitoringState.disabled;
+      ? DesiredMonitoringState.enabled
+      : DesiredMonitoringState.disabled;
 
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
 
   Future<bool> restoreRegistration() async => false;
+
+  /// Emits when the native side reports that registration or recovery status
+  /// changed outside a Dart-initiated operation, such as startup
+  /// reconciliation. Listeners must re-read [recoveryStatus].
+  Stream<void> get statusChanges => const Stream<void>.empty();
 
   Future<void> register({
     required double latitude,
@@ -120,9 +138,29 @@ final class MethodChannelGeofenceService implements GeofenceService {
   static const _methodName = 'pingplace/geofence';
   static const _eventName = 'pingplace/geofence/events';
 
+  static const _statusChangedMethod = 'registrationStatusChanged';
+
   final MethodChannel _methodChannel;
   final EventChannel _eventChannel;
   Stream<GeofenceEvent>? _events;
+  StreamController<void>? _statusChanges;
+
+  @override
+  Stream<void> get statusChanges {
+    final controller = _statusChanges;
+    if (controller != null) return controller.stream;
+    final created = _statusChanges = StreamController<void>.broadcast();
+    _methodChannel.setMethodCallHandler(_handleNativeCall);
+    return created.stream;
+  }
+
+  Future<Object?> _handleNativeCall(MethodCall call) async {
+    if (call.method == _statusChangedMethod) {
+      _statusChanges?.add(null);
+      return null;
+    }
+    throw MissingPluginException('Unhandled geofence callback ${call.method}');
+  }
 
   @override
   Stream<GeofenceEvent> get events => _events ??= _eventChannel
@@ -187,7 +225,9 @@ final class MethodChannelGeofenceService implements GeofenceService {
 
   @override
   Future<DesiredMonitoringState> get desiredMonitoringState async {
-    final value = await _methodChannel.invokeMethod<String>('desiredMonitoringState');
+    final value = await _methodChannel.invokeMethod<String>(
+      'desiredMonitoringState',
+    );
     return switch (value) {
       'enabled' => DesiredMonitoringState.enabled,
       'disabled' => DesiredMonitoringState.disabled,
@@ -236,18 +276,20 @@ final class MethodChannelGeofenceService implements GeofenceService {
   Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) =>
       _methodChannel.invokeMethod<void>('registerPlaces', {
         'places': places
-            .map((place) => {
-                  'placeId': place.placeId,
-                  'latitude': place.latitude,
-                  'longitude': place.longitude,
-                  'radius': place.radius,
-                  'innerRadius': place.innerRadius,
-                  'rearmRadius': place.rearmRadius,
-                  'cooldownSeconds': place.cooldownSeconds,
-                  'approachTimeoutSeconds': place.approachTimeoutSeconds,
-                  'maxAcceptedAccuracy': place.maxAcceptedAccuracy,
-                  'reminderText': place.reminderText,
-                })
+            .map(
+              (place) => {
+                'placeId': place.placeId,
+                'latitude': place.latitude,
+                'longitude': place.longitude,
+                'radius': place.radius,
+                'innerRadius': place.innerRadius,
+                'rearmRadius': place.rearmRadius,
+                'cooldownSeconds': place.cooldownSeconds,
+                'approachTimeoutSeconds': place.approachTimeoutSeconds,
+                'maxAcceptedAccuracy': place.maxAcceptedAccuracy,
+                'reminderText': place.reminderText,
+              },
+            )
             .toList(growable: false),
       });
 
@@ -255,7 +297,15 @@ final class MethodChannelGeofenceService implements GeofenceService {
   Future<void> remove() => _methodChannel.invokeMethod<void>('remove');
 
   @override
-  void dispose() {}
+  void dispose() {
+    final controller = _statusChanges;
+    if (controller != null) {
+      // Only the instance that installed the handler may clear it.
+      _methodChannel.setMethodCallHandler(null);
+      _statusChanges = null;
+      unawaited(controller.close());
+    }
+  }
 
   static GeofencePermissionStatus _parsePermission(String? value) {
     return switch (value) {
@@ -294,15 +344,16 @@ final class MethodChannelGeofenceService implements GeofenceService {
 extension GeofenceServiceMultiPlace on GeofenceService {
   Future<Map<String, Object?>> multiRegistrationStatus() async {
     if (this is MethodChannelGeofenceService) {
-      final value = await (this as MethodChannelGeofenceService)
-          ._methodChannel
+      final value = await (this as MethodChannelGeofenceService)._methodChannel
           .invokeMethod<Map<dynamic, dynamic>>('multiRegistrationStatus');
       return Map<String, Object?>.from(value ?? const {});
     }
     return const {};
   }
 
-  Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) async {
+  Future<void> registerPlaces(
+    Iterable<GeofencePlaceRegistration> places,
+  ) async {
     if (this is MethodChannelGeofenceService) {
       await (this as MethodChannelGeofenceService).registerPlaces(places);
     }

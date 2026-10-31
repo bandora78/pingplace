@@ -23,10 +23,12 @@ class MainActivity : FlutterActivity() {
     private var permissionResult: MethodChannel.Result? = null
     private var eventSink: EventChannel.EventSink? = null
     private var locationEventSink: EventChannel.EventSink? = null
+    private var geofenceMethodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
+        geofenceMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
+        geofenceMethodChannel!!
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "checkPermission" -> result.success(permissionStatus())
@@ -101,7 +103,7 @@ class MainActivity : FlutterActivity() {
                     // A failed multi-place recovery must not disable the last
                     // known-good legacy target.
                     restoreRegistration()
-                }
+                } else notifyRegistrationStatusChanged()
             }
         } else restoreRegistration()
     }
@@ -268,8 +270,26 @@ class MainActivity : FlutterActivity() {
         // A persisted confirmation is not proof that the platform still owns it.
         GeofenceRecovery.restore(this, "ui_startup") { success, _ ->
             if (!success) GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_STARTUP_RECONCILIATION_FAILED")
+            // Startup reconciliation marks the registration unconfirmed while it
+            // replaces the platform geofence. Tell Dart to re-read the outcome,
+            // whether it succeeded or failed.
+            notifyRegistrationStatusChanged()
         }
     }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        geofenceMethodChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    private fun notifyRegistrationStatusChanged() {
+        runOnUiThread {
+            // Delivery is best-effort: if Dart has not subscribed yet, its first
+            // status read happens after this point and already sees the result.
+            geofenceMethodChannel?.invokeMethod("registrationStatusChanged", null)
+        }
+    }
+
     private fun restoreGeofence(result: MethodChannel.Result) {
         GeofenceRecovery.restore(this, "manual") { success, error ->
             if (success) result.success(true)

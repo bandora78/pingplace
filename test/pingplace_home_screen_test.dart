@@ -60,6 +60,9 @@ final class HomeFakeGeofenceService implements GeofenceService {
   Future<bool> restoreRegistration() async => registered;
 
   @override
+  Stream<void> get statusChanges => const Stream<void>.empty();
+
+  @override
   Future<void> register({
     required double latitude,
     required double longitude,
