@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/scripts/**'
+      - '.github/signing/**'
+      - '.github/workflows/android-trusted-signed-candidate.yml'
       - '.github/workflows/android-signed-test-apk.yml'
       - '.github/workflows/android-signing-parser-tests.yml'
   workflow_dispatch:
@@ -27,6 +29,10 @@ jobs:
       - name: Run signed artifact provenance regression tests
         shell: bash
         run: bash .github/scripts/test-signed-artifact-provenance.sh
+
+      - name: Run signing baseline regression tests
+        shell: bash
+        run: bash .github/scripts/test-signing-baseline.sh
 
       - name: Run APK build identity regression tests
         shell: bash
