@@ -52,6 +52,12 @@ for required in \
   ok
 done
 
+# A stray carriage return inside a run block silently corrupts shell and YAML
+# (a previous edit of this workflow did exactly that).
+if tr -d '
+' < "${workflow}" | grep -q $''; then fail "trusted workflow contains carriage returns"; fi
+ok
+
 # --- strict pin parsing -----------------------------------------------------
 expect_load_rejection() {
   local label="$1" reason="$2"

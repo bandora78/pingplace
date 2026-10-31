@@ -230,7 +230,7 @@ jobs:
           mkdir -p "${evidence}"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}" > "${evidence}/run.json"
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BASELINE_RUN_ID}/artifacts?per_page=100" > "${evidence}/artifacts.json"
-          RUN_JSON="${evidence}/run.json" ARTIFACTS_JSON="${evidence}/artifacts.json"             bash .github/scripts/signing-baseline.sh verify-run
+          RUN_JSON="${evidence}/run.json" ARTIFACTS_JSON="${evidence}/artifacts.json" bash .github/scripts/signing-baseline.sh verify-run
 
       - name: Download issued baseline artifact
         uses: actions/download-artifact@v4
@@ -266,8 +266,19 @@ jobs:
           # The installed build must carry the trusted certificate, otherwise the
           # signed candidate could not be installed over it as an update.
           "${apksigner_path}" verify --print-certs "${baseline_apk}" > baseline-certs.txt
-          OBSERVED_APK_SHA256="$(sha256sum "${baseline_apk}" | awk '{print $1}')"           OBSERVED_PACKAGE_ID="$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"           OBSERVED_VERSION_NAME="$(grep -o "versionName='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"           OBSERVED_VERSION_CODE="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"           OBSERVED_SOURCE_SHA="$(unzip -p "${baseline_apk}" assets/pingplace-build-identity.json | jq -r .source_sha)"           OBSERVED_CERT_SHA256="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:
-]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' baseline-certs.txt)"             bash .github/scripts/signing-baseline.sh verify-apk
+          observed_apk_sha256="$(sha256sum "${baseline_apk}" | awk '{print $1}')"
+          observed_package_id="$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_version_name="$(grep -o "versionName='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
+          observed_source_sha="$(unzip -p "${baseline_apk}" assets/pingplace-build-identity.json | jq -r .source_sha)"
+          observed_cert_sha256="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:\r]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' baseline-certs.txt)"
+          export OBSERVED_APK_SHA256="${observed_apk_sha256}"
+          export OBSERVED_PACKAGE_ID="${observed_package_id}"
+          export OBSERVED_VERSION_NAME="${observed_version_name}"
+          export OBSERVED_VERSION_CODE="${observed_version_code}"
+          export OBSERVED_SOURCE_SHA="${observed_source_sha}"
+          export OBSERVED_CERT_SHA256="${observed_cert_sha256}"
+          bash .github/scripts/signing-baseline.sh verify-apk
           echo "version_code=${BASELINE_VERSION_CODE}" >> "${GITHUB_OUTPUT}"
           echo "Issued baseline: ${BASELINE_BUILD_LABEL} (versionCode ${BASELINE_VERSION_CODE})"
 
