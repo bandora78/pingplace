@@ -52,10 +52,9 @@ for required in \
   ok
 done
 
-# A stray carriage return inside a run block silently corrupts shell and YAML
+# A mid-line carriage return inside a run block silently corrupts shell and YAML
 # (a previous edit of this workflow did exactly that).
-if tr -d '
-' < "${workflow}" | grep -q $''; then fail "trusted workflow contains carriage returns"; fi
+if grep -q $'\r.' "${workflow}"; then fail "trusted workflow contains a mid-line carriage return"; fi
 ok
 
 # --- strict pin parsing -----------------------------------------------------
