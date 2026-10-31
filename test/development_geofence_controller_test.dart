@@ -696,7 +696,11 @@ void main() {
       targetReminderText: 'updated',
     );
 
-    expect(updated, isTrue);
+    expect(
+      updated,
+      isTrue,
+      reason: 'lastError=${controller.lastError} log=${controller.eventLog}',
+    );
     expect(controller.state, DetectionState.armed);
     expect(controller.registered, isTrue);
     expect(controller.latitude, 31.9);
