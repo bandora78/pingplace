@@ -684,6 +684,7 @@ void main() {
     final controller = DevelopmentGeofenceController(
       service: service,
       locationService: FakeLocationService(),
+      runtimeStore: InMemoryArrivalRuntimeStore(),
     );
     await controller.initialize();
     await controller.register();
