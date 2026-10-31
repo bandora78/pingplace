@@ -135,6 +135,17 @@ object GeofenceRecovery {
     fun readRegistration(context: Context): Registration? =
         readDesiredRegistration(context)?.takeIf { isDesiredMonitoring(context) }
 
+    fun desiredMonitoringState(context: Context): String =
+        try {
+            when (val desired = desiredStore(context).load()) {
+                null -> "unknown"
+                else -> if (desired.desiredMonitoring) "enabled" else "disabled"
+            }
+        } catch (error: DesiredRegistrationStore.StoreException) {
+            recordPersistenceFailure(context, error)
+            "unknown"
+        }
+
     fun isDesiredMonitoring(context: Context): Boolean =
         try {
             desiredStore(context).load()?.desiredMonitoring == true

@@ -34,6 +34,7 @@ class MainActivity : FlutterActivity() {
                     "registrationDetails" -> result.success(registrationDetails())
                     "desiredRegistrationDetails" -> result.success(desiredRegistrationDetails())
                     "desiredMonitoring" -> result.success(GeofenceRecovery.isDesiredMonitoring(this))
+                    "desiredMonitoringState" -> result.success(GeofenceRecovery.desiredMonitoringState(this))
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
                     "restoreGeofence" -> restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)

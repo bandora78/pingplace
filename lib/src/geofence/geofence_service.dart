@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 
 enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
 
+enum DesiredMonitoringState { enabled, disabled, unknown }
+
 enum GeofenceEventType { enter, exit, error }
 
 final class GeofencePlaceRegistration {
@@ -85,6 +87,11 @@ abstract interface class GeofenceService {
   Future<GeofenceRegistration?> get desiredRegistration async => registration;
 
   Future<bool> get desiredMonitoring async => registrationStatus;
+
+  Future<DesiredMonitoringState> get desiredMonitoringState async =>
+      (await desiredMonitoring)
+          ? DesiredMonitoringState.enabled
+          : DesiredMonitoringState.disabled;
 
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
@@ -177,6 +184,16 @@ final class MethodChannelGeofenceService implements GeofenceService {
   @override
   Future<bool> get desiredMonitoring async =>
       await _methodChannel.invokeMethod<bool>('desiredMonitoring') ?? false;
+
+  @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async {
+    final value = await _methodChannel.invokeMethod<String>('desiredMonitoringState');
+    return switch (value) {
+      'enabled' => DesiredMonitoringState.enabled,
+      'disabled' => DesiredMonitoringState.disabled,
+      _ => DesiredMonitoringState.unknown,
+    };
+  }
 
   @override
   Future<GeofenceRecoveryStatus> get recoveryStatus async {

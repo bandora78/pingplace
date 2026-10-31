@@ -129,7 +129,8 @@ final class DevelopmentGeofenceController {
     await refreshPermission();
     try {
       registered = await service.registrationStatus;
-      _desiredMonitoring = await service.desiredMonitoring;
+      final desiredState = await service.desiredMonitoringState;
+      _desiredMonitoring = desiredState == DesiredMonitoringState.enabled;
       recoveryStatus = await service.recoveryStatus;
       final desiredRegistration = await service.desiredRegistration;
       final savedRegistration = await service.registration;
@@ -140,8 +141,10 @@ final class DevelopmentGeofenceController {
       }
       // A persisted native disable is authoritative. Repair an older runtime
       // snapshot that may still say ARMED without touching saved target data.
-      if (desiredRegistration != null &&
-          !_desiredMonitoring &&
+      if (desiredState == DesiredMonitoringState.unknown) {
+        _log('DESIRED_MONITORING_UNKNOWN');
+      } else if (desiredState == DesiredMonitoringState.disabled &&
+          desiredRegistration != null &&
           engine.state != DetectionState.disarmed) {
         await _dispatch(const Disarm());
       }

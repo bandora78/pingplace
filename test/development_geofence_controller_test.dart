@@ -13,8 +13,11 @@ final class FakeGeofenceService implements GeofenceService {
       StreamController<GeofenceEvent>.broadcast();
   GeofencePermissionStatus status = GeofencePermissionStatus.backgroundAllowed;
   bool registered = false;
+  bool desiredMonitoring = false;
+  Object? desiredMonitoringError;
   String? registeredReminderText;
   GeofenceRegistration? savedRegistration;
+  GeofenceRegistration? desiredConfiguration;
   GeofenceRecoveryStatus recovery = const GeofenceRecoveryStatus();
   int restoreCount = 0;
   int activeRestoreCount = 0;
@@ -35,10 +38,24 @@ final class FakeGeofenceService implements GeofenceService {
 
   @override
   Future<GeofenceRegistration?> get desiredRegistration async =>
-      savedRegistration;
+      desiredConfiguration ?? savedRegistration;
 
   @override
-  Future<bool> get desiredMonitoring async => registered;
+  Future<bool> get desiredMonitoring async {
+    if (desiredMonitoringError != null) throw desiredMonitoringError!;
+    return desiredMonitoring;
+  }
+
+  @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async {
+    if (desiredMonitoringError != null) throw desiredMonitoringError!;
+    if (!desiredMonitoring && desiredConfiguration == null && !registered) {
+      return DesiredMonitoringState.unknown;
+    }
+    return desiredMonitoring
+        ? DesiredMonitoringState.enabled
+        : DesiredMonitoringState.disabled;
+  }
 
   @override
   Future<GeofenceRegistration?> get registration async => savedRegistration;
@@ -67,12 +84,14 @@ final class FakeGeofenceService implements GeofenceService {
     String? reminderText,
   }) async {
     registered = true;
+    desiredMonitoring = true;
     registeredReminderText = reminderText;
     savedRegistration = GeofenceRegistration(
       latitude: latitude,
       longitude: longitude,
       radius: radius,
     );
+    desiredConfiguration = savedRegistration;
   }
 
   Duration removeDelay = Duration.zero;
@@ -83,11 +102,25 @@ final class FakeGeofenceService implements GeofenceService {
     await Future<void>.delayed(removeDelay);
     if (removeError != null) throw removeError!;
     registered = false;
+    desiredMonitoring = false;
   }
 
   @override
   void dispose() {
     eventsController.close();
+  }
+}
+
+final class FlakyRuntimeStore extends InMemoryArrivalRuntimeStore {
+  bool failNextSave = false;
+
+  @override
+  Future<void> save(DetectionRuntimeSnapshot value) async {
+    if (failNextSave) {
+      failNextSave = false;
+      throw StateError('runtime persistence unavailable');
+    }
+    await super.save(value);
   }
 }
 
@@ -794,6 +827,120 @@ void main() {
 
     expect(restarted.state, DetectionState.disarmed);
     expect(restarted.registered, isFalse);
+    restarted.dispose();
+  });
+
+  test('disabled desired monitoring repairs stale ARMED runtime on restart', () async {
+    final store = InMemoryArrivalRuntimeStore()
+      ..snapshot = const DetectionRuntimeSnapshot(state: DetectionState.armed);
+    final service = FakeGeofenceService()
+      ..desiredMonitoring = false
+      ..desiredConfiguration = const GeofenceRegistration(
+        latitude: 32,
+        longitude: 34.8,
+        radius: 300,
+      );
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+
+    await controller.initialize();
+
+    expect(controller.state, DetectionState.disarmed);
+    expect((await store.load())?.state, DetectionState.disarmed);
+    controller.dispose();
+  });
+
+  test('missing desired registration remains UNKNOWN and does not disarm runtime', () async {
+    final store = InMemoryArrivalRuntimeStore()
+      ..snapshot = const DetectionRuntimeSnapshot(state: DetectionState.armed);
+    final controller = DevelopmentGeofenceController(
+      service: FakeGeofenceService(),
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+
+    await controller.initialize();
+
+    expect(controller.state, DetectionState.armed);
+    expect(controller.eventLog, contains(contains('DESIRED_MONITORING_UNKNOWN')));
+    controller.dispose();
+  });
+
+  test('desired monitoring can be enabled before platform confirmation', () async {
+    final service = FakeGeofenceService()
+      ..desiredMonitoring = true
+      ..desiredConfiguration = const GeofenceRegistration(
+        latitude: 32,
+        longitude: 34.8,
+        radius: 300,
+      );
+    final store = InMemoryArrivalRuntimeStore()
+      ..snapshot = const DetectionRuntimeSnapshot(state: DetectionState.armed);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+
+    await controller.initialize();
+
+    expect(controller.registered, isFalse);
+    expect(controller.state, DetectionState.armed);
+    controller.dispose();
+  });
+
+  test('native desired-state read failure is not treated as disabled', () async {
+    final service = FakeGeofenceService()
+      ..desiredMonitoringError = StateError('native read failed');
+    final store = InMemoryArrivalRuntimeStore()
+      ..snapshot = const DetectionRuntimeSnapshot(state: DetectionState.armed);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+
+    await controller.initialize();
+
+    expect(controller.state, DetectionState.armed);
+    expect(controller.lastError, contains('REGISTRATION_STATUS_FAILED'));
+    controller.dispose();
+  });
+
+  test('runtime persistence failure is repaired after restart', () async {
+    final store = FlakyRuntimeStore();
+    final service = FakeGeofenceService()
+      ..desiredMonitoring = false
+      ..desiredConfiguration = const GeofenceRegistration(
+        latitude: 32,
+        longitude: 34.8,
+        radius: 300,
+      );
+    final first = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+    await first.initialize();
+    await first.register();
+    store.failNextSave = true;
+    await first.remove();
+    expect(first.state, DetectionState.disarmed);
+    expect(first.lastError, contains('GEOFENCE_REMOVE_STATE_SAVE_FAILED'));
+    first.dispose();
+
+    final restarted = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+    await restarted.initialize();
+
+    expect(restarted.state, DetectionState.disarmed);
+    expect((await store.load())?.state, DetectionState.disarmed);
     restarted.dispose();
   });
 
