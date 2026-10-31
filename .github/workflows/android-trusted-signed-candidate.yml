@@ -54,6 +54,7 @@ jobs:
       baseline_version_code: ${{ steps.baseline_version.outputs.version_code }}
       candidate_version_code: ${{ steps.candidate.outputs.version_code }}
       candidate_sha256: ${{ steps.candidate.outputs.apk_sha256 }}
+      candidate_display_build_number: ${{ steps.candidate.outputs.display_build_number }}
 
     steps:
       - name: Check out trusted verification tests
@@ -63,8 +64,30 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Require the trusted main definition of this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::Trusted signing must be dispatched from main, not ${GITHUB_REF}"
+            exit 1
+          fi
+
       - name: Run provenance regression tests
         run: bash .github/scripts/test-signed-artifact-provenance.sh
+
+      - name: Verify signing environment requires approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_ENVIRONMENT: pingplace-signed-test-approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/provenance"
+          mkdir -p "${evidence}"
+          gh api "repos/${GITHUB_REPOSITORY}/environments/${EXPECTED_ENVIRONMENT}" > "${evidence}/environment.json"
+          ENVIRONMENT_JSON="${evidence}/environment.json" \
+            bash .github/scripts/verify-candidate-provenance.sh signing-environment
 
       - name: Verify PR state and exact head
         env:
@@ -85,19 +108,41 @@ jobs:
           SOURCE_ARTIFACT_ID: ${{ inputs.source_artifact_id }}
           SOURCE_ARTIFACT_NAME: ${{ inputs.source_artifact_name }}
           EXPECTED_SHA: ${{ inputs.source_sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        shell: bash
         run: |
           set -euo pipefail
-          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}")"
-          test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
-          test "$(jq -r '.path' <<< "${run_json}")" = ".github/workflows/android-untrusted-candidate.yml"
-          test "$(jq -r '.event' <<< "${run_json}")" = pull_request
-          test "$(jq -r '.head_sha' <<< "${run_json}")" = "${EXPECTED_SHA}"
-          test "$(jq -r '.status' <<< "${run_json}")" = completed
-          test "$(jq -r '.conclusion' <<< "${run_json}")" = success
-          artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts")"
-          matches="$(jq --arg id "${SOURCE_ARTIFACT_ID}" --arg name "${SOURCE_ARTIFACT_NAME}" --argjson run "${SOURCE_RUN_ID}" '[.artifacts[] | select((.id|tostring) == $id and .name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
-          test "${matches}" -eq 1
-          echo "Verified workflow run, head SHA, and artifact identity through GitHub Actions API"
+          if ! [[ "${SOURCE_RUN_ID}" =~ ^[0-9]+$ ]]; then
+            echo "::error::source_run_id must be numeric"
+            exit 1
+          fi
+          evidence="${RUNNER_TEMP}/provenance"
+          mkdir -p "${evidence}"
+          candidate_workflow=".github/workflows/android-untrusted-candidate.yml"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}" > "${evidence}/run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/artifacts?per_page=100" > "${evidence}/artifacts.json"
+          # Trusted main is this verifier's own checkout of main.
+          trusted_main_sha="$(git rev-parse HEAD)"
+          trusted_workflow_blob="$(git rev-parse "HEAD:${candidate_workflow}")"
+          run_workflow_blob="not-applicable"
+          printf '{}' > "${evidence}/compare.json"
+          if [[ "$(jq -r '.event' "${evidence}/run.json")" == "workflow_dispatch" ]]; then
+            run_head_sha="$(jq -r '.head_sha' "${evidence}/run.json")"
+            if ! [[ "${run_head_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Dispatch run head '${run_head_sha}' is not a commit SHA"
+              exit 1
+            fi
+            gh api "repos/${GITHUB_REPOSITORY}/compare/${run_head_sha}...${trusted_main_sha}" \
+              --jq '{status, ahead_by, behind_by, merge_base_commit: {sha: .merge_base_commit.sha}}' \
+              > "${evidence}/compare.json"
+            run_workflow_blob="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${candidate_workflow}?ref=${run_head_sha}" --jq '.sha')"
+          fi
+          RUN_JSON="${evidence}/run.json" \
+          ARTIFACTS_JSON="${evidence}/artifacts.json" \
+          COMPARE_JSON="${evidence}/compare.json" \
+          RUN_WORKFLOW_BLOB_SHA="${run_workflow_blob}" \
+          TRUSTED_WORKFLOW_BLOB_SHA="${trusted_workflow_blob}" \
+            bash .github/scripts/verify-candidate-provenance.sh candidate-run
 
       - name: Download only the verified candidate artifact
         uses: actions/download-artifact@v4
@@ -129,15 +174,19 @@ jobs:
           test "$(jq -r .source_sha "${manifest_path}")" = "${EXPECTED_SHA}"
           test "${EXPECTED_FULL_SHA}" = "${EXPECTED_SHA}"
           test "$(jq -r .embedded_commit_sha "${manifest_path}")" = "${EXPECTED_SHA:0:7}"
+          MANIFEST_JSON="${manifest_path}" bash .github/scripts/verify-candidate-provenance.sh manifest
+          display_build_number="$(jq -r .display_build_number "${manifest_path}")"
           aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
           badging="$("${aapt_path}" dump badging "${apk_path}")"
           test "$(grep -o "package: name='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           test "$(grep -o "versionName='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_VERSION_NAME}"
           version_code="$(grep -o "versionCode='[^']*'" <<< "${badging}" | head -n 1 | cut -d"'" -f2)"
           test "${version_code}" -gt 0
+          test "$(jq -r .version_code "${manifest_path}")" = "${version_code}"
           bash .github/scripts/verify-apk-build-identity.sh "${apk_path}" "${EXPECTED_SHA}" "${EXPECTED_PACKAGE_ID}" "${EXPECTED_VERSION_NAME}" "${version_code}"
           echo "apk_sha256=${actual_sha256}" >> "${GITHUB_OUTPUT}"
           echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
+          echo "display_build_number=${display_build_number}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify previously issued signed Build 12 through GitHub API and artifact
         id: baseline
@@ -277,10 +326,10 @@ jobs:
           mkdir -p signed
           cp "${signing_dir}/signed.apk" "signed/pingplace-signed-test.apk"
 
-      - name: Upload signed Build 13 artifact
+      - name: Upload signed test APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pingplace-signed-test-build-13-${{ inputs.source_sha }}
+          name: pingplace-signed-test-v${{ inputs.expected_version_name }}+${{ needs.verify-approved-candidate.outputs.candidate_display_build_number }}-build${{ needs.verify-approved-candidate.outputs.candidate_version_code }}-${{ inputs.source_sha }}
           path: signed/pingplace-signed-test.apk
           if-no-files-found: error
           retention-days: 30

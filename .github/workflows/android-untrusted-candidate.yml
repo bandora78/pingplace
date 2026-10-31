@@ -11,6 +11,16 @@ on:
         required: true
         type: string
 
+# For manual dispatches the run head is the dispatching ref (main), not the
+# commit being built. GitHub renders run-name from this trusted definition
+# before any job starts, so it is the only run metadata that binds the built
+# SHA to the run and cannot be changed by the untrusted build code. The trusted
+# signing workflow requires this exact format; keep the two in sync.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+  && format('Untrusted candidate APK for {0}', inputs.target_sha)
+  || github.event.pull_request.title }}
+
 permissions:
   contents: read
 
@@ -20,6 +30,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Require a full commit SHA for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${TARGET_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::target_sha must be a full lowercase 40-character commit SHA, not a branch, tag or abbreviation"
+            exit 1
+          fi
+
       - name: Check out exact source commit
         uses: actions/checkout@v5
         with:
@@ -43,9 +65,15 @@ jobs:
       - name: Read source and version identity
         id: identity
         shell: bash
+        env:
+          REQUESTED_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.target_sha }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
+          if [[ "${source_sha}" != "${REQUESTED_SHA}" ]]; then
+            echo "::error::Checked-out commit ${source_sha} is not the requested commit ${REQUESTED_SHA}"
+            exit 1
+          fi
           short_sha="${source_sha:0:7}"
           version_line="$(sed -nE 's/^version:[[:space:]]*([^[:space:]]+).*$/\1/p' pubspec.yaml | head -n 1)"
           if [[ -z "${version_line}" || "${version_line}" != *+* ]]; then
