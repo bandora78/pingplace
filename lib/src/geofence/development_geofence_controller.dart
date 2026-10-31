@@ -44,6 +44,8 @@ final class DevelopmentGeofenceController {
   final List<GeofenceListener> _listeners = [];
   Future<void> _operationTail = Future<void>.value();
   int _operationGeneration = 0;
+  int _lifecycleOperationCount = 0;
+  bool _lastRuntimeStatePersisted = true;
   bool _desiredMonitoring = false;
   final List<String> _eventLog = [];
   StreamSubscription<GeofenceEvent>? _geofenceSubscription;
@@ -134,6 +136,11 @@ final class DevelopmentGeofenceController {
         latitude = savedRegistration.latitude;
         longitude = savedRegistration.longitude;
         radius = savedRegistration.radius;
+      }
+      // A persisted native disable is authoritative. Repair an older runtime
+      // snapshot that may still say ARMED without touching saved target data.
+      if (!_desiredMonitoring && engine.state != DetectionState.disarmed) {
+        await _dispatch(const Disarm());
       }
       _notifyListeners();
     } catch (error) {
@@ -227,6 +234,10 @@ final class DevelopmentGeofenceController {
     required double targetRadius,
     required String targetReminderText,
   }) async {
+    if (_lifecycleOperationCount > 0) {
+      _fail('TARGET_UPDATE_IN_FLIGHT');
+      return false;
+    }
     if (!_validTargetValues(targetLatitude, targetLongitude, targetRadius)) {
       return false;
     }
@@ -300,44 +311,53 @@ final class DevelopmentGeofenceController {
 
   Future<bool> register() {
     _desiredMonitoring = true;
+    _lifecycleOperationCount++;
     var succeeded = false;
     final generation = ++_operationGeneration;
     final next = _operationTail.then((_) async {
-      if (generation != _operationGeneration && !_desiredMonitoring) return;
-      lastError = null;
-      if (!initialized) {
-        _fail(
-          'INITIALIZATION_INCOMPLETE: wait for PingPlace to finish loading.',
-        );
-        return;
-      }
-      if (!_syncTarget()) return;
-      _log('GEOFENCE_REGISTER_REQUESTED');
-      if (permission != GeofencePermissionStatus.backgroundAllowed) {
-        _log('PERMISSION_MISSING ${permission.name}');
-        lastError = 'Background location permission is required.';
-        _notifyListeners();
-        return;
-      }
       try {
-        await service.register(
-          latitude: latitude,
-          longitude: longitude,
-          radius: radius,
-          reminderText: reminderText,
-        );
-        if (!_desiredMonitoring) {
-          _log('GEOFENCE_REGISTER_CALLBACK_STALE');
+        if (generation != _operationGeneration && !_desiredMonitoring) return;
+        lastError = null;
+        if (!initialized) {
+          _fail(
+            'INITIALIZATION_INCOMPLETE: wait for PingPlace to finish loading.',
+          );
           return;
         }
-        registered = true;
-        succeeded = true;
-        _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
-        await _dispatch(const Arm());
-      } catch (error) {
-        if (_desiredMonitoring) {
-          _fail('GEOFENCE_REGISTRATION_FAILED: ${error.runtimeType}');
+        if (!_syncTarget()) return;
+        _log('GEOFENCE_REGISTER_REQUESTED');
+        if (permission != GeofencePermissionStatus.backgroundAllowed) {
+          _log('PERMISSION_MISSING ${permission.name}');
+          lastError = 'Background location permission is required.';
+          _notifyListeners();
+          return;
         }
+        try {
+          await service.register(
+            latitude: latitude,
+            longitude: longitude,
+            radius: radius,
+            reminderText: reminderText,
+          );
+          if (!_desiredMonitoring || generation != _operationGeneration) {
+            _log('GEOFENCE_REGISTER_CALLBACK_STALE');
+            return;
+          }
+          registered = true;
+          _log('GEOFENCE_REGISTERED radius=${radius.toStringAsFixed(0)}m');
+          await _dispatch(const Arm());
+          if (!_lastRuntimeStatePersisted) {
+            _fail('GEOFENCE_REGISTRATION_STATE_SAVE_FAILED');
+            return;
+          }
+          succeeded = true;
+        } catch (error) {
+          if (_desiredMonitoring) {
+            _fail('GEOFENCE_REGISTRATION_FAILED: ${error.runtimeType}');
+          }
+        }
+      } finally {
+        _lifecycleOperationCount--;
       }
     });
     _operationTail = next.catchError((Object _) {});
@@ -351,12 +371,20 @@ final class DevelopmentGeofenceController {
       await _stopPreciseLocation();
       try {
         await service.remove();
-        if (_desiredMonitoring) {
-          _log('GEOFENCE_REMOVE_CALLBACK_STALE');
+        registered = false;
+        // Native removal is the point at which the engine must stop being
+        // ARMED. Do this even when a newer registration has been requested;
+        // the queued registration will arm it again after the platform add.
+        await _dispatch(const Disarm());
+        if (!_lastRuntimeStatePersisted) {
+          _fail('GEOFENCE_REMOVE_STATE_SAVE_FAILED');
           return;
         }
-        registered = false;
-        _log('GEOFENCE_REMOVED');
+        if (_desiredMonitoring) {
+          _log('GEOFENCE_REMOVE_CALLBACK_SUPERSEDED');
+        } else {
+          _log('GEOFENCE_REMOVED');
+        }
         _notifyListeners();
       } catch (error) {
         if (!_desiredMonitoring) {
@@ -368,9 +396,14 @@ final class DevelopmentGeofenceController {
 
   Future<void> _enqueueOperation(Future<void> Function() operation) {
     final generation = ++_operationGeneration;
+    _lifecycleOperationCount++;
     final next = _operationTail.then((_) async {
-      if (generation != _operationGeneration && !_desiredMonitoring) return;
-      await operation();
+      try {
+        if (generation != _operationGeneration && !_desiredMonitoring) return;
+        await operation();
+      } finally {
+        _lifecycleOperationCount--;
+      }
     });
     _operationTail = next.catchError((Object _) {});
     return next;
@@ -520,9 +553,11 @@ final class DevelopmentGeofenceController {
     }
     currentVisitId = engine.visitId;
     _scheduleCooldownTimer();
+    _lastRuntimeStatePersisted = true;
     try {
       await runtimeStore.save(engine.runtimeSnapshot);
     } catch (error) {
+      _lastRuntimeStatePersisted = false;
       final message = 'RUNTIME_STATE_SAVE_FAILED: $error';
       if (lastError == null) {
         _fail(message);

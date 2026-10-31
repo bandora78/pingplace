@@ -75,8 +75,13 @@ final class FakeGeofenceService implements GeofenceService {
     );
   }
 
+  Duration removeDelay = Duration.zero;
+  Object? removeError;
+
   @override
   Future<void> remove() async {
+    await Future<void>.delayed(removeDelay);
+    if (removeError != null) throw removeError!;
     registered = false;
   }
 
@@ -655,4 +660,136 @@ void main() {
     );
     controller.dispose();
   });
+
+  test('successful removal disarms and persists the runtime state', () async {
+    final service = FakeGeofenceService();
+    final store = InMemoryArrivalRuntimeStore();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+    await controller.initialize();
+    await controller.register();
+    await controller.remove();
+
+    expect(controller.state, DetectionState.disarmed);
+    expect(controller.registered, isFalse);
+    expect((await store.load())?.state, DetectionState.disarmed);
+    controller.dispose();
+  });
+
+  test('target update succeeds after confirmed disable and re-registers', () async {
+    final service = FakeGeofenceService();
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+    await controller.remove();
+
+    final updated = await controller.registerTarget(
+      targetLatitude: 31.9,
+      targetLongitude: 34.7,
+      targetRadius: 280,
+      targetReminderText: 'updated',
+    );
+
+    expect(updated, isTrue);
+    expect(controller.state, DetectionState.armed);
+    expect(controller.registered, isTrue);
+    expect(controller.latitude, 31.9);
+    expect(controller.longitude, 34.7);
+    controller.dispose();
+  });
+
+  test('failed removal preserves armed state and reports failure', () async {
+    final service = FakeGeofenceService()
+      ..removeError = StateError('platform unavailable');
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+    await controller.remove();
+
+    expect(controller.state, DetectionState.armed);
+    expect(controller.registered, isTrue);
+    expect(controller.lastError, contains('GEOFENCE_REMOVE_FAILED'));
+    controller.dispose();
+  });
+
+  test('target update is rejected while removal is in flight', () async {
+    final service = FakeGeofenceService()
+      ..removeDelay = const Duration(milliseconds: 20);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+
+    final removal = controller.remove();
+    final updated = await controller.registerTarget(
+      targetLatitude: 31.9,
+      targetLongitude: 34.7,
+      targetRadius: 280,
+      targetReminderText: 'updated',
+    );
+    await removal;
+
+    expect(updated, isFalse);
+    expect(controller.latitude, 32);
+    expect(controller.longitude, 34.8);
+    expect(controller.state, DetectionState.disarmed);
+    controller.dispose();
+  });
+
+  test('remove then register serializes stale callbacks safely', () async {
+    final service = FakeGeofenceService()
+      ..removeDelay = const Duration(milliseconds: 10);
+    final controller = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+    );
+    await controller.initialize();
+    await controller.register();
+
+    final removal = controller.remove();
+    final registration = controller.register();
+    await Future.wait([removal, registration]);
+
+    expect(controller.registered, isTrue);
+    expect(controller.state, DetectionState.armed);
+    controller.dispose();
+  });
+
+  test('disabled runtime remains disarmed after controller restart', () async {
+    final service = FakeGeofenceService();
+    final store = InMemoryArrivalRuntimeStore();
+    final first = DevelopmentGeofenceController(
+      service: service,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+    await first.initialize();
+    await first.register();
+    await first.remove();
+    first.dispose();
+
+    final restartedService = FakeGeofenceService();
+    final restarted = DevelopmentGeofenceController(
+      service: restartedService,
+      locationService: FakeLocationService(),
+      runtimeStore: store,
+    );
+    await restarted.initialize();
+
+    expect(restarted.state, DetectionState.disarmed);
+    expect(restarted.registered, isFalse);
+    restarted.dispose();
+  });
+
 }
