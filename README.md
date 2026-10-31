@@ -58,13 +58,14 @@ Code that is not yet on `main` is signed in two stages so the signing secrets ne
 
 1. **Android untrusted candidate APK** builds the exact source commit with no secrets and uploads `candidate/pingplace-candidate.apk` plus `manifest.json`. It runs automatically for pull requests targeting `main`, or manually from `main` with `target_sha` set to a full 40-character commit SHA. A manual run is titled `Untrusted candidate APK for <sha>`; that title is rendered from the trusted workflow definition before the build starts and is the only run metadata that binds the built commit to the run.
 2. **Android trusted signed test APK** (dispatched from `main`) independently re-verifies the candidate through the GitHub API before the protected signing job runs:
-   - the approved PR is open and its head equals `source_sha`;
+   - the approved PR is open, comes from this repository (not a fork) and its head equals `source_sha`;
    - the source run is a successful run of `android-untrusted-candidate.yml` in this repository;
    - for a `pull_request` run, the run head equals `source_sha`;
    - for a `workflow_dispatch` run, it was started from `main`, its commit is in the history of trusted `main`, its candidate workflow definition is byte-identical to the one on trusted `main`, and its title is exactly `Untrusted candidate APK for <source_sha>`;
    - the artifact ID and name belong to that run, are unexpired and unique;
-   - the APK SHA-256, manifest, embedded identity asset, package, versionName and `versionCode = 10000 + display build number` all match, and the versionCode is newer than the issued baseline;
-   - the `pingplace-signed-test-approval` environment has required reviewers.
+   - the APK SHA-256, manifest, embedded identity asset, package, versionName and `versionCode = 10000 + display build number` all match;
+   - the versionCode is newer than the pinned issued baseline (signed Build 13, `10013`), whose certificate must equal `PINGPLACE_TRUSTED_CERT_SHA256`, so the result installs as an in-place update;
+   - the `pingplace-signed-test-approval` environment has required reviewers and deploys only from the `main` branch (Selected branches and tags → exactly `main`).
 
    The signing job then signs with the dedicated key and checks the certificate against `PINGPLACE_TRUSTED_CERT_SHA256`. Manual candidate runs created before this check existed (for example run `41196764279`) carry no SHA-binding title and are rejected; dispatch a new candidate run instead.
 

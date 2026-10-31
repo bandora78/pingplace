@@ -86,7 +86,14 @@ jobs:
           evidence="${RUNNER_TEMP}/provenance"
           mkdir -p "${evidence}"
           gh api "repos/${GITHUB_REPOSITORY}/environments/${EXPECTED_ENVIRONMENT}" > "${evidence}/environment.json"
+          if [[ "$(jq -r '.deployment_branch_policy.custom_branch_policies' "${evidence}/environment.json")" == "true" ]]; then
+            gh api "repos/${GITHUB_REPOSITORY}/environments/${EXPECTED_ENVIRONMENT}/deployment-branch-policies?per_page=100" \
+              > "${evidence}/branch-policies.json"
+          else
+            printf '{"total_count":0,"branch_policies":[]}' > "${evidence}/branch-policies.json"
+          fi
           ENVIRONMENT_JSON="${evidence}/environment.json" \
+          BRANCH_POLICIES_JSON="${evidence}/branch-policies.json" \
             bash .github/scripts/verify-candidate-provenance.sh signing-environment
 
       - name: Verify PR state and exact head
@@ -94,12 +101,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_PR: ${{ inputs.pr_number }}
           EXPECTED_SHA: ${{ inputs.source_sha }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+        shell: bash
         run: |
           set -euo pipefail
-          pr_json="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR}")"
-          test "$(jq -r '.state' <<< "${pr_json}")" = open
-          test "$(jq -r '.head.sha' <<< "${pr_json}")" = "${EXPECTED_SHA}"
-          echo "Verified open PR ${EXPECTED_PR} at ${EXPECTED_SHA}"
+          if ! [[ "${EXPECTED_PR}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::pr_number must be a positive integer"
+            exit 1
+          fi
+          evidence="${RUNNER_TEMP}/provenance"
+          mkdir -p "${evidence}"
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR}" > "${evidence}/pr.json"
+          PR_JSON="${evidence}/pr.json" bash .github/scripts/verify-candidate-provenance.sh pull-request
 
       - name: Verify source workflow run provenance through GitHub API
         env:
@@ -188,17 +201,20 @@ jobs:
           echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
           echo "display_build_number=${display_build_number}" >> "${GITHUB_OUTPUT}"
 
-      - name: Verify previously issued signed Build 12 through GitHub API and artifact
+      # Baseline: Build 13, the latest signed APK installed on the field-test device.
+      # Its artifact expires on 2026-11-30; update this pin after each issued build.
+      - name: Verify previously issued signed Build 13 through GitHub API and artifact
         id: baseline
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
+        shell: bash
         run: |
           set -euo pipefail
-          baseline_run_id=40400807491
-          baseline_workflow=".github/workflows/android-signed-test-apk.yml"
-          baseline_sha="274b395fcb998e57568fa32828f12ff0959f19dc"
-          baseline_artifact_name="pingplace-signed-test-apk-1.0.0+9-274b395-build10007"
+          baseline_run_id=41187072871
+          baseline_workflow=".github/workflows/android-trusted-signed-candidate.yml"
+          baseline_sha="910575fd55a475772631c027c6029f685b42b672"
+          baseline_artifact_id=13037620842
+          baseline_artifact_name="pingplace-signed-test-build-13-c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2"
           run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}")"
           test "$(jq -r '.repository.full_name' <<< "${run_json}")" = "${GITHUB_REPOSITORY}"
           test "$(jq -r '.path' <<< "${run_json}")" = "${baseline_workflow}"
@@ -206,38 +222,52 @@ jobs:
           test "$(jq -r '.status' <<< "${run_json}")" = completed
           test "$(jq -r '.conclusion' <<< "${run_json}")" = success
           artifacts_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${baseline_run_id}/artifacts")"
-          matches="$(jq --arg name "${baseline_artifact_name}" --argjson run "${baseline_run_id}" '[.artifacts[] | select(.name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
-          test "${matches}" -eq 1
-          echo "baseline_run_id=${baseline_run_id}" >> "${GITHUB_OUTPUT}"
-          echo "baseline_artifact_name=${baseline_artifact_name}" >> "${GITHUB_OUTPUT}"
+          matches="$(jq --arg id "${baseline_artifact_id}" --arg name "${baseline_artifact_name}" --argjson run "${baseline_run_id}" '[.artifacts[] | select((.id|tostring) == $id and .name == $name and .expired == false and .workflow_run.id == $run)] | length' <<< "${artifacts_json}")"
+          if [[ "${matches}" != "1" ]]; then
+            echo "::error::Signed Build 13 baseline artifact ${baseline_artifact_id} is missing or expired; pin the latest issued signed build"
+            exit 1
+          fi
 
-      - name: Download verified Build 12 artifact
+      - name: Download verified Build 13 artifact
         uses: actions/download-artifact@v4
         with:
-          name: pingplace-signed-test-apk-1.0.0+9-274b395-build10007
-          run-id: 40400807491
+          name: pingplace-signed-test-build-13-c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2
+          run-id: 41187072871
           github-token: ${{ github.token }}
           path: baseline
 
-      - name: Compare candidate against actual issued Build 12 versionCode
+      - name: Verify candidate can upgrade the issued Build 13 in place
         id: baseline_version
         env:
           EXPECTED_PACKAGE_ID: ${{ inputs.expected_package_id }}
           CANDIDATE_VERSION_CODE: ${{ steps.candidate.outputs.version_code }}
+          TRUSTED_CERT_SHA256: ${{ vars.PINGPLACE_TRUSTED_CERT_SHA256 }}
+        shell: bash
         run: |
           set -euo pipefail
           baseline_apk="$(find baseline -type f -name '*.apk' -print)"
           test -n "${baseline_apk}"
           test "$(find baseline -type f -name '*.apk' | wc -l)" -eq 1
           aapt_path="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt -print | sort -V | tail -n 1)"
+          apksigner_path="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner -print | sort -V | tail -n 1)"
+          test -n "${aapt_path}"
+          test -n "${apksigner_path}"
           baseline_badging="$("${aapt_path}" dump badging "${baseline_apk}")"
           test "$(grep -o "package: name='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)" = "${EXPECTED_PACKAGE_ID}"
           baseline_version_code="$(grep -o "versionCode='[^']*'" <<< "${baseline_badging}" | head -n 1 | cut -d"'" -f2)"
-          test "${baseline_version_code}" -gt 0
           [[ "${baseline_version_code}" =~ ^[0-9]+$ ]]
+          test "${baseline_version_code}" -eq 10013
+          test "$(unzip -p "${baseline_apk}" assets/pingplace-build-identity.json | jq -r .source_sha)" = "c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2"
+          # The installed build must carry the trusted certificate, otherwise the
+          # signed candidate could not be installed over it as an update.
+          "${apksigner_path}" verify --print-certs "${baseline_apk}" > baseline-certs.txt
+          baseline_fingerprint="$(awk '/certificate SHA-256 digest:/ { value=$0; sub(/^.*digest:[[:space:]]*/, "", value); gsub(/[[:space:]:\r]/, "", value); if (length(value) == 64) { print tolower(value); exit } }' baseline-certs.txt)"
+          expected_fingerprint="$(printf '%s' "${TRUSTED_CERT_SHA256}" | tr -d '[:space:]:' | tr '[:upper:]' '[:lower:]')"
+          test -n "${expected_fingerprint}"
+          test "${baseline_fingerprint}" = "${expected_fingerprint}"
           test "${CANDIDATE_VERSION_CODE}" -gt "${baseline_version_code}"
           echo "version_code=${baseline_version_code}" >> "${GITHUB_OUTPUT}"
-          echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued baseline versionCode=${baseline_version_code}"
+          echo "Verified candidate versionCode=${CANDIDATE_VERSION_CODE} > issued Build 13 versionCode=${baseline_version_code} signed by ${baseline_fingerprint}"
 
       - name: Publish verified candidate for the approved signing job
         uses: actions/upload-artifact@v4

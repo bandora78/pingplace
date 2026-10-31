@@ -211,27 +211,98 @@ unset expected_sha
 
 # --- signing environment approval gate --------------------------------------
 env_verifier() {
-  ENVIRONMENT_JSON="${work}/env.json" EXPECTED_ENVIRONMENT="pingplace-signed-test-approval" \
+  ENVIRONMENT_JSON="${work}/env.json" BRANCH_POLICIES_JSON="${work}/policies.json" \
+  EXPECTED_ENVIRONMENT="pingplace-signed-test-approval" \
     bash "${verifier}" signing-environment > "${work}/out.txt" 2>&1
 }
-protected_env='{name: "pingplace-signed-test-approval", protection_rules: [
-  {type: "required_reviewers", reviewers: [{type: "User", reviewer: {login: "bandora78"}}]}]}'
+protected_env='{name: "pingplace-signed-test-approval",
+  protection_rules: [{type: "required_reviewers", prevent_self_review: false,
+    reviewers: [{type: "User", reviewer: {login: "bandora78"}}]}],
+  deployment_branch_policy: {protected_branches: false, custom_branch_policies: true}}'
+main_only_policies='{total_count: 1, branch_policies: [{id: 1, name: "main", type: "branch"}]}'
+write_env() {
+  jq -n "${protected_env}" | jq "${1:-.}" > "${work}/env.json"
+  jq -n "${main_only_policies}" | jq "${2:-.}" > "${work}/policies.json"
+}
 
-jq -n "${protected_env}" > "${work}/env.json"
-env_verifier || { cat "${work}/out.txt" >&2; fail "expected protected environment to pass"; }
+write_env
+env_verifier || { cat "${work}/out.txt" >&2; fail "expected protected main-only environment to pass"; }
 passed=$((passed + 1))
 
-for filter in \
-  '.protection_rules = []' \
-  '.protection_rules = [{type: "wait_timer", wait_timer: 5}]' \
-  '.protection_rules[0].reviewers = []' \
-  '.name = "pingplace-signed-test-approval."' \
-  'del(.protection_rules)'; do
-  jq -n "${protected_env}" | jq "${filter}" > "${work}/env.json"
-  if env_verifier; then fail "expected unprotected environment to be rejected: ${filter}"; fi
-  grep -Fq "Provenance rejected" "${work}/out.txt" || fail "environment rejection was not reported: ${filter}"
+# Policies created before GitHub added tag policies have no type field.
+write_env . 'del(.branch_policies[0].type)'
+env_verifier || { cat "${work}/out.txt" >&2; fail "expected untyped main branch policy to pass"; }
+passed=$((passed + 1))
+
+expect_env_rejection() {
+  local env_filter="$1" policy_filter="$2" reason="$3"
+  write_env "${env_filter}" "${policy_filter}"
+  if env_verifier; then cat "${work}/out.txt" >&2; fail "expected environment rejection: ${env_filter} / ${policy_filter}"; fi
+  grep -Fq "${reason}" "${work}/out.txt" ||
+    { cat "${work}/out.txt" >&2; fail "environment rejection did not mention '${reason}'"; }
+  passed=$((passed + 1))
+}
+
+# The current misconfiguration: no protection rules and no branch policy.
+expect_env_rejection '.protection_rules = [] | .deployment_branch_policy = null' . "no required reviewers"
+expect_env_rejection '.protection_rules = []' . "no required reviewers"
+expect_env_rejection '.protection_rules = [{type: "wait_timer", wait_timer: 5}]' . "no required reviewers"
+expect_env_rejection '.protection_rules[0].reviewers = []' . "no required reviewers"
+expect_env_rejection 'del(.protection_rules)' . "no required reviewers"
+expect_env_rejection '.name = "pingplace-signed-test-approval."' . "environment response is for"
+expect_env_rejection '.deployment_branch_policy = null' . "not restricted to selected deployment branches"
+expect_env_rejection 'del(.deployment_branch_policy)' . "not restricted to selected deployment branches"
+expect_env_rejection '.deployment_branch_policy = {protected_branches: true, custom_branch_policies: false}' . \
+  "not restricted to selected deployment branches"
+expect_env_rejection . '.branch_policies = []' "must be exactly [main]"
+expect_env_rejection . '.branch_policies[0].name = "*"' "must be exactly [main]"
+expect_env_rejection . '.branch_policies[0].name = "main*"' "must be exactly [main]"
+expect_env_rejection . '.branch_policies[0].type = "tag"' "must be exactly [main]"
+expect_env_rejection . '.branch_policies += [{id: 2, name: "fix/*", type: "branch"}]' "must be exactly [main]"
+write_env; printf 'not json' > "${work}/policies.json"
+if env_verifier; then fail "expected unparseable branch policies to be rejected"; fi
+grep -Fq "could not be parsed" "${work}/out.txt" || fail "unparseable branch policies rejection was not reported"
+passed=$((passed + 1))
+
+# --- approved pull request --------------------------------------------------
+pr_verifier() {
+  PR_JSON="${work}/pr.json" EXPECTED_PR="${expected_pr:-28}" EXPECTED_SHA="${expected_sha:-${target_sha}}" \
+  EXPECTED_REPOSITORY="${repo}" bash "${verifier}" pull-request > "${work}/out.txt" 2>&1
+}
+write_pr() {
+  jq -n --arg repo "${repo}" --arg head "${target_sha}" \
+    '{number: 28, state: "open", head: {sha: $head, repo: {full_name: $repo}},
+      base: {ref: "app-09-multi-geofence", repo: {full_name: $repo}}}' | jq "${1:-.}" > "${work}/pr.json"
+}
+expect_pr_rejection() {
+  local filter="$1" reason="$2"
+  write_pr "${filter}"
+  if pr_verifier; then cat "${work}/out.txt" >&2; fail "expected PR rejection: ${filter}"; fi
+  grep -Fq "${reason}" "${work}/out.txt" || { cat "${work}/out.txt" >&2; fail "PR rejection did not mention '${reason}'"; }
+  passed=$((passed + 1))
+}
+
+write_pr
+pr_verifier || { cat "${work}/out.txt" >&2; fail "expected open same-repository PR to pass"; }
+passed=$((passed + 1))
+
+expect_pr_rejection '.state = "closed"' "not open"
+expect_pr_rejection ".head.sha = \"${other_sha}\"" "not the approved SHA"
+expect_pr_rejection '.head.repo.full_name = "attacker/pingplace"' "head comes from"
+expect_pr_rejection '.head.repo = null' "head comes from"
+expect_pr_rejection '.base.repo.full_name = "other/pingplace"' "targets"
+expect_pr_rejection '.number = 29' "PR response is for"
+for bad_pr in "0" "28/../29" "-1" "28 " "abc"; do
+  write_pr; expected_pr="${bad_pr}"
+  if pr_verifier; then fail "expected invalid pr_number to be rejected: '${bad_pr}'"; fi
+  grep -Fq "pr_number must be a positive integer" "${work}/out.txt" || fail "invalid pr_number '${bad_pr}' not reported"
   passed=$((passed + 1))
 done
+unset expected_pr
+write_pr; expected_sha="${target_sha:0:7}"
+if pr_verifier; then fail "expected abbreviated PR SHA to be rejected"; fi
+passed=$((passed + 1))
+unset expected_sha
 
 # --- candidate manifest identity --------------------------------------------
 manifest_verifier() {

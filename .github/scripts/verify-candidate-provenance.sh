@@ -11,8 +11,10 @@
 #     env: RUN_JSON ARTIFACTS_JSON COMPARE_JSON RUN_WORKFLOW_BLOB_SHA
 #          TRUSTED_WORKFLOW_BLOB_SHA EXPECTED_REPOSITORY EXPECTED_SHA
 #          SOURCE_RUN_ID SOURCE_ARTIFACT_ID SOURCE_ARTIFACT_NAME
+#   verify-candidate-provenance.sh pull-request
+#     env: PR_JSON EXPECTED_PR EXPECTED_SHA EXPECTED_REPOSITORY
 #   verify-candidate-provenance.sh signing-environment
-#     env: ENVIRONMENT_JSON EXPECTED_ENVIRONMENT
+#     env: ENVIRONMENT_JSON BRANCH_POLICIES_JSON EXPECTED_ENVIRONMENT
 #   verify-candidate-provenance.sh manifest
 #     env: MANIFEST_JSON EXPECTED_SHA
 set -euo pipefail
@@ -131,9 +133,31 @@ verify_dispatch_run() {
     reject "dispatch run title '${title}' does not bind the approved SHA ${EXPECTED_SHA}"
 }
 
+verify_pull_request() {
+  require_env PR_JSON EXPECTED_PR EXPECTED_SHA EXPECTED_REPOSITORY
+  [[ "${EXPECTED_PR}" =~ ^[1-9][0-9]*$ ]] || reject "pr_number must be a positive integer, got '${EXPECTED_PR}'"
+  require_full_sha "EXPECTED_SHA" "${EXPECTED_SHA}"
+  local number state head_sha head_repo base_repo
+  number="$(json_field "${PR_JSON}" '.number')"
+  state="$(json_field "${PR_JSON}" '.state')"
+  head_sha="$(json_field "${PR_JSON}" '.head.sha')"
+  head_repo="$(json_field "${PR_JSON}" '.head.repo.full_name')"
+  base_repo="$(json_field "${PR_JSON}" '.base.repo.full_name')"
+  [[ "${number}" == "${EXPECTED_PR}" ]] || reject "PR response is for #${number}, not #${EXPECTED_PR}"
+  [[ "${state}" == "open" ]] || reject "PR #${EXPECTED_PR} is '${state}', not open"
+  [[ "${base_repo}" == "${EXPECTED_REPOSITORY}" ]] || reject "PR #${EXPECTED_PR} targets '${base_repo}', not ${EXPECTED_REPOSITORY}"
+  # Fork commits share object storage with this repository and can be checked
+  # out by SHA, so only same-repository PR heads are eligible for signing.
+  [[ "${head_repo}" == "${EXPECTED_REPOSITORY}" ]] ||
+    reject "PR #${EXPECTED_PR} head comes from '${head_repo}', not ${EXPECTED_REPOSITORY}"
+  [[ "${head_sha}" == "${EXPECTED_SHA}" ]] ||
+    reject "PR #${EXPECTED_PR} head is ${head_sha}, not the approved SHA ${EXPECTED_SHA}"
+  echo "Verified open same-repository PR #${EXPECTED_PR} at ${EXPECTED_SHA}"
+}
+
 verify_signing_environment() {
-  require_env ENVIRONMENT_JSON EXPECTED_ENVIRONMENT
-  local name reviewers
+  require_env ENVIRONMENT_JSON BRANCH_POLICIES_JSON EXPECTED_ENVIRONMENT
+  local name reviewers protected_only custom policies
   name="$(json_field "${ENVIRONMENT_JSON}" '.name')"
   [[ "${name}" == "${EXPECTED_ENVIRONMENT}" ]] ||
     reject "environment response is for '${name}', not '${EXPECTED_ENVIRONMENT}'"
@@ -141,7 +165,22 @@ verify_signing_environment() {
     "${ENVIRONMENT_JSON}")" || reject "environment response could not be parsed"
   [[ "${reviewers}" =~ ^[0-9]+$ && "${reviewers}" -ge 1 ]] ||
     reject "environment '${EXPECTED_ENVIRONMENT}' has no required reviewers, so signing would not wait for approval"
-  echo "Verified environment '${EXPECTED_ENVIRONMENT}' requires approval from ${reviewers} reviewer(s)"
+
+  # Only "Selected branches and tags" with exactly the main branch is accepted.
+  # Note: jq's // operator treats false as missing, so test for null explicitly.
+  protected_only="$(jq -r 'if .deployment_branch_policy.protected_branches == null then "missing"
+    else .deployment_branch_policy.protected_branches | tostring end' "${ENVIRONMENT_JSON}")" ||
+    reject "environment response could not be parsed"
+  custom="$(jq -r 'if .deployment_branch_policy.custom_branch_policies == null then "missing"
+    else .deployment_branch_policy.custom_branch_policies | tostring end' "${ENVIRONMENT_JSON}")" ||
+    reject "environment response could not be parsed"
+  [[ "${protected_only}" == "false" && "${custom}" == "true" ]] ||
+    reject "environment '${EXPECTED_ENVIRONMENT}' is not restricted to selected deployment branches (protected_branches=${protected_only}, custom_branch_policies=${custom})"
+  policies="$(jq -c '[.branch_policies[]? | {name, type: (.type // "branch")}]' "${BRANCH_POLICIES_JSON}" 2>/dev/null)" ||
+    reject "deployment branch policy response could not be parsed"
+  [[ "${policies}" == '[{"name":"main","type":"branch"}]' ]] ||
+    reject "environment '${EXPECTED_ENVIRONMENT}' deployment branches must be exactly [main], got ${policies}"
+  echo "Verified environment '${EXPECTED_ENVIRONMENT}' requires approval from ${reviewers} reviewer(s) and deploys only from main"
 }
 
 verify_manifest() {
@@ -162,8 +201,9 @@ verify_manifest() {
 }
 
 case "${1:-}" in
+  pull-request) verify_pull_request ;;
   candidate-run) verify_candidate_run ;;
   signing-environment) verify_signing_environment ;;
   manifest) verify_manifest ;;
-  *) echo "usage: $0 candidate-run|signing-environment|manifest" >&2; exit 2 ;;
+  *) echo "usage: $0 pull-request|candidate-run|signing-environment|manifest" >&2; exit 2 ;;
 esac
