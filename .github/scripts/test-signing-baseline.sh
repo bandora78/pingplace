@@ -15,30 +15,30 @@ passed=0
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { passed=$((passed + 1)); }
 
-# --- the committed pin is exactly the independently verified Build 14 -------
+# --- the committed pin is exactly the independently verified Build 15 -------
 bash "${baseline}" load "${pin}" > "${work}/pin.out" || fail "committed pin does not load"
 expect_pin() {
   grep -Fxq "$1=$2" "${work}/pin.out" || fail "pin $1 is not $2"
   ok
 }
-expect_pin build_label 1.0.0+14
-expect_pin run_id 41223548927
+expect_pin build_label 1.0.0+15
+expect_pin run_id 41231233578
 expect_pin run_workflow .github/workflows/android-trusted-signed-candidate.yml
-expect_pin run_head_sha def4444d399353b2fdc10e640c9e9e49ea0e5399
-expect_pin artifact_id 13050945929
-expect_pin artifact_name pingplace-signed-test-v1.0.0+14-build10014-c7cfe7a44129989200287df6b3ca14bf10c18ad8
-expect_pin apk_sha256 6ab0a38ff81ae06e4517ebd3d906497b2700338adb1ed46c79cbedbb91dd2abe
+expect_pin run_head_sha 38415680c7c0ae60a45d9f5590ebead3bae9b6c3
+expect_pin artifact_id 13056869124
+expect_pin artifact_name pingplace-signed-test-v1.0.0+15-build10015-79ed55a61491e37f80e6e360e04ead4be5815e75
+expect_pin apk_sha256 51dca9071bdef5db81d5c01bf2bd9313eaf2b50fec0c49dc5480c9b278ff663b
 expect_pin package_id com.example.pingplace
 expect_pin version_name 1.0.0
-expect_pin display_build_number 14
-expect_pin version_code 10014
-expect_pin source_sha c7cfe7a44129989200287df6b3ca14bf10c18ad8
+expect_pin display_build_number 15
+expect_pin version_code 10015
+expect_pin source_sha 79ed55a61491e37f80e6e360e04ead4be5815e75
 [[ "$(wc -l < "${work}/pin.out")" -eq 13 ]] || fail "pin output has unexpected keys"
 ok
 
 # --- the workflow uses the pin and no stale hard-coded baseline -------------
 for stale in 41187072871 13037620842 pingplace-signed-test-build-13- 40400807491 \
-  "-eq 10013" "-eq 10007"; do
+  "-eq 10013" "-eq 10007" 41223548927 13050945929 pingplace-signed-test-v1.0.0+14-; do
   if grep -Fq -- "${stale}" "${workflow}"; then fail "workflow still hard-codes stale baseline '${stale}'"; fi
   ok
 done
@@ -79,20 +79,20 @@ ok
 mutate_pin '/^RUN_ID=/d'; expect_load_rejection "missing key" "missing pin key RUN_ID"
 mutate_pin '$a RUN_ID=1'; expect_load_rejection "duplicate key" "duplicate pin key RUN_ID"
 mutate_pin '$a EXTRA_KEY=1'; expect_load_rejection "unknown key" "unknown pin key EXTRA_KEY"
-mutate_pin 's/^RUN_ID=.*/RUN_ID="41223548927"/'; expect_load_rejection "quoted value" "malformed pin line"
+mutate_pin 's/^RUN_ID=.*/RUN_ID="41231233578"/'; expect_load_rejection "quoted value" "malformed pin line"
 mutate_pin 's/^RUN_ID=.*/RUN_ID=$(id)/'; expect_load_rejection "command substitution" "malformed pin line"
 mutate_pin 's/^RUN_ID=.*/RUN_ID=1;id/'; expect_load_rejection "shell metacharacter" "malformed pin line"
-mutate_pin 's/^RUN_ID=.*/RUN_ID= 41223548927/'; expect_load_rejection "leading space" "malformed pin line"
-mutate_pin 's/^RUN_ID=.*/run_id=41223548927/'; expect_load_rejection "lower-case key" "malformed pin line"
+mutate_pin 's/^RUN_ID=.*/RUN_ID= 41231233578/'; expect_load_rejection "leading space" "malformed pin line"
+mutate_pin 's/^RUN_ID=.*/run_id=41231233578/'; expect_load_rejection "lower-case key" "malformed pin line"
 mutate_pin 's/^RUN_ID=.*/RUN_ID=abc/'; expect_load_rejection "non-numeric run" "RUN_ID must be numeric"
 mutate_pin 's/^ARTIFACT_ID=.*/ARTIFACT_ID=0/'; expect_load_rejection "zero artifact id" "ARTIFACT_ID must be numeric"
-mutate_pin 's/^RUN_HEAD_SHA=.*/RUN_HEAD_SHA=def4444/'; expect_load_rejection "short run head" "RUN_HEAD_SHA must be a full commit SHA"
+mutate_pin 's/^RUN_HEAD_SHA=.*/RUN_HEAD_SHA=3841568/'; expect_load_rejection "short run head" "RUN_HEAD_SHA must be a full commit SHA"
 mutate_pin 's/^SOURCE_SHA=.*/SOURCE_SHA=main/'; expect_load_rejection "branch as source" "SOURCE_SHA must be a full commit SHA"
-mutate_pin 's/^APK_SHA256=6ab0/APK_SHA256=6AB0/'; expect_load_rejection "upper-case hash" "APK_SHA256 must be a lowercase SHA-256"
-mutate_pin 's/^APK_SHA256=.*/APK_SHA256=6ab0a38f/'; expect_load_rejection "short hash" "APK_SHA256 must be a lowercase SHA-256"
+mutate_pin 's/^APK_SHA256=51dca/APK_SHA256=51DCA/'; expect_load_rejection "upper-case hash" "APK_SHA256 must be a lowercase SHA-256"
+mutate_pin 's/^APK_SHA256=.*/APK_SHA256=51dca907/'; expect_load_rejection "short hash" "APK_SHA256 must be a lowercase SHA-256"
 mutate_pin 's#^RUN_WORKFLOW=.*#RUN_WORKFLOW=.github/workflows/android-untrusted-candidate.yml#'
 expect_load_rejection "untrusted workflow as baseline" "RUN_WORKFLOW must be the trusted signing workflow"
-mutate_pin 's/^VERSION_CODE=.*/VERSION_CODE=10013/'; expect_load_rejection "versionCode mismatch" "is not 10000 + 14"
+mutate_pin 's/^VERSION_CODE=.*/VERSION_CODE=10014/'; expect_load_rejection "versionCode mismatch" "is not 10000 + 15"
 mutate_pin 's/^DISPLAY_BUILD_NUMBER=.*/DISPLAY_BUILD_NUMBER=13/'; expect_load_rejection "display mismatch" "is not 10000 + 13"
 mutate_pin 's/^BUILD_LABEL=.*/BUILD_LABEL=1.0.0+13/'; expect_load_rejection "label mismatch" "BUILD_LABEL"
 mutate_pin 's/^ARTIFACT_NAME=.*/ARTIFACT_NAME=pingplace-signed-test-build-13-c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2/'
@@ -154,11 +154,11 @@ apk_verify() {
   OBSERVED_APK_SHA256="${obs_sha-${BASELINE_APK_SHA256}}" \
   OBSERVED_PACKAGE_ID="${obs_pkg-com.example.pingplace}" \
   OBSERVED_VERSION_NAME="${obs_name-1.0.0}" \
-  OBSERVED_VERSION_CODE="${obs_code-10014}" \
-  OBSERVED_SOURCE_SHA="${obs_src-c7cfe7a44129989200287df6b3ca14bf10c18ad8}" \
+  OBSERVED_VERSION_CODE="${obs_code-10015}" \
+  OBSERVED_SOURCE_SHA="${obs_src-79ed55a61491e37f80e6e360e04ead4be5815e75}" \
   OBSERVED_CERT_SHA256="${obs_cert-${trusted}}" \
   TRUSTED_CERT_SHA256="${trusted_cert-${trusted}}" \
-  CANDIDATE_VERSION_CODE="${candidate-10015}" \
+  CANDIDATE_VERSION_CODE="${candidate-10016}" \
   EXPECTED_PACKAGE_ID="${expected_pkg-com.example.pingplace}" \
     bash "${baseline}" verify-apk > "${work}/out.txt" 2>&1
 }
@@ -169,7 +169,7 @@ expect_apk_rejection() {
   ok
 }
 
-apk_verify || { cat "${work}/out.txt" >&2; fail "expected Build 15 over Build 14 to verify"; }
+apk_verify || { cat "${work}/out.txt" >&2; fail "expected Build 16 over Build 15 to verify"; }
 ok
 # apksigner output formatting (colons, upper case) must not matter.
 obs_cert="$(sed 's/../&:/g; s/:$//' <<< "${trusted^^}")"
@@ -180,17 +180,17 @@ obs_sha="$(printf '0%.0s' {1..64})"; expect_apk_rejection "different APK bytes" 
 obs_pkg="com.example.other"; expect_apk_rejection "different package" "baseline package"; unset obs_pkg
 expected_pkg="com.example.other"; expect_apk_rejection "candidate package differs" "differs from the installed baseline"; unset expected_pkg
 obs_name="1.0.1"; expect_apk_rejection "different versionName" "baseline versionName"; unset obs_name
-obs_code="10013"; expect_apk_rejection "Build 13 APK instead of Build 14" "baseline versionCode"; unset obs_code
-obs_src="c3215f8dfab43e755a3c09ff4b4c3c45dd5c2fe2"; expect_apk_rejection "different embedded source" "embedded source"; unset obs_src
+obs_code="10014"; expect_apk_rejection "Build 14 APK instead of Build 15" "baseline versionCode"; unset obs_code
+obs_src="c7cfe7a44129989200287df6b3ca14bf10c18ad8"; expect_apk_rejection "different embedded source" "embedded source"; unset obs_src
 obs_cert="$(printf 'a%.0s' {1..64})"; expect_apk_rejection "different signer" "not the trusted certificate"; unset obs_cert
 obs_cert=""; expect_apk_rejection "missing signer" "OBSERVED_CERT_SHA256 is empty"; unset obs_cert
 trusted_cert="906551dd"; expect_apk_rejection "malformed trusted fingerprint" "not a SHA-256"; unset trusted_cert
-candidate="10014"; expect_apk_rejection "same versionCode as installed" "does not upgrade baseline 10014"; unset candidate
-candidate="10013"; expect_apk_rejection "downgrade" "does not upgrade baseline 10014"; unset candidate
-candidate="10015x"; expect_apk_rejection "non-numeric candidate" "positive integer"; unset candidate
+candidate="10015"; expect_apk_rejection "same versionCode as installed" "does not upgrade baseline 10015"; unset candidate
+candidate="10014"; expect_apk_rejection "downgrade" "does not upgrade baseline 10015"; unset candidate
+candidate="10016x"; expect_apk_rejection "non-numeric candidate" "positive integer"; unset candidate
 candidate="16"; candidate_ok=false
 apk_verify && candidate_ok=true
-[[ "${candidate_ok}" == false ]] || fail "versionCode 16 accepted over 10014"
+[[ "${candidate_ok}" == false ]] || fail "versionCode 16 accepted over 10015"
 unset candidate; ok
 
 echo "Signing baseline regression tests passed (${passed} cases)"
