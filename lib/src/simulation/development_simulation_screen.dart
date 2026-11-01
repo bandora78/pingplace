@@ -296,9 +296,12 @@ final class _RealGeofenceSection extends StatelessWidget {
                   onPressed: controller.requestPermission,
                   child: const Text('REQUEST / CHECK PERMISSION'),
                 ),
-                OutlinedButton(
-                  onPressed: controller.restoreGeofence,
-                  child: const Text('CHECK / RESTORE GEOFENCE'),
+                // Legacy single-target registration is superseded by the place
+                // list (APP-10). Its native calls remove every geofence that
+                // uses the shared PendingIntent, including all places.
+                const OutlinedButton(
+                  onPressed: null,
+                  child: Text('CHECK / RESTORE GEOFENCE'),
                 ),
                 FilledButton(
                   onPressed: controller.requestNotificationPermission,
@@ -308,28 +311,20 @@ final class _RealGeofenceSection extends StatelessWidget {
                   onPressed: controller.openNotificationSettings,
                   child: const Text('NOTIFICATION SETTINGS'),
                 ),
-                FilledButton(
-                  onPressed: controller.initialized
-                      ? () {
-                          final latitude = double.tryParse(
-                            latitudeController.text,
-                          );
-                          final longitude = double.tryParse(
-                            longitudeController.text,
-                          );
-                          if (latitude == null || longitude == null) return;
-                          controller.latitude = latitude;
-                          controller.longitude = longitude;
-                          controller.register();
-                        }
-                      : null,
-                  child: const Text('REGISTER OUTER GEOFENCE'),
+                const FilledButton(
+                  onPressed: null,
+                  child: Text('REGISTER OUTER GEOFENCE'),
                 ),
-                OutlinedButton(
-                  onPressed: controller.remove,
-                  child: const Text('REMOVE GEOFENCE'),
+                const OutlinedButton(
+                  onPressed: null,
+                  child: Text('REMOVE GEOFENCE'),
                 ),
               ],
+            ),
+            const Text(
+              'Legacy single-target registration is disabled: places are '
+              'managed in the Places list on the home screen.',
+              key: Key('legacy-registration-disabled'),
             ),
             const SizedBox(height: 8),
             if (controller.eventLog.isNotEmpty)

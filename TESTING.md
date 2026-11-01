@@ -437,6 +437,11 @@ actual Xiaomi 15/HyperOS results; automated tests do not replace this evidence.
 
 ## APP-09A diagnostics refresh (Build 15)
 
+**Status: field-validated and complete.** Verified on the Xiaomi 15 with the
+signed Build 15 (`1.0.0+15`, versionCode 10015, source `79ed55a`, certificate
+`906551dd…`): platform registration confirmation refreshes immediately,
+without restarting the app.
+
 Regression: Build 14 showed `Registration: REGISTERED`, `Engine state: ARMED`
 but `Platform registration confirmed: NO / UNKNOWN` until the app was restarted.
 Diagnostics are now re-read after every register, remove and recovery attempt,
@@ -459,3 +464,44 @@ On the Xiaomi 15, in Developer Mode:
    confirmation must show `NO`, never `YES`.
 5. Background the app, cross the geofence, and return. `Last background event`
    must update without restarting.
+
+## APP-10 multi-place management (Build 16)
+
+The place list is now the only source of geofence registrations. The legacy
+single-target registration is retired: Developer Mode buttons for it are
+disabled, and the native layer rejects legacy register/remove/restore calls
+once places are registered (`LEGACY_REGISTRATION_DISABLED`).
+
+**Upgrade from Build 15 (do first, do not uninstall or clear data):**
+
+1. Before upgrading, note the coordinates, radius, reminder text and monitoring
+   state shown on the Build 15 home screen.
+2. Install Build 16 as an update and open it. The list must contain exactly one
+   place, `מקום קיים`, with those values. Builds 12-15 never wrote home-screen
+   edits back to the place list; Build 16 adopts them once
+   (Developer Mode diagnostics: `LEGACY_SYNC: ADOPTED_LEGACY_EDITS ...` or
+   `ALREADY_IN_SYNC`). If monitoring was off in Build 15, the place is off.
+3. The place must show `פעיל · מאושר ע״י Android` when enabled.
+
+**Multi-place:**
+
+4. Add two more places at different locations. Existing places must be unchanged.
+5. Edit one place's reminder text and radius; the other places must be unchanged.
+6. Turn one place off. Its status shows `מעקב כבוי`; the others stay confirmed.
+7. Visit each enabled place. Each produces one notification with its own
+   reminder text. A second ENTER at the same place within 10 minutes does not
+   notify again; another place still notifies.
+8. Visit the disabled place: no notification.
+9. Delete a place: a confirmation dialog appears; Cancel keeps it, Delete
+   removes it. Visiting the deleted place produces no notification.
+
+**Persistence and recovery:**
+
+10. Force-stop the app and reopen: all places, settings and on/off states remain.
+11. Reboot the phone **without opening the app**, then visit an enabled place:
+    it must notify (boot recovery now restores places; before Build 16 it did
+    not). Diagnostics show `MULTI_GEOFENCE_BOOT_RECOVERY_COMPLETED`.
+12. Revoke background location, then enable a place: the change is rolled back
+    with a message and the previous places remain. Disabling or deleting the
+    last enabled place still works without the permission. Grant the
+    permission and tap **בדיקת הרשאות**: a failed registration is retried.
