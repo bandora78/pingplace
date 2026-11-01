@@ -42,12 +42,25 @@ final class MultiPlaceBackgroundArrivalSession {
 
   Future<void> _handleEvent(Map<Object?, Object?> payload) async {
     final rawId = payload['placeId'];
-    final placeId = rawId is String && rawId.trim().isNotEmpty ? rawId : _legacy;
+    final placeId = rawId is String && rawId.trim().isNotEmpty
+        ? rawId
+        : _legacy;
     var session = _sessions[placeId];
     if (session == null) {
-      if (placeId != _legacy && payload['type'] != 'enter') {
-        onDiagnostic('BACKGROUND_EVENT_IGNORED unknown place id');
+      // A place's session lives only as long as this background process. The
+      // service stops right after an arrival notification, so the EXIT that
+      // re-arms the place always arrives in a new process. It must restore the
+      // place's persisted state instead of being dropped, or the place stays in
+      // cooldown/waiting-for-exit and never notifies again.
+      final type = payload['type'];
+      if (placeId != _legacy && type != 'enter' && type != 'exit') {
+        onDiagnostic(
+          'BACKGROUND_EVENT_IGNORED $placeId type=$type no active session',
+        );
         return;
+      }
+      if (type == 'exit') {
+        onDiagnostic('$placeId BACKGROUND_EXIT_RESTORING_PERSISTED_STATE');
       }
       final targetLatitude = (payload['targetLatitude'] as num?)?.toDouble();
       final targetLongitude = (payload['targetLongitude'] as num?)?.toDouble();
@@ -85,7 +98,9 @@ final class MultiPlaceBackgroundArrivalSession {
 
   ArrivalRuntimeStore _runtimeFor(String placeId) {
     final store = runtimeStore;
-    if (store is! PerPlaceArrivalRuntimeStore || placeId == _legacy) return store;
+    if (store is! PerPlaceArrivalRuntimeStore || placeId == _legacy) {
+      return store;
+    }
     return _PlaceRuntimeAdapter(store as PerPlaceArrivalRuntimeStore, placeId);
   }
 

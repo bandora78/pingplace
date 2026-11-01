@@ -59,7 +59,10 @@ final class _PingPlaceHomeScreenState extends State<PingPlaceHomeScreen> {
   void _openDeveloperMode() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => DevelopmentSimulationScreen(realGeofence: controller),
+        builder: (_) => DevelopmentSimulationScreen(
+          realGeofence: controller,
+          placeManager: widget.placeManager,
+        ),
       ),
     );
   }

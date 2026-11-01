@@ -505,3 +505,59 @@ once places are registered (`LEGACY_REGISTRATION_DISABLED`).
     with a message and the previous places remain. Disabling or deleting the
     last enabled place still works without the permission. Grant the
     permission and tap **בדיקת הרשאות**: a failed registration is retried.
+
+## APP-10A background arrival field test (Build 17)
+
+Build 16 field report: two places visited with the app in the background, no
+notifications. Last geofence callback was an EXIT at 05:42:20Z; boot recovery
+completed at 05:50:19Z; no callback of any kind arrived afterwards.
+
+Fixed in Build 17:
+
+- Each place could notify only once. After an arrival the background service
+  stops, so the place's EXIT arrives in a new background process, where it was
+  dropped (`BACKGROUND_EVENT_IGNORED unknown place id`). The place stayed in
+  cooldown/waiting-for-exit and ignored every later ENTER. EXIT now restores the
+  place's saved state and re-arms it; an elapsed cooldown is applied on EXIT and
+  ENTER.
+- Per-place state recorded for an old location (for example `legacy-place-1`
+  before the Build 16 sync) is discarded at startup.
+
+Still unexplained from the Build 16 evidence: Android delivered no geofence
+callbacks after the 05:50Z boot recovery. Build 17 records what is needed to
+explain this. In Developer Mode, the **Places pipeline** card shows:
+
+- System health: location permission, location services, battery optimization,
+  background restriction, notifications.
+- `APP_PROCESS_EXIT reason=...`: why the app process last ended.
+  `FORCE_STOPPED ... GEOFENCES_CLEARED_BY_ANDROID` means Android removed every
+  geofence (HyperOS "clear all" in recents, or battery cleanup, can do this).
+  The first Build 17 start lists up to 16 earlier exits, so it can show whether
+  this happened during the Build 16 test.
+- `MULTI_GEOFENCE_APPLIED source=... id@lat,lon/rRADIUS`: the exact geofences
+  registered (location rounded to ~100 m).
+- `GEOFENCE_TRANSITION enter|exit ids=[...] places=[...]`: every callback with
+  its place IDs.
+- Per place: registration state and arrival state (`state=ARMED|COOLDOWN|...`).
+- The background arrival pipeline log (sessions, samples, notifications).
+- The legacy engine fields are labelled legacy and do not describe places.
+
+Steps on the Xiaomi 15:
+
+1. Install Build 17 as an update. Open the app once, then open Developer Mode
+   and copy the Places pipeline card (all text is selectable). Note any
+   `APP_PROCESS_EXIT ... GEOFENCES_CLEARED_BY_ANDROID` lines and the System
+   health values.
+2. Recommended HyperOS settings for the test (Settings → Apps → PingPlace):
+   Autostart on; Battery saver "No restrictions"; Location "Allow all the time";
+   lock the app in recents and do not use "clear all".
+3. Each place must show `state=ARMED` (or `NONE`) before leaving for a visit.
+4. Visit place A with the app in the background: expect a notification and a
+   `GEOFENCE_TRANSITION enter ... places=[A]` line.
+5. Leave place A (beyond the re-arm distance, ~350 m): expect a
+   `GEOFENCE_TRANSITION exit` line and, in the pipeline log,
+   `BACKGROUND_EXIT_RESTORING_PERSISTED_STATE` then a return to `ARMED`.
+6. Visit place A again later: a **second** notification is expected (this was
+   the Build 16 defect). Repeat for place B.
+7. If no notification arrives, copy the Places pipeline card immediately and
+   note the visit times (local) and how long you stayed.

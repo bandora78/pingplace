@@ -1,6 +1,10 @@
 package com.example.pingplace
 
 import android.Manifest
+import android.app.ActivityManager
+import android.location.LocationManager
+import android.os.PowerManager
+import androidx.core.app.NotificationManagerCompat
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -15,6 +19,10 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private companion object {
+        const val HEALTH_PREFS = "pingplace_health"
+        const val LAST_EXIT_CHECKED = "last_exit_checked"
+    }
     private val methodChannelName = "pingplace/geofence"
     private val eventChannelName = "pingplace/geofence/events"
     private val locationMethodChannelName = "pingplace/location"
@@ -43,6 +51,7 @@ class MainActivity : FlutterActivity() {
                     "register" -> if (legacyAllowed(result)) register(call, result)
                     "registerPlaces" -> registerPlaces(call, result)
                     "multiRegistrationStatus" -> result.success(multiRegistrationStatus())
+                    "systemHealth" -> result.success(systemHealth())
                     "remove" -> if (legacyAllowed(result)) remove(result)
                     else -> result.notImplemented()
                 }
@@ -96,6 +105,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 ArrivalNotificationBridge.handle(this, this, call, result)
             }
+        recordProcessExits()
         if (MultiPlaceGeofenceRegistration.hasDesired(this)) {
             MultiPlaceGeofenceRegistration.restore(this) { success, error ->
                 if (!success) {
@@ -279,6 +289,43 @@ class MainActivity : FlutterActivity() {
             // whether it succeeded or failed.
             notifyRegistrationStatusChanged()
         }
+    }
+
+    /**
+     * Records why the app process last ended. A force-stop (including HyperOS
+     * "clear all" or battery cleanup) removes every geofence until the app is
+     * opened again, which otherwise looks like geofencing silently stopped.
+     */
+    private fun recordProcessExits() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        try {
+            val activityManager = getSystemService(ActivityManager::class.java) ?: return
+            val preferences = getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE)
+            val since = preferences.getLong(LAST_EXIT_CHECKED, 0L)
+            val records = activityManager.getHistoricalProcessExitReasons(packageName, 0, 16).map {
+                PlaceDiagnostics.ExitRecord(it.reason, it.timestamp, it.description)
+            }
+            PlaceDiagnostics.exitDiagnostics(records, since).forEach { GeofenceRecovery.recordDiagnostic(this, it) }
+            val newest = records.maxOfOrNull { it.timestampMillis } ?: return
+            if (newest > since) preferences.edit().putLong(LAST_EXIT_CHECKED, newest).apply()
+        } catch (error: Exception) {
+            GeofenceRecovery.recordDiagnostic(this, "APP_PROCESS_EXIT_READ_FAILED ${error.javaClass.simpleName}")
+        }
+    }
+
+    /** Device and app conditions that decide whether Android delivers geofence events. */
+    private fun systemHealth(): Map<String, Any?> {
+        val power = getSystemService(PowerManager::class.java)
+        val activityManager = getSystemService(ActivityManager::class.java)
+        val location = getSystemService(LocationManager::class.java)
+        return mapOf(
+            "locationPermission" to permissionStatus(),
+            "locationEnabled" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) location?.isLocationEnabled else null,
+            "ignoringBatteryOptimizations" to power?.isIgnoringBatteryOptimizations(packageName),
+            "backgroundRestricted" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) activityManager?.isBackgroundRestricted else null,
+            "notificationsEnabled" to NotificationManagerCompat.from(this).areNotificationsEnabled(),
+            "device" to "${Build.MANUFACTURER} ${Build.MODEL} SDK ${Build.VERSION.SDK_INT}",
+        )
     }
 
     /** Rejects legacy single-target calls once places are managed by the place list. */

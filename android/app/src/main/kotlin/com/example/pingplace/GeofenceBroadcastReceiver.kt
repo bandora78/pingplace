@@ -31,6 +31,10 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             publishFailure(context, error ?: "Geofence transition contained no request IDs")
             return
         }
+        GeofenceRecovery.recordDiagnostic(
+            context,
+            PlaceDiagnostics.transition(type, ids, MultiPlaceGeofenceRegistration.desiredPlaceIds(context).toSet()),
+        )
         ids.forEach { placeId ->
             val routedPlaceId = placeId.takeUnless { it == "pingplace-phase0-outer" }
             GeofenceRecovery.recordBackgroundEvent(context, type, error)
@@ -47,10 +51,11 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                         PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
                     } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", routedPlaceId)
                 } else {
+                    GeofenceRecovery.recordDiagnostic(context, "GEOFENCE_ENTER_UNKNOWN_PLACE id=$placeId")
                     GeofenceEventBus.publish(context, "error", "Unknown place registration", routedPlaceId)
                 }
             } else if (type == "exit") {
-                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, routedPlaceId)
+                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, routedPlaceId, target)
             }
         }
     }

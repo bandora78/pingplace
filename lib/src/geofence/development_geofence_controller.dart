@@ -219,6 +219,16 @@ final class DevelopmentGeofenceController {
   Future<void> refreshDiagnostics({String reason = 'manual'}) async {
     final generation = ++_diagnosticsGeneration;
     try {
+      // The background pipeline log (headless arrival sessions, location
+      // samples) changes while the UI is closed; reload it with the rest.
+      final notificationStatus = await notificationService.status();
+      if (generation == _diagnosticsGeneration) {
+        backgroundDiagnostics = notificationStatus.backgroundDiagnostics;
+      }
+    } catch (error) {
+      _log('BACKGROUND_DIAGNOSTICS_REFRESH_FAILED: ${error.runtimeType}');
+    }
+    try {
       final status = await service.recoveryStatus;
       if (generation != _diagnosticsGeneration) return;
       recoveryStatus = status;

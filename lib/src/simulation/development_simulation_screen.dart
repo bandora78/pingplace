@@ -5,12 +5,19 @@ import 'package:flutter/material.dart';
 import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
 import '../geofence/geofence_service.dart';
+import '../places/place_manager.dart';
 import 'development_simulation_controller.dart';
+import 'places_pipeline_diagnostics.dart';
 
 final class DevelopmentSimulationScreen extends StatefulWidget {
-  const DevelopmentSimulationScreen({required this.realGeofence, super.key});
+  const DevelopmentSimulationScreen({
+    required this.realGeofence,
+    this.placeManager,
+    super.key,
+  });
 
   final DevelopmentGeofenceController realGeofence;
+  final PlaceManager? placeManager;
 
   @override
   State<DevelopmentSimulationScreen> createState() =>
@@ -84,6 +91,17 @@ final class _DevelopmentSimulationScreenState
           if (realGeofence.persistenceDiagnostics.isNotEmpty)
             SelectableText(realGeofence.persistenceDiagnostics.join('\n')),
           const SizedBox(height: 12),
+          PlacesPipelineDiagnostics(
+            controller: realGeofence,
+            placeManager: widget.placeManager,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'LEGACY SINGLE-TARGET ENGINE: not used for places. Its engine '
+            'state, visit and precise-location fields below do not describe '
+            'place arrivals.',
+            key: Key('legacy-engine-notice'),
+          ),
           _RealGeofenceSection(
             controller: realGeofence,
             latitudeController: latitudeController,
@@ -228,12 +246,6 @@ final class _RealGeofenceSection extends StatelessWidget {
               Text(
                 'Background failure: ${controller.recoveryStatus.lastBackgroundFailure}',
               ),
-            if (controller.recoveryStatus.diagnostics.isNotEmpty)
-              SelectableText(
-                controller.recoveryStatus.diagnostics.reversed
-                    .take(6)
-                    .join('\n'),
-              ),
             Text(
               'Notification readiness: '
               '${controller.notificationPermission.name.toUpperCase()}',
@@ -244,10 +256,10 @@ final class _RealGeofenceSection extends StatelessWidget {
               '${controller.lastNotificationAt?.toIso8601String() ?? ''}',
             ),
             if (controller.currentVisitId != null)
-              Text('Current visit: ${controller.currentVisitId}'),
-            Text('Engine state: ${controller.state.name.toUpperCase()}'),
+              Text('Legacy current visit: ${controller.currentVisitId}'),
+            Text('Legacy engine state: ${controller.state.name.toUpperCase()}'),
             Text(
-              'Precise location: '
+              'Legacy precise location: '
               '${controller.preciseLocationActive ? 'ACTIVE' : 'INACTIVE'}',
             ),
             if (controller.latestLatitude != null)

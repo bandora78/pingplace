@@ -74,14 +74,22 @@ class PreciseLocationService : Service() {
                 recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
                 if (placeId != null) activePlaceIds.add(placeId)
-                pendingBackgroundEvents.add(
-                    mapOf(
-                        "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
-                        "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
-                        "error" to intent.getStringExtra(EXTRA_ERROR),
-                        "placeId" to placeId,
-                    ),
+                val event = mutableMapOf<String, Any?>(
+                    "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
+                    "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
+                    "error" to intent.getStringExtra(EXTRA_ERROR),
+                    "placeId" to placeId,
                 )
+                if (intent.hasExtra(EXTRA_TARGET_LATITUDE) && intent.hasExtra(EXTRA_TARGET_LONGITUDE)) {
+                    event["targetLatitude"] = intent.getDoubleExtra(EXTRA_TARGET_LATITUDE, Double.NaN)
+                    event["targetLongitude"] = intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN)
+                    event["innerRadius"] = intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0)
+                    event["rearmRadius"] = intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0)
+                    event["cooldownSeconds"] = intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L)
+                    event["approachTimeoutSeconds"] = intent.getLongExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, 600L)
+                    event["maxAcceptedAccuracy"] = intent.getDoubleExtra(EXTRA_MAX_ACCURACY, 50.0)
+                }
+                pendingBackgroundEvents.add(event)
                 startForegroundShell()
                 armWatchdog(REARM_WATCHDOG_MS)
                 startBackgroundEngine()
@@ -358,6 +366,12 @@ class PreciseLocationService : Service() {
             try {
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
             } catch (error: Exception) {
+                // For example ForegroundServiceStartNotAllowedException under a
+                // background or battery restriction: the arrival cannot be verified.
+                GeofenceRecovery.recordDiagnostic(
+                    context,
+                    "PRECISE_LOCATION_START_BLOCKED place=${target?.placeId ?: "legacy"} error=${error.javaClass.simpleName}",
+                )
                 GeofenceEventBus.publish(context, "error", "Unable to start background precise location", target?.placeId)
             }
         }
@@ -370,6 +384,7 @@ class PreciseLocationService : Service() {
             latitude: Double?,
             longitude: Double?,
             placeId: String?,
+            target: MultiPlaceGeofenceRegistration.Target? = null,
         ) {
             val intent = Intent(context, PreciseLocationService::class.java).apply {
                 action = ACTION_BACKGROUND_EVENT
@@ -379,6 +394,17 @@ class PreciseLocationService : Service() {
                 if (latitude != null) putExtra("latitude", latitude)
                 if (longitude != null) putExtra("longitude", longitude)
                 if (placeId != null) putExtra(EXTRA_PLACE_ID, placeId)
+                // An EXIT usually arrives in a new background process. The place's
+                // configuration lets it re-arm with the right radii.
+                target?.let {
+                    putExtra(EXTRA_TARGET_LATITUDE, it.latitude)
+                    putExtra(EXTRA_TARGET_LONGITUDE, it.longitude)
+                    putExtra(EXTRA_INNER_RADIUS, it.innerRadius.toDouble())
+                    putExtra(EXTRA_REARM_RADIUS, it.rearmRadius.toDouble())
+                    putExtra(EXTRA_COOLDOWN_SECONDS, it.cooldownSeconds)
+                    putExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, it.approachTimeoutSeconds)
+                    putExtra(EXTRA_MAX_ACCURACY, it.maxAcceptedAccuracy.toDouble())
+                }
             }
             try {
                 if (isRunning) {
@@ -387,6 +413,10 @@ class PreciseLocationService : Service() {
                     androidx.core.content.ContextCompat.startForegroundService(context, intent)
                 }
             } catch (error: Exception) {
+                GeofenceRecovery.recordDiagnostic(
+                    context,
+                    "BACKGROUND_EVENT_START_BLOCKED type=$type place=${placeId ?: "legacy"} error=${error.javaClass.simpleName}",
+                )
                 GeofenceEventBus.publish(
                     context,
                     "error",
