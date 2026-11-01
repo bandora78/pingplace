@@ -11,6 +11,10 @@ jobs:
     name: Build and upload signed test APK
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Uses the same trusted signing key as the two-stage pipeline, so it must
+    # wait for the same protected environment approval and environment secrets.
+    environment:
+      name: pingplace-signed-test-approval
 
     steps:
       - name: Check out trusted main branch
