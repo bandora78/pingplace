@@ -88,6 +88,8 @@ object MultiPlaceGeofenceRegistration {
         callback: (Boolean, String?) -> Unit,
     ) {
         var requestedIds = emptyList<String>()
+        var requestedTargets = emptyList<Target>()
+        val source = if (persist) "register" else "restore"
         GeofenceLifecycleCoordinator.submit(GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE, { done ->
             val stored = read(context)
             if (stored == null) {
@@ -107,6 +109,7 @@ object MultiPlaceGeofenceRegistration {
             if (persist && stored == targets && applied != null &&
                 applied == targets.map { it.placeId } && preferences.getBoolean(CONFIRMED, false)) {
                 requestedIds = applied
+                requestedTargets = targets
                 done(true, null)
                 return@submit
             }
@@ -118,6 +121,7 @@ object MultiPlaceGeofenceRegistration {
                 targets
             } else targets
             requestedIds = desired.map { it.placeId }
+            requestedTargets = desired
             reconcile(context, desired, previous, done)
         }) { completion ->
             if (completion.stale) {
@@ -125,11 +129,14 @@ object MultiPlaceGeofenceRegistration {
                 callback(false, "Operation superseded")
             } else if (!completion.success) {
                 setConfirmed(context, false)
+                GeofenceRecovery.recordDiagnostic(context, PlaceDiagnostics.registrationFailed(source, completion.error))
                 callback(false, completion.error)
             } else if (!persistApplied(context, requestedIds)) {
                 setConfirmed(context, false)
+                GeofenceRecovery.recordDiagnostic(context, PlaceDiagnostics.registrationFailed(source, "applied journal persistence failed"))
                 callback(false, "Multi-place applied registration persistence failed")
             } else {
+                GeofenceRecovery.recordDiagnostic(context, PlaceDiagnostics.registration(source, requestedTargets))
                 callback(true, null)
             }
         }

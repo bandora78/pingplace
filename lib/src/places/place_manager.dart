@@ -188,12 +188,70 @@ final class PlaceManager {
       final data = await database.read();
       await registrar.registerPlaces(registrationsFor(data));
       _record('PLACES_RECONCILED enabled=${registrationsFor(data).length}');
+      await _discardStaleRuntime(data);
     } catch (error) {
       lastError = 'PLACE_REGISTRATION_FAILED: ${_describe(error)}';
       _record(lastError!);
     }
     await _reload();
   });
+
+  /// Per-place detection state recorded for a different location belongs to
+  /// that old location: a cooldown or waiting-for-exit there must not block
+  /// arrivals at the place's current location. This happens when a place was
+  /// moved outside the place list (the one-time Build 15 legacy sync) or by
+  /// builds that did not reset state on edit.
+  Future<void> _discardStaleRuntime(PlaceData data) async {
+    for (final place in data.places) {
+      try {
+        final snapshot = await runtimeStore.loadForPlace(place.id);
+        final target = snapshot?.target;
+        if (target == null) continue;
+        final moved =
+            (target.latitude - place.latitude).abs() > _sameLocationDegrees ||
+            (target.longitude - place.longitude).abs() > _sameLocationDegrees;
+        if (!moved) continue;
+        await runtimeStore.clearForPlace(place.id);
+        _record(
+          'RUNTIME_RESET_STALE_TARGET ${place.id} '
+          'state=${snapshot!.state.name.toUpperCase()}',
+        );
+      } catch (error) {
+        _record('RUNTIME_STALE_CHECK_FAILED ${place.id} ${_describe(error)}');
+      }
+    }
+  }
+
+  // About 1 m; stored coordinates round-trip through JSON and Android.
+  static const _sameLocationDegrees = 0.00001;
+
+  /// One line per place with its registration and per-place detection state,
+  /// for Developer Mode. The legacy single-target engine is not used for
+  /// places, so this is the authoritative arrival state.
+  Future<List<String>> placeRuntimeDiagnostics() async {
+    final lines = <String>[];
+    for (final item in places) {
+      final place = item.place;
+      String runtime;
+      try {
+        final snapshot = await runtimeStore.loadForPlace(place.id);
+        runtime = snapshot == null
+            ? 'state=NONE'
+            : 'state=${snapshot.state.name.toUpperCase()}'
+                  '${snapshot.cooldownUntil == null ? '' : ' cooldownUntil=${snapshot.cooldownUntil!.toUtc().toIso8601String()}'}'
+                  '${snapshot.visitId == null ? '' : ' visit=${snapshot.visitId}'}';
+      } catch (error) {
+        runtime = 'state=UNREADABLE (${_describe(error)})';
+      }
+      lines.add(
+        'PLACE ${place.id} "${place.name}" '
+        'enabled=${place.enabled} '
+        'registration=${item.registration.name.toUpperCase()} '
+        'radius=${place.outerRadius.round()}m $runtime',
+      );
+    }
+    return lines;
+  }
 
   /// Re-reads stored places and Android's registration status.
   Future<void> refresh() => _serialize(_reload);

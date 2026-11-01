@@ -91,16 +91,31 @@ final class BackgroundArrivalSession {
         _reminderText = payloadReminder.trim();
       }
       _enteredAt = timestamp;
+      // An exit observed during a cooldown that has since expired re-arms the
+      // place now, so this ENTER starts a new visit instead of being ignored.
+      await _applyElapsedCooldown();
       await _process(engine!.dispatch(const Arm()));
       await _process(engine!.dispatch(OuterEnter(at: timestamp)));
     } else if (type == 'exit') {
       onDiagnostic('BACKGROUND_EXIT_RECEIVED');
       if (engine != null) {
+        final needsRearm =
+            engine!.state == DetectionState.cooldown ||
+            engine!.state == DetectionState.waitingForExit;
+        // Start verification before applying an already elapsed cooldown, so
+        // the transition to waiting-for-exit cannot stop the service that
+        // this EXIT needs to measure the re-arm distance.
+        if (needsRearm) _startRearmVerification();
+        await _applyElapsedCooldown();
         await _process(engine!.dispatch(const OuterExit()));
         if (engine!.state == DetectionState.cooldown ||
             engine!.state == DetectionState.waitingForExit) {
           _startRearmVerification();
           await onCommand('startVerification');
+        } else if (needsRearm) {
+          onDiagnostic(
+            'REARMED_ON_EXIT state=${engine!.state.name.toUpperCase()}',
+          );
         }
       }
     } else if (type == 'location' && engine != null) {
@@ -226,8 +241,20 @@ final class BackgroundArrivalSession {
           effect.type == DetectionEffectType.stateChanged &&
           effect.to == DetectionState.waitingForExit,
     );
-    if (waitingForExit) await _stopService();
+    // Waiting for exit while still inside: nothing to measure, stop. Keep
+    // running while a re-arm verification is measuring the exit distance.
+    if (waitingForExit && !_preciseVerificationActive) await _stopService();
     _scheduleCooldownTimer();
+  }
+
+  /// A persisted cooldown can expire while no background process is running.
+  /// Apply it now instead of waiting for a timer that was never scheduled.
+  Future<void> _applyElapsedCooldown() async {
+    final until = engine?.cooldownUntil;
+    if (engine?.state != DetectionState.cooldown || until == null) return;
+    if (_clock().isBefore(until)) return;
+    onDiagnostic('COOLDOWN_ELAPSED_WHILE_STOPPED');
+    await _process(engine!.dispatch(CooldownElapsed(until)));
   }
 
   void _startRearmVerification() {
@@ -317,4 +344,3 @@ final class BackgroundArrivalSession {
     }
   }
 }
-

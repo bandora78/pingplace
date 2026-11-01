@@ -342,6 +342,17 @@ final class MethodChannelGeofenceService implements GeofenceService {
 }
 
 extension GeofenceServiceMultiPlace on GeofenceService {
+  /// Device and app conditions that decide whether Android delivers geofence
+  /// events (permission, location services, battery and background limits).
+  Future<Map<String, Object?>> systemHealth() async {
+    if (this is MethodChannelGeofenceService) {
+      final value = await (this as MethodChannelGeofenceService)._methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('systemHealth');
+      return Map<String, Object?>.from(value ?? const {});
+    }
+    return const {};
+  }
+
   Future<Map<String, Object?>> multiRegistrationStatus() async {
     if (this is MethodChannelGeofenceService) {
       final value = await (this as MethodChannelGeofenceService)._methodChannel
