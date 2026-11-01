@@ -38,12 +38,12 @@ class MainActivity : FlutterActivity() {
                     "desiredMonitoring" -> result.success(GeofenceRecovery.isDesiredMonitoring(this))
                     "desiredMonitoringState" -> result.success(GeofenceRecovery.desiredMonitoringState(this))
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
-                    "restoreGeofence" -> restoreGeofence(result)
+                    "restoreGeofence" -> if (legacyAllowed(result)) restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
-                    "register" -> register(call, result)
+                    "register" -> if (legacyAllowed(result)) register(call, result)
                     "registerPlaces" -> registerPlaces(call, result)
                     "multiRegistrationStatus" -> result.success(multiRegistrationStatus())
-                    "remove" -> remove(result)
+                    "remove" -> if (legacyAllowed(result)) remove(result)
                     else -> result.notImplemented()
                 }
             }
@@ -100,10 +100,12 @@ class MainActivity : FlutterActivity() {
             MultiPlaceGeofenceRegistration.restore(this) { success, error ->
                 if (!success) {
                     GeofenceRecovery.recordDiagnostic(this, "MULTI_GEOFENCE_STARTUP_FAILED ${error ?: "unknown"}")
-                    // A failed multi-place recovery must not disable the last
-                    // known-good legacy target.
-                    restoreRegistration()
-                } else notifyRegistrationStatusChanged()
+                    // The place list is the source of truth. Legacy recovery would
+                    // remove every place geofence and resurrect an old target; the
+                    // Dart startup reconciliation re-registers the stored places.
+                    if (RecoveryPolicy.legacyFallbackAfterMultiFailure(true)) restoreRegistration()
+                }
+                notifyRegistrationStatusChanged()
             }
         } else restoreRegistration()
     }
@@ -229,11 +231,13 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun registerPlaces(call: MethodCall, result: MethodChannel.Result) {
-        if (permissionStatus() != "backgroundAllowed") {
+        val raw = call.argument<List<Map<String, Any?>>>("places") ?: emptyList()
+        // Removing geofences needs no location permission: disabling or
+        // deleting the last enabled place must work even without it.
+        if (raw.isNotEmpty() && permissionStatus() != "backgroundAllowed") {
             result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
             return
         }
-        val raw = call.argument<List<Map<String, Any?>>>("places") ?: emptyList()
         val targets = raw.mapNotNull { item ->
             val id = item["placeId"] as? String
             val latitude = (item["latitude"] as? Number)?.toDouble()
@@ -275,6 +279,14 @@ class MainActivity : FlutterActivity() {
             // whether it succeeded or failed.
             notifyRegistrationStatusChanged()
         }
+    }
+
+    /** Rejects legacy single-target calls once places are managed by the place list. */
+    private fun legacyAllowed(result: MethodChannel.Result): Boolean {
+        if (RecoveryPolicy.legacyOperationAllowed(MultiPlaceGeofenceRegistration.hasDesired(this))) return true
+        GeofenceRecovery.recordDiagnostic(this, "LEGACY_REGISTRATION_CALL_REJECTED")
+        result.error(RecoveryPolicy.LEGACY_DISABLED_ERROR, RecoveryPolicy.LEGACY_DISABLED_MESSAGE, null)
+        return false
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
