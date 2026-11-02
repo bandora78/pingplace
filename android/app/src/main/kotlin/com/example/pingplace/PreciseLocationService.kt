@@ -36,6 +36,17 @@ class PreciseLocationService : Service() {
     private var firstFixLogged = false
     private var droppedSampleLogged = false
     private var watchdogDeadline: Long? = null
+    private var engineStartedAtMillis = 0L
+    private val engineReadyCheck = Runnable {
+        if (!backgroundReady) {
+            // The Dart side never completed its handshake: nothing queued for
+            // it (ENTER, fixes, EXIT) can be evaluated. Never fail silently.
+            recordDiagnostic(
+                "BACKGROUND_ENGINE_NOT_READY after=${System.currentTimeMillis() - engineStartedAtMillis}ms " +
+                    "queued=${pendingBackgroundEvents.size} places=${activePlaceIds.joinToString(",", "[", "]")}",
+            )
+        }
+    }
     private val watchdog = Handler(Looper.getMainLooper())
     private val watchdogStop = Runnable {
         watchdogDeadline = null
@@ -113,6 +124,7 @@ class PreciseLocationService : Service() {
 
     override fun onDestroy() {
         watchdog.removeCallbacks(watchdogStop)
+        watchdog.removeCallbacks(engineReadyCheck)
         watchdogDeadline = null
         stopUpdates()
         backgroundControl = null
@@ -126,6 +138,9 @@ class PreciseLocationService : Service() {
     private fun startBackgroundEngine() {
         if (backgroundEngine != null || backgroundEngineStarting) return
         backgroundEngineStarting = true
+        engineStartedAtMillis = System.currentTimeMillis()
+        recordDiagnostic("BACKGROUND_ENGINE_STARTING")
+        watchdog.postDelayed(engineReadyCheck, VerificationPolicy.ENGINE_READY_TIMEOUT_MS)
         val loader = FlutterLoader()
         loader.startInitialization(applicationContext)
         loader.ensureInitializationCompleteAsync(
@@ -141,6 +156,11 @@ class PreciseLocationService : Service() {
             channel.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "ready" -> {
+                        watchdog.removeCallbacks(engineReadyCheck)
+                        recordDiagnostic(
+                            "BACKGROUND_ENGINE_READY after=${System.currentTimeMillis() - engineStartedAtMillis}ms " +
+                                "queued=${pendingBackgroundEvents.size}",
+                        )
                         backgroundReady = true
                         flushBackgroundEvents()
                         result.success(null)

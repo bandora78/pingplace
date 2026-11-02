@@ -202,4 +202,43 @@ void main() {
       controller.dispose();
     },
   );
+
+  testWidgets('opening the card loads the current pipeline log, not the one '
+      'from app start', (tester) async {
+    // Build 17: the card showed the pipeline log as loaded at app start, so
+    // the visits that followed were missing from what was copied.
+    final notifications = InMemoryNotificationService();
+    final controller = DevelopmentGeofenceController(
+      service: FakeGeofenceService(),
+      locationService: FakeLocationService(),
+      notificationService: notifications,
+      runtimeStore: InMemoryArrivalRuntimeStore(),
+    );
+    await controller.initialize();
+    notifications.currentStatus = const NotificationStatus(
+      permission: NotificationPermissionStatus.allowed,
+      backgroundDiagnostics: ['place-1 APPROACH_SUMMARY outcome=ARRIVED'],
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: PlacesPipelineDiagnostics(controller: controller),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<SelectableText>(find.byKey(const Key('pipeline-log'))).data,
+      contains('APPROACH_SUMMARY outcome=ARRIVED'),
+    );
+    expect(
+      tester.widget<Text>(find.byKey(const Key('pipeline-loaded-at'))).data,
+      isNot(contains('never')),
+    );
+    controller.dispose();
+  });
 }

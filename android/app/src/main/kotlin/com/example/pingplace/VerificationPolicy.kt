@@ -9,6 +9,9 @@ internal object VerificationPolicy {
     const val INTERVAL_MS = 2_000L
     const val MIN_INTERVAL_MS = 1_000L
 
+    /** How long the headless Dart side may take to report ready. */
+    const val ENGINE_READY_TIMEOUT_MS = 15_000L
+
     /**
      * A later, shorter watchdog (for example an EXIT re-arm check for another
      * place) must never cut an approach that still has time left.

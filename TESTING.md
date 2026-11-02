@@ -567,6 +567,19 @@ Steps on the Xiaomi 15:
 Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
 seconds apart, and no notification followed.
 
+Root cause (confirmed from the Build 17 logs): the headless background Dart
+entrypoint never initialized the Flutter binding. Its first channel call threw,
+so it never reported `ready`. The native service started GPS (fixes every 2 s
+at 3.8 m accuracy were logged) but queued every ENTER, fix and EXIT for a Dart
+side that never ran. No place was evaluated, so both places showed
+`state=NONE`, and no Dart diagnostic could be written. The fixes kept running
+until the watchdog stopped them. This affects every build that uses the
+headless engine. The entrypoint now initializes the binding. The native
+service logs `BACKGROUND_ENGINE_STARTING`, `BACKGROUND_ENGINE_READY after=...`
+and, if Dart has not answered within 15 s, `BACKGROUND_ENGINE_NOT_READY`.
+The Places pipeline card now reloads the native logs when opened and shows
+when it was loaded (Build 17 showed the pipeline log as of app start).
+
 Behaviour change for the multi-place background pipeline (approval required;
 the legacy single-target controller and the simulator are unchanged):
 
@@ -618,5 +631,8 @@ Steps on the Xiaomi 15:
    suppress its next ENTER until a confirmed exit re-arms it.
 2. Visit each place, including a short (under 1 minute) pass that comes within
    about 50 m of the pin.
-3. After each visit, copy the card. Every ENTER must be followed by either an
+3. After each visit, open the card (it reloads), check `Loaded ...` is current,
+   and copy it. Expect `BACKGROUND_ENGINE_READY` after each ENTER; a
+   `BACKGROUND_ENGINE_NOT_READY` line is a release blocker. Every ENTER must
+   be followed by either an
    `APPROACH_SUMMARY` line or an `ENTER_SUPPRESSED` line with its reason.

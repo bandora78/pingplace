@@ -38,11 +38,14 @@ final class _PlacesPipelineDiagnosticsState
   List<String> places = const [];
   String? loadFailure;
   bool loading = false;
+  DateTime? _loadedAt;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    // Reload native logs on open: otherwise the pipeline log is only as fresh
+    // as the app start, which hid the Build 17 visits.
+    unawaited(_load(refreshNative: true));
   }
 
   Future<void> _load({bool refreshNative = false}) async {
@@ -81,6 +84,7 @@ final class _PlacesPipelineDiagnosticsState
       places = nextPlaces;
       loadFailure = failures.isEmpty ? null : failures.join('\n');
       loading = false;
+      _loadedAt = DateTime.now();
     });
   }
 
@@ -105,7 +109,11 @@ final class _PlacesPipelineDiagnosticsState
               'Places pipeline (authoritative for places)',
               style: theme.textTheme.titleMedium,
             ),
-            const Text('All times are UTC. Newest first.'),
+            Text(
+              'All times are UTC. Newest first. '
+              'Loaded ${_loadedAt?.toUtc().toIso8601String() ?? 'never'}.',
+              key: const Key('pipeline-loaded-at'),
+            ),
             const SizedBox(height: 8),
             Text('System health', style: theme.textTheme.titleSmall),
             if (health.isEmpty)
