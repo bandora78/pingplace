@@ -564,6 +564,21 @@ Steps on the Xiaomi 15:
 
 ## APP-10B short-visit arrival pipeline (Build 18)
 
+**Status: partially field-validated; APP-10B is not resolved.** The owner
+installed the signed Build 18 on the Xiaomi 15 on 2026-11-02. It is
+`1.0.0+18`, versionCode 10018, source `f1b9344`, certificate `906551dd…`, from
+trusted run `41501857948`. These checks passed on the device:
+
+| Area | Field result |
+|---|---|
+| In-place installation | Validated. Installed as an update over Build 17; the app reports `1.0.0+18`. |
+| Data preservation | Validated. Both saved places and their reminders were preserved; both places are registered and enabled. |
+| Diagnostics export | Validated. **Copy full diagnostics** works; **Share diagnostics** opens Android's native share sheet. |
+| Background arrival notifications | **Pending.** Not yet tested in the field. |
+
+APP-10B stays open until background arrival notifications work on the
+Xiaomi 15 in real visits.
+
 Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
 seconds apart, and no notification followed.
 
