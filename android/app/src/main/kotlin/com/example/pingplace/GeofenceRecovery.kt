@@ -95,7 +95,8 @@ object GeofenceRecovery {
     const val REGISTRATION_PREFS = "pingplace_registration"
     private const val RECOVERY_PREFS = "pingplace_recovery"
     private const val DIAGNOSTICS = "diagnostics"
-    private const val MAX_DIAGNOSTICS = 100
+    // Exported in full by "Copy full diagnostics"; keep several days of callbacks.
+    private const val MAX_DIAGNOSTICS = 300
     private const val CONFIRMED = "registration_confirmed"
     private const val LAST_ATTEMPT = "last_recovery_attempt"
     private const val LAST_SUCCESS = "last_recovery_success"

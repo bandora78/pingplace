@@ -613,6 +613,12 @@ final class DevelopmentGeofenceController {
           _log('EXIT_OBSERVED_DURING_COOLDOWN');
         case DetectionEffectType.approachTimeout:
           _log('APPROACH_TIMEOUT');
+        // Only produced with an exit confirmation window, which this legacy
+        // single-target controller does not use.
+        case DetectionEffectType.exitAwaitingConfirmation:
+          _log('EXIT_AWAITING_PRECISE_CONFIRMATION');
+        case DetectionEffectType.exitConfirmed:
+          _log('EXIT_CONFIRMED');
       }
     }
     currentVisitId = engine.visitId;

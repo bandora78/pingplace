@@ -169,7 +169,10 @@ void main() {
     await enterAndSample(value, DateTime.utc(2026, 1, 1), accuracy: 51);
 
     expect(notifications.deliveredVisitIds, isEmpty);
-    expect(diagnostics, contains('LOCATION_REJECTED reason=LOW_ACCURACY'));
+    expect(
+      diagnostics,
+      contains(startsWith('LOCATION_REJECTED reason=LOW_ACCURACY')),
+    );
     value.dispose();
   });
 
@@ -323,7 +326,10 @@ void main() {
     });
 
     expect(value.engine?.state, DetectionState.waitingForExit);
-    expect(diagnostics, contains('LOCATION_REJECTED reason=LOW_ACCURACY'));
+    expect(
+      diagnostics,
+      contains(startsWith('LOCATION_REJECTED reason=LOW_ACCURACY')),
+    );
     value.dispose();
   });
 

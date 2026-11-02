@@ -121,6 +121,10 @@ final class SimulationController {
         return 'EXIT_OBSERVED_DURING_COOLDOWN';
       case DetectionEffectType.approachTimeout:
         return 'APPROACH_TIMEOUT';
+      case DetectionEffectType.exitAwaitingConfirmation:
+        return 'EXIT_AWAITING_PRECISE_CONFIRMATION';
+      case DetectionEffectType.exitConfirmed:
+        return 'EXIT_CONFIRMED';
     }
   }
 

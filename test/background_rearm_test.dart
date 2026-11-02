@@ -89,7 +89,7 @@ Future<void> _firstVisit(
   expect(notifications.deliveredVisitIds, hasLength(1));
   expect(runtime.placeSnapshots[_id]?.state, DetectionState.cooldown);
   // The session stops the service after notifying.
-  expect(process.commands, contains('stop'));
+  expect(process.commands, contains('stopPlace:place-1'));
   process.kill();
 }
 
@@ -108,7 +108,7 @@ void main() {
       final leaving = _Process(runtime, notifications, leaveAt)
         ..commands.clear();
       await leaving.send(_exit(leaveAt));
-      expect(leaving.commands, contains('startVerification'));
+      expect(leaving.commands, contains('startVerification:place-1'));
       expect(
         leaving.diagnostics,
         isNot(contains(contains('BACKGROUND_EVENT_IGNORED'))),
@@ -190,11 +190,11 @@ void main() {
     final leaveAt = _t0.add(const Duration(minutes: 15));
     final leaving = _Process(runtime, notifications, leaveAt)..commands.clear();
     await leaving.send(_exit(leaveAt));
-    expect(leaving.commands, isNot(contains('stop')));
-    expect(leaving.commands, contains('startVerification'));
+    expect(leaving.commands, isNot(contains('stopPlace:place-1')));
+    expect(leaving.commands, contains('startVerification:place-1'));
     await leaving.send(_sample(600, leaveAt.add(const Duration(minutes: 1))));
     expect(runtime.placeSnapshots[_id]?.state, DetectionState.armed);
-    expect(leaving.commands.last, 'stop');
+    expect(leaving.commands.last, 'stopPlace:place-1');
     leaving.kill();
   });
 
@@ -205,7 +205,7 @@ void main() {
 
     await process.send(_exit(_t0));
 
-    expect(process.commands, isNot(contains('startVerification')));
+    expect(process.commands, isNot(contains('startVerification:place-1')));
     expect(notifications.deliveredVisitIds, isEmpty);
     process.kill();
   });

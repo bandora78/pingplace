@@ -19,6 +19,14 @@ enum DetectionEffectType {
   notificationRequested,
   exitObservedDuringCooldown,
   approachTimeout,
+
+  /// Android reported an EXIT during an approach; precise location must
+  /// confirm it before the approach ends.
+  exitAwaitingConfirmation,
+
+  /// The approach ended because a reported EXIT was confirmed (or its
+  /// confirmation window elapsed without evidence of being inside).
+  exitConfirmed,
 }
 
 enum LocationRejectionReason { lowAccuracy }
@@ -53,6 +61,7 @@ final class SmartArrivalConfig {
     this.cooldownDuration = const Duration(minutes: 10),
     this.approachTimeout = const Duration(minutes: 10),
     this.maxAcceptedAccuracy = 50,
+    this.exitConfirmationWindow = Duration.zero,
   }) : assert(outerRadius > 0),
        assert(innerRadius > 0),
        assert(rearmRadius >= outerRadius),
@@ -67,6 +76,18 @@ final class SmartArrivalConfig {
   final Duration approachTimeout;
   final double maxAcceptedAccuracy;
 
+  /// Zero keeps the original behaviour: an outer EXIT, or a precise sample
+  /// beyond [outerRadius], ends the approach immediately.
+  ///
+  /// When positive (the multi-place background pipeline), Android's coarse
+  /// geofence transitions are treated as wake-ups, not as evidence: a precise
+  /// sample beyond the outer radius no longer aborts an approach on its own,
+  /// and an outer EXIT ends it only once a precise sample beyond the outer
+  /// radius confirms it, or after this window passes without one.
+  final Duration exitConfirmationWindow;
+
+  bool get confirmsExits => exitConfirmationWindow > Duration.zero;
+
   SmartArrivalConfig copyWith({TargetLocation? target}) => SmartArrivalConfig(
     target: target ?? this.target,
     outerRadius: outerRadius,
@@ -75,6 +96,7 @@ final class SmartArrivalConfig {
     cooldownDuration: cooldownDuration,
     approachTimeout: approachTimeout,
     maxAcceptedAccuracy: maxAcceptedAccuracy,
+    exitConfirmationWindow: exitConfirmationWindow,
   );
 }
 
@@ -97,7 +119,28 @@ final class OuterEnter extends DetectionEvent {
 }
 
 final class OuterExit extends DetectionEvent {
-  const OuterExit();
+  const OuterExit({this.at, this.immediate = false});
+
+  final DateTime? at;
+
+  /// End the approach now, without precise confirmation; used when no
+  /// precise verifier is running that could confirm or refute the EXIT.
+  final bool immediate;
+}
+
+/// The window for confirming a reported EXIT has passed.
+final class ExitConfirmationElapsed extends DetectionEvent {
+  const ExitConfirmationElapsed(this.at);
+
+  final DateTime at;
+}
+
+/// A new outer ENTER while the persisted state is still APPROACHING, for
+/// example after the verifying process was killed: verification restarts.
+final class RestartApproach extends DetectionEvent {
+  const RestartApproach(this.at);
+
+  final DateTime at;
 }
 
 final class LocationReceived extends DetectionEvent {
@@ -191,8 +234,14 @@ final class SmartArrivalDetectionEngine {
   DateTime? _cooldownUntil;
   bool _exitObservedDuringCooldown = false;
   String? _visitId;
+  DateTime? _exitReportedAt;
+  double? _lastAcceptedDistance;
 
   DetectionState get state => _state;
+
+  /// When Android reported an EXIT that precise location has not yet
+  /// confirmed; null when none is pending.
+  DateTime? get exitReportedAt => _exitReportedAt;
   DateTime? get cooldownUntil => _cooldownUntil;
   bool get exitObservedDuringCooldown => _exitObservedDuringCooldown;
   DateTime? get approachStartedAt => _approachStartedAt;
@@ -234,9 +283,49 @@ final class SmartArrivalDetectionEngine {
             const DetectionEffect(DetectionEffectType.preciseLocationStarted),
           );
         }
-      case OuterExit():
+      case OuterExit(:final at, :final immediate):
         if (_state == DetectionState.approaching) {
+          final lastDistance = _lastAcceptedDistance;
+          if (!config.confirmsExits ||
+              immediate ||
+              (lastDistance != null && lastDistance > config.outerRadius)) {
+            if (config.confirmsExits) {
+              effects.add(
+                DetectionEffect(
+                  DetectionEffectType.exitConfirmed,
+                  distance: lastDistance,
+                ),
+              );
+            }
+            _returnToArmed(effects, includeTimeout: false);
+          } else {
+            _exitReportedAt = at ?? DateTime.now();
+            effects.add(
+              DetectionEffect(
+                DetectionEffectType.exitAwaitingConfirmation,
+                distance: lastDistance,
+                timestamp: _exitReportedAt,
+              ),
+            );
+          }
+        }
+      case ExitConfirmationElapsed(:final at):
+        final reportedAt = _exitReportedAt;
+        if (_state == DetectionState.approaching &&
+            reportedAt != null &&
+            !at.isBefore(reportedAt.add(config.exitConfirmationWindow))) {
+          effects.add(const DetectionEffect(DetectionEffectType.exitConfirmed));
           _returnToArmed(effects, includeTimeout: false);
+        }
+      case RestartApproach(:final at):
+        if (_state == DetectionState.approaching) {
+          _approachStartedAt = at;
+          _exitReportedAt = null;
+          _lastAcceptedDistance = null;
+          _visitId ??= 'visit-${at.microsecondsSinceEpoch}';
+          effects.add(
+            const DetectionEffect(DetectionEffectType.preciseLocationStarted),
+          );
         }
       case LocationReceived(:final sample):
         _handleLocation(sample, effects);
@@ -260,6 +349,8 @@ final class SmartArrivalDetectionEngine {
         _approachStartedAt = null;
         _exitObservedDuringCooldown = false;
         _visitId = null;
+        _exitReportedAt = null;
+        _lastAcceptedDistance = null;
         _setState(DetectionState.armed, effects);
     }
 
@@ -296,6 +387,7 @@ final class SmartArrivalDetectionEngine {
 
     if (_state == DetectionState.approaching) {
       _approachStartedAt ??= sample.timestamp;
+      _lastAcceptedDistance = distance;
       if (distance <= config.innerRadius) {
         _setState(DetectionState.arrived, effects);
         effects.add(const DetectionEffect(DetectionEffectType.innerReached));
@@ -306,9 +398,23 @@ final class SmartArrivalDetectionEngine {
           const DetectionEffect(DetectionEffectType.notificationRequested),
         );
         _cooldownUntil = sample.timestamp.add(config.cooldownDuration);
+        _exitReportedAt = null;
+        _lastAcceptedDistance = null;
         _setState(DetectionState.cooldown, effects);
       } else if (distance > config.outerRadius) {
-        _returnToArmed(effects, includeTimeout: false);
+        if (!config.confirmsExits) {
+          _returnToArmed(effects, includeTimeout: false);
+        } else if (_exitReportedAt != null) {
+          effects.add(
+            DetectionEffect(
+              DetectionEffectType.exitConfirmed,
+              distance: distance,
+            ),
+          );
+          _returnToArmed(effects, includeTimeout: false);
+        }
+        // Otherwise keep verifying: Android's geofence ENTER often fires
+        // while the device is still outside the outer radius.
       }
     } else if (_state == DetectionState.cooldown &&
         distance >= config.rearmRadius) {
@@ -357,6 +463,8 @@ final class SmartArrivalDetectionEngine {
       effects.add(const DetectionEffect(DetectionEffectType.approachTimeout));
     }
     _approachStartedAt = null;
+    _exitReportedAt = null;
+    _lastAcceptedDistance = null;
     _setState(DetectionState.armed, effects);
   }
 

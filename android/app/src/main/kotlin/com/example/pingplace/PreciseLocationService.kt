@@ -28,11 +28,29 @@ class PreciseLocationService : Service() {
     private var backgroundEngine: FlutterEngine? = null
     private var backgroundControl: MethodChannel? = null
     private var backgroundReady = false
+    private var backgroundEngineStarting = false
     private val pendingBackgroundEvents = mutableListOf<Map<String, Any?>>()
     private val activePlaceIds = linkedSetOf<String>()
+    private var lastStartId = 0
+    private var updatesStartedAtMillis = 0L
+    private var firstFixLogged = false
+    private var droppedSampleLogged = false
+    private var watchdogDeadline: Long? = null
+    private var engineStartedAtMillis = 0L
+    private val engineReadyCheck = Runnable {
+        if (!backgroundReady) {
+            // The Dart side never completed its handshake: nothing queued for
+            // it (ENTER, fixes, EXIT) can be evaluated. Never fail silently.
+            recordDiagnostic(
+                "BACKGROUND_ENGINE_NOT_READY after=${System.currentTimeMillis() - engineStartedAtMillis}ms " +
+                    "queued=${pendingBackgroundEvents.size} places=${activePlaceIds.joinToString(",", "[", "]")}",
+            )
+        }
+    }
     private val watchdog = Handler(Looper.getMainLooper())
     private val watchdogStop = Runnable {
-        recordDiagnostic("BACKGROUND_VERIFICATION_WATCHDOG_STOPPED")
+        watchdogDeadline = null
+        recordDiagnostic("BACKGROUND_VERIFICATION_WATCHDOG_STOPPED places=${activePlaceIds.joinToString(",", "[", "]")}")
         stopUpdates()
     }
 
@@ -45,6 +63,7 @@ class PreciseLocationService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         when (intent?.action) {
             ACTION_STOP -> stopUpdates()
             ACTION_START_FROM_GEOFENCE -> {
@@ -57,6 +76,7 @@ class PreciseLocationService : Service() {
                         "targetLongitude" to intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN),
                         "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
                         "placeId" to intent.getStringExtra(EXTRA_PLACE_ID),
+                        "outerRadius" to intent.getDoubleExtra(EXTRA_OUTER_RADIUS, 300.0),
                         "innerRadius" to intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0),
                         "rearmRadius" to intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0),
                         "cooldownSeconds" to intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L),
@@ -67,8 +87,7 @@ class PreciseLocationService : Service() {
                 )
                 startBackgroundEngine()
                 startUpdates()
-                watchdog.removeCallbacks(watchdogStop)
-                watchdog.postDelayed(watchdogStop, BACKGROUND_WATCHDOG_MS)
+                armWatchdog(BACKGROUND_WATCHDOG_MS)
             }
             ACTION_BACKGROUND_EVENT -> {
                 recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
@@ -83,6 +102,7 @@ class PreciseLocationService : Service() {
                 if (intent.hasExtra(EXTRA_TARGET_LATITUDE) && intent.hasExtra(EXTRA_TARGET_LONGITUDE)) {
                     event["targetLatitude"] = intent.getDoubleExtra(EXTRA_TARGET_LATITUDE, Double.NaN)
                     event["targetLongitude"] = intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN)
+                    event["outerRadius"] = intent.getDoubleExtra(EXTRA_OUTER_RADIUS, 300.0)
                     event["innerRadius"] = intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0)
                     event["rearmRadius"] = intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0)
                     event["cooldownSeconds"] = intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L)
@@ -104,6 +124,8 @@ class PreciseLocationService : Service() {
 
     override fun onDestroy() {
         watchdog.removeCallbacks(watchdogStop)
+        watchdog.removeCallbacks(engineReadyCheck)
+        watchdogDeadline = null
         stopUpdates()
         backgroundControl = null
         backgroundEngine?.destroy()
@@ -114,7 +136,11 @@ class PreciseLocationService : Service() {
     }
 
     private fun startBackgroundEngine() {
-        if (backgroundEngine != null) return
+        if (backgroundEngine != null || backgroundEngineStarting) return
+        backgroundEngineStarting = true
+        engineStartedAtMillis = System.currentTimeMillis()
+        recordDiagnostic("BACKGROUND_ENGINE_STARTING")
+        watchdog.postDelayed(engineReadyCheck, VerificationPolicy.ENGINE_READY_TIMEOUT_MS)
         val loader = FlutterLoader()
         loader.startInitialization(applicationContext)
         loader.ensureInitializationCompleteAsync(
@@ -130,6 +156,11 @@ class PreciseLocationService : Service() {
             channel.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "ready" -> {
+                        watchdog.removeCallbacks(engineReadyCheck)
+                        recordDiagnostic(
+                            "BACKGROUND_ENGINE_READY after=${System.currentTimeMillis() - engineStartedAtMillis}ms " +
+                                "queued=${pendingBackgroundEvents.size}",
+                        )
                         backgroundReady = true
                         flushBackgroundEvents()
                         result.success(null)
@@ -138,12 +169,29 @@ class PreciseLocationService : Service() {
                         result.success(null)
                         stopUpdates(stopService = true)
                     }
+                    "stopPlace" -> {
+                        result.success(null)
+                        val placeId = call.arguments as? String
+                        if (placeId == null) {
+                            stopUpdates(stopService = true)
+                        } else {
+                            val decision = VerificationPolicy.stopPlace(activePlaceIds, placeId)
+                            activePlaceIds.remove(placeId)
+                            if (decision.stopService) {
+                                recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=STOPPING")
+                                stopUpdates(stopService = true)
+                            } else {
+                                recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=KEPT_FOR ${decision.remaining.joinToString(",", "[", "]")}")
+                            }
+                        }
+                    }
                     "stopLocation" -> {
                         result.success(null)
                         stopUpdates(stopService = false)
                     }
                     "startVerification" -> {
                         result.success(null)
+                        (call.arguments as? String)?.let { activePlaceIds.add(it) }
                         armWatchdog(REARM_WATCHDOG_MS)
                         startUpdates()
                     }
@@ -167,6 +215,7 @@ class PreciseLocationService : Service() {
                 ArrivalNotificationBridge.handle(this, null, call, result)
             }
             backgroundEngine = engine
+            backgroundEngineStarting = false
             backgroundControl = channel
             engine.dartExecutor.executeDartEntrypoint(
                 io.flutter.embedding.engine.dart.DartExecutor.DartEntrypoint(
@@ -187,7 +236,15 @@ class PreciseLocationService : Service() {
     }
 
     private fun sendBackgroundEvent(payload: Map<String, Any?>) {
-        if (backgroundEngine == null) return
+        // Build 17 dropped every sample that arrived before the engine
+        // existed; on a short visit that can be the only useful fix.
+        if (!VerificationPolicy.shouldQueueSample(backgroundEngine != null, backgroundEngineStarting)) {
+            if (!droppedSampleLogged) {
+                droppedSampleLogged = true
+                recordDiagnostic("BACKGROUND_SAMPLE_NOT_ROUTED reason=NO_BACKGROUND_ENGINE type=${payload["type"]}")
+            }
+            return
+        }
         pendingBackgroundEvents.add(payload)
         flushBackgroundEvents()
     }
@@ -207,16 +264,24 @@ class PreciseLocationService : Service() {
     private fun startUpdates() {
         startForegroundShell()
         if (locationCallback != null) return
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5_000L)
-            .setMinUpdateIntervalMillis(2_000L)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, VerificationPolicy.INTERVAL_MS)
+            .setMinUpdateIntervalMillis(VerificationPolicy.MIN_INTERVAL_MS)
             .setMaxUpdateDelayMillis(0L)
             .build()
+        updatesStartedAtMillis = System.currentTimeMillis()
+        firstFixLogged = false
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 result.locations.forEach { location ->
+                    if (!firstFixLogged) {
+                        firstFixLogged = true
+                        recordDiagnostic(
+                            "FIRST_LOCATION_SAMPLE after=${System.currentTimeMillis() - updatesStartedAtMillis}ms " +
+                                "accuracy=${location.accuracy}m places=${activePlaceIds.joinToString(",", "[", "]")}",
+                        )
+                    }
                     val ids = activePlaceIds.toList().ifEmpty { listOf<String?>(null) }
                     ids.forEach { placeId ->
-                        recordDiagnostic("LOCATION_SAMPLE_RECEIVED accuracy=${location.accuracy}")
                         val payload = mapOf<String, Any?>(
                             "type" to "location",
                             "latitude" to location.latitude,
@@ -265,8 +330,11 @@ class PreciseLocationService : Service() {
     }
 
     private fun armWatchdog(delayMillis: Long) {
+        val now = System.currentTimeMillis()
+        val deadline = VerificationPolicy.extendedDeadline(watchdogDeadline, now, delayMillis)
+        watchdogDeadline = deadline
         watchdog.removeCallbacks(watchdogStop)
-        watchdog.postDelayed(watchdogStop, delayMillis)
+        watchdog.postDelayed(watchdogStop, deadline - now)
     }
 
     private fun startForegroundShell() {
@@ -289,7 +357,9 @@ class PreciseLocationService : Service() {
         locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
         locationCallback = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        if (stopService) stopSelf()
+        // stopSelf(startId) leaves the service running if a newer start (for
+        // example another place's ENTER) is already queued.
+        if (stopService) stopSelf(lastStartId)
     }
 
     private fun createNotificationChannel() {
@@ -313,6 +383,7 @@ class PreciseLocationService : Service() {
         const val EXTRA_TIMESTAMP = "timestamp"
         const val EXTRA_ERROR = "error"
         const val EXTRA_PLACE_ID = "placeId"
+        const val EXTRA_OUTER_RADIUS = "outerRadius"
         const val EXTRA_INNER_RADIUS = "innerRadius"
         const val EXTRA_REARM_RADIUS = "rearmRadius"
         const val EXTRA_COOLDOWN_SECONDS = "cooldownSeconds"
@@ -322,7 +393,8 @@ class PreciseLocationService : Service() {
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
         private const val BACKGROUND_PREFS = "pingplace_background"
         private const val BACKGROUND_DIAGNOSTICS = "diagnostics"
-        private const val MAX_DIAGNOSTICS = 200
+        // A 10-minute approach at one fix per 2 s must not push its ENTER out.
+        private const val MAX_DIAGNOSTICS = 500
         private const val BACKGROUND_WATCHDOG_MS = 11 * 60 * 1000L
         private const val REARM_WATCHDOG_MS = 2 * 60 * 1000L
         private const val CHANNEL_ID = "pingplace_precise_location"
@@ -355,6 +427,7 @@ class PreciseLocationService : Service() {
                 putExtra(EXTRA_TIMESTAMP, Instant.now().toString())
                 target?.let {
                     putExtra(EXTRA_PLACE_ID, it.placeId)
+                    putExtra(EXTRA_OUTER_RADIUS, it.radius.toDouble())
                     putExtra(EXTRA_INNER_RADIUS, it.innerRadius.toDouble())
                     putExtra(EXTRA_REARM_RADIUS, it.rearmRadius.toDouble())
                     putExtra(EXTRA_COOLDOWN_SECONDS, it.cooldownSeconds)
@@ -399,6 +472,7 @@ class PreciseLocationService : Service() {
                 target?.let {
                     putExtra(EXTRA_TARGET_LATITUDE, it.latitude)
                     putExtra(EXTRA_TARGET_LONGITUDE, it.longitude)
+                    putExtra(EXTRA_OUTER_RADIUS, it.radius.toDouble())
                     putExtra(EXTRA_INNER_RADIUS, it.innerRadius.toDouble())
                     putExtra(EXTRA_REARM_RADIUS, it.rearmRadius.toDouble())
                     putExtra(EXTRA_COOLDOWN_SECONDS, it.cooldownSeconds)
@@ -430,6 +504,7 @@ class PreciseLocationService : Service() {
         backgroundControl = null
         backgroundEngine?.destroy()
         backgroundEngine = null
+        backgroundEngineStarting = false
         backgroundReady = false
         pendingBackgroundEvents.clear()
     }

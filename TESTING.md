@@ -561,3 +561,92 @@ Steps on the Xiaomi 15:
    the Build 16 defect). Repeat for place B.
 7. If no notification arrives, copy the Places pipeline card immediately and
    note the visit times (local) and how long you stayed.
+
+## APP-10B short-visit arrival pipeline (Build 18)
+
+Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
+seconds apart, and no notification followed.
+
+Root cause (confirmed from the Build 17 logs): the headless background Dart
+entrypoint never initialized the Flutter binding. Its first channel call threw,
+so it never reported `ready`. The native service started GPS (fixes every 2 s
+at 3.8 m accuracy were logged) but queued every ENTER, fix and EXIT for a Dart
+side that never ran. No place was evaluated, so both places showed
+`state=NONE`, and no Dart diagnostic could be written. The fixes kept running
+until the watchdog stopped them. This affects every build that uses the
+headless engine. The entrypoint now initializes the binding. The native
+service logs `BACKGROUND_ENGINE_STARTING`, `BACKGROUND_ENGINE_READY after=...`
+and, if Dart has not answered within 15 s, `BACKGROUND_ENGINE_NOT_READY`.
+The Places pipeline card now reloads the native logs when opened and shows
+when it was loaded (Build 17 showed the pipeline log as of app start).
+
+Behaviour change for the multi-place background pipeline (approval required;
+the legacy single-target controller and the simulator are unchanged):
+
+- Android geofence transitions are wake-ups, not arrival evidence. During an
+  approach, a precise fix beyond the outer radius no longer ends the approach on
+  its own (Android often fires ENTER while the device is still outside).
+- An Android EXIT during an approach waits up to 60 s for precise confirmation:
+  a fix beyond the outer radius ends the approach (`EXIT_CONFIRMED`); an inner
+  fix still arrives and notifies; no evidence within 60 s ends it.
+- Arrival is unchanged: one accepted fix (accuracy <= 50 m) within the inner
+  radius (80 m). There is no dwell requirement. The 10-minute cooldown, the
+  re-arm distance and duplicate prevention are unchanged.
+
+Defects fixed:
+
+- Each place is verified against its own outer radius (Build 17 always used
+  300 m).
+- Fixes that arrived while the background engine was still starting were
+  dropped silently; they are now queued.
+- A persisted `APPROACHING` state (verifying process killed) made every later
+  ENTER a no-op; the ENTER now restarts verification.
+- One place finishing stopped precise location for every place, and any
+  background event shortened the 11-minute approach watchdog to 2 minutes. Both
+  are now per place.
+- An ENTER suppressed by cooldown or waiting-for-exit left GPS running until the
+  watchdog; it now releases precise location and logs why.
+- Fix interval reduced from 5 s to 2 s while verifying (an 80 m inner radius is
+  crossed in about 11 s at 50 km/h).
+
+New diagnostics (pipeline log, prefixed with the place ID):
+
+- `ENTER_SUPPRESSED reason=COOLDOWN|WAITING_FOR_EXIT ...`
+- `APPROACH_RESTARTED_FROM_PERSISTED_STATE since=...`
+- `SAMPLE at=... lat=... lon=... age=...s` then `LOCATION distance=... accuracy=...`
+- `LOCATION_REJECTED reason=LOW_ACCURACY accuracy=...m max=...m`
+- `LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION state=...`
+- `EXIT_AWAITING_PRECISE_CONFIRMATION` / `EXIT_CONFIRMED distance=...`
+- `APPROACH_SUMMARY outcome=ARRIVED|EXIT_CONFIRMED|EXITED|TIMEOUT samples=N
+  accepted=N rejectedLowAccuracy=N closest=...m@...m bestAccuracy=...m
+  firstFixAfterEnter=...s duration=...s`
+- Native: `FIRST_LOCATION_SAMPLE after=...ms`, `PLACE_VERIFICATION_STOPPED
+  place=... service=STOPPING|KEPT_FOR [...]`,
+  `BACKGROUND_SAMPLE_NOT_ROUTED reason=NO_BACKGROUND_ENGINE`.
+
+Steps on the Xiaomi 15:
+
+1. Before the drive, copy the Places pipeline card. Note each place's
+   `state=` and radius. A place in `WAITINGFOREXIT` or `COOLDOWN` will
+   suppress its next ENTER until a confirmed exit re-arms it.
+2. Visit each place, including a short (under 1 minute) pass that comes within
+   about 50 m of the pin.
+3. After each visit, open the card (it reloads), check `Loaded ...` is current,
+   and tap **Copy full diagnostics** (clipboard) or **Share diagnostics**
+   (Android share sheet, e.g. WhatsApp or email). Expect `BACKGROUND_ENGINE_READY` after each ENTER; a
+   `BACKGROUND_ENGINE_NOT_READY` line is a release blocker. Every ENTER must
+   be followed by either an
+   `APPROACH_SUMMARY` line or an `ENTER_SUPPRESSED` line with its reason.
+
+### Diagnostics export (Build 18)
+
+The Places pipeline card has **Copy full diagnostics** and **Share
+diagnostics**. Both reload first, then export the full stored history (native
+receiver/registration log up to 300 entries, background pipeline log up to 500),
+not only the lines visible on screen. Sections: app version/build/commit and
+export time, system health, Android registration, places and per-place state,
+background engine events, visit summaries (`APPROACH_SUMMARY`,
+`ENTER_SUPPRESSED`), notification results, errors and failures, then both full
+logs oldest first. Exporting never clears or changes a log. Coordinates are
+rounded to 3 decimals (~100 m); distances, accuracies and timestamps are kept.
+Device information is limited to manufacturer, model and Android SDK level.
