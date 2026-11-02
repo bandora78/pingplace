@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
+import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
 import '../geofence/geofence_service.dart';
 import '../places/place_manager.dart';
+import 'diagnostics_report.dart';
 
 /// Developer Mode view of the multi-place pipeline: what Android was asked to
 /// monitor, what it delivered, and what each place's arrival session did.
@@ -15,6 +18,9 @@ final class PlacesPipelineDiagnostics extends StatefulWidget {
     this.placeManager,
     this.logLimit = 40,
     this.pipelineLogLimit = 500,
+    this.exporter = const PlatformDiagnosticsExporter(),
+    this.buildInfo = BuildInfo.current,
+    this.clock = DateTime.now,
     super.key,
   });
 
@@ -25,6 +31,9 @@ final class PlacesPipelineDiagnostics extends StatefulWidget {
   /// The whole stored pipeline log: one visit can produce hundreds of lines,
   /// and its ENTER must stay visible next to its APPROACH_SUMMARY.
   final int pipelineLogLimit;
+  final DiagnosticsExporter exporter;
+  final BuildInfo buildInfo;
+  final DateTime Function() clock;
 
   @override
   State<PlacesPipelineDiagnostics> createState() =>
@@ -39,6 +48,8 @@ final class _PlacesPipelineDiagnosticsState
   String? loadFailure;
   bool loading = false;
   DateTime? _loadedAt;
+  String? exportStatus;
+  bool exporting = false;
 
   @override
   void initState() {
@@ -88,6 +99,54 @@ final class _PlacesPipelineDiagnosticsState
     });
   }
 
+  /// Reloads everything, then builds the report from the full stored
+  /// history, not from the lines visible on screen. Logs are only read.
+  Future<String> _report() async {
+    await _load(refreshNative: true);
+    final controller = widget.controller;
+    return buildDiagnosticsReport(
+      DiagnosticsSnapshot(
+        build: widget.buildInfo,
+        exportedAt: widget.clock(),
+        health: health,
+        registration: registration,
+        places: places,
+        lastGeofenceCallback: controller.recoveryStatus.lastBackgroundEvent,
+        nativeLog: List.of(controller.recoveryStatus.diagnostics),
+        pipelineLog: List.of(controller.backgroundDiagnostics),
+        loadFailures: [?loadFailure],
+      ),
+    );
+  }
+
+  Future<void> _export({required bool share}) async {
+    setState(() {
+      exporting = true;
+      exportStatus = null;
+    });
+    String status;
+    try {
+      final report = await _report();
+      final lines = const LineSplitter().convert(report).length;
+      if (share) {
+        await widget.exporter.share(report);
+        status = 'Share sheet opened ($lines lines).';
+      } else {
+        await widget.exporter.copy(report);
+        status = 'Copied full diagnostics ($lines lines).';
+      }
+    } catch (error) {
+      status = share ? 'Share failed: $error' : 'Copy failed: $error';
+    }
+    if (!mounted) return;
+    setState(() {
+      exporting = false;
+      exportStatus = status;
+    });
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(status)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -114,6 +173,29 @@ final class _PlacesPipelineDiagnosticsState
               'Loaded ${_loadedAt?.toUtc().toIso8601String() ?? 'never'}.',
               key: const Key('pipeline-loaded-at'),
             ),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  key: const Key('copy-diagnostics'),
+                  onPressed: exporting
+                      ? null
+                      : () => unawaited(_export(share: false)),
+                  icon: const Icon(Icons.copy),
+                  label: const Text('Copy full diagnostics'),
+                ),
+                OutlinedButton.icon(
+                  key: const Key('share-diagnostics'),
+                  onPressed: exporting
+                      ? null
+                      : () => unawaited(_export(share: true)),
+                  icon: const Icon(Icons.share),
+                  label: const Text('Share diagnostics'),
+                ),
+              ],
+            ),
+            if (exportStatus != null)
+              Text(exportStatus!, key: const Key('export-status')),
             const SizedBox(height: 8),
             Text('System health', style: theme.textTheme.titleSmall),
             if (health.isEmpty)

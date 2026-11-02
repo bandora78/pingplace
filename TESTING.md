@@ -632,7 +632,21 @@ Steps on the Xiaomi 15:
 2. Visit each place, including a short (under 1 minute) pass that comes within
    about 50 m of the pin.
 3. After each visit, open the card (it reloads), check `Loaded ...` is current,
-   and copy it. Expect `BACKGROUND_ENGINE_READY` after each ENTER; a
+   and tap **Copy full diagnostics** (clipboard) or **Share diagnostics**
+   (Android share sheet, e.g. WhatsApp or email). Expect `BACKGROUND_ENGINE_READY` after each ENTER; a
    `BACKGROUND_ENGINE_NOT_READY` line is a release blocker. Every ENTER must
    be followed by either an
    `APPROACH_SUMMARY` line or an `ENTER_SUPPRESSED` line with its reason.
+
+### Diagnostics export (Build 18)
+
+The Places pipeline card has **Copy full diagnostics** and **Share
+diagnostics**. Both reload first, then export the full stored history (native
+receiver/registration log up to 300 entries, background pipeline log up to 500),
+not only the lines visible on screen. Sections: app version/build/commit and
+export time, system health, Android registration, places and per-place state,
+background engine events, visit summaries (`APPROACH_SUMMARY`,
+`ENTER_SUPPRESSED`), notification results, errors and failures, then both full
+logs oldest first. Exporting never clears or changes a log. Coordinates are
+rounded to 3 decimals (~100 m); distances, accuracies and timestamps are kept.
+Device information is limited to manufacturer, model and Android SDK level.

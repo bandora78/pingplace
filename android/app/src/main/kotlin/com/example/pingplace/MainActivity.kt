@@ -22,6 +22,7 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val HEALTH_PREFS = "pingplace_health"
         const val LAST_EXIT_CHECKED = "last_exit_checked"
+        const val SHARE_CHANNEL = "pingplace/share"
     }
     private val methodChannelName = "pingplace/geofence"
     private val eventChannelName = "pingplace/geofence/events"
@@ -96,6 +97,10 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlatformRuntimeBridge.RUNTIME_CHANNEL)
             .setMethodCallHandler { call, result ->
                 PlatformRuntimeBridge.handleRuntime(this, call, result)
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "shareText") shareText(call, result) else result.notImplemented()
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlaceDataBridge.CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -310,6 +315,26 @@ class MainActivity : FlutterActivity() {
             if (newest > since) preferences.edit().putLong(LAST_EXIT_CHECKED, newest).apply()
         } catch (error: Exception) {
             GeofenceRecovery.recordDiagnostic(this, "APP_PROCESS_EXIT_READ_FAILED ${error.javaClass.simpleName}")
+        }
+    }
+
+    /** Opens Android's share sheet with a plain-text diagnostics report. */
+    private fun shareText(call: MethodCall, result: MethodChannel.Result) {
+        val text = call.argument<String>("text")
+        if (text.isNullOrEmpty()) {
+            result.error("SHARE_EMPTY", "Nothing to share", null)
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            putExtra(Intent.EXTRA_SUBJECT, call.argument<String>("subject") ?: "PingPlace diagnostics")
+        }
+        try {
+            startActivity(Intent.createChooser(send, "Share PingPlace diagnostics"))
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("SHARE_FAILED", error.message ?: error.javaClass.simpleName, null)
         }
     }
 
