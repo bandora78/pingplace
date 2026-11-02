@@ -11,7 +11,16 @@ Future<void> runBackgroundArrival() async {
   final session = MultiPlaceBackgroundArrivalSession(
     onDiagnostic: (message) =>
         unawaited(_controlChannel.invokeMethod<void>('diagnostic', message)),
-    onCommand: (command) => _controlChannel.invokeMethod<void>(command),
+    onCommand: (command) {
+      // Place-scoped commands are 'name:placeId'.
+      final separator = command.indexOf(':');
+      return separator < 0
+          ? _controlChannel.invokeMethod<void>(command)
+          : _controlChannel.invokeMethod<void>(
+              command.substring(0, separator),
+              command.substring(separator + 1),
+            );
+    },
   );
   _controlChannel.setMethodCallHandler((call) async {
     if (call.method == 'event') {

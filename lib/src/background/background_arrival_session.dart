@@ -26,7 +26,10 @@ final class BackgroundArrivalSession {
   SmartArrivalDetectionEngine? engine;
   Timer? _timeoutTimer;
   Timer? _rearmTimer;
+  Timer? _exitConfirmationTimer;
   DateTime? _enteredAt;
+  _ApproachStats? _approach;
+  String? _sampleDetail;
   String _reminderText = 'עצור בתחנת דלק יעד';
   bool _preciseVerificationActive = false;
   Future<void> _eventTail = Future<void>.value();
@@ -36,6 +39,8 @@ final class BackgroundArrivalSession {
     _timeoutTimer = null;
     _rearmTimer?.cancel();
     _rearmTimer = null;
+    _exitConfirmationTimer?.cancel();
+    _exitConfirmationTimer = null;
     _preciseVerificationActive = false;
   }
 
@@ -94,6 +99,44 @@ final class BackgroundArrivalSession {
       // An exit observed during a cooldown that has since expired re-arms the
       // place now, so this ENTER starts a new visit instead of being ignored.
       await _applyElapsedCooldown();
+      switch (engine!.state) {
+        case DetectionState.approaching:
+          // Persisted APPROACHING without a running verifier means the
+          // verifying process died (watchdog, OS kill). Build 17 ignored the
+          // ENTER in that state, so the place could never notify again.
+          onDiagnostic(
+            _preciseVerificationActive
+                ? 'ENTER_DURING_ACTIVE_APPROACH window restarted'
+                : 'APPROACH_RESTARTED_FROM_PERSISTED_STATE '
+                      'since=${_iso(engine!.approachStartedAt)}',
+          );
+          _exitConfirmationTimer?.cancel();
+          _exitConfirmationTimer = null;
+          _approach = _ApproachStats(timestamp);
+          await _process(engine!.dispatch(RestartApproach(timestamp)));
+          return;
+        case DetectionState.cooldown:
+          onDiagnostic(
+            'ENTER_SUPPRESSED reason=COOLDOWN '
+            'until=${_iso(engine!.cooldownUntil)} '
+            'exitObserved=${engine!.exitObservedDuringCooldown}',
+          );
+          if (!_preciseVerificationActive) await _stopService();
+          return;
+        case DetectionState.waitingForExit:
+          onDiagnostic(
+            'ENTER_SUPPRESSED reason=WAITING_FOR_EXIT '
+            'rearm needs a precise sample >= '
+            '${engine!.config.rearmRadius.round()}m after the last arrival',
+          );
+          if (!_preciseVerificationActive) await _stopService();
+          return;
+        case DetectionState.disarmed:
+        case DetectionState.armed:
+        case DetectionState.arrived:
+          break;
+      }
+      _approach = _ApproachStats(timestamp);
       await _process(engine!.dispatch(const Arm()));
       await _process(engine!.dispatch(OuterEnter(at: timestamp)));
     } else if (type == 'exit') {
@@ -107,7 +150,14 @@ final class BackgroundArrivalSession {
         // this EXIT needs to measure the re-arm distance.
         if (needsRearm) _startRearmVerification();
         await _applyElapsedCooldown();
-        await _process(engine!.dispatch(const OuterExit()));
+        final exitAt =
+            DateTime.tryParse(payload['timestamp'] as String? ?? '') ??
+            _clock();
+        await _process(
+          engine!.dispatch(
+            OuterExit(at: exitAt, immediate: !_preciseVerificationActive),
+          ),
+        );
         if (engine!.state == DetectionState.cooldown ||
             engine!.state == DetectionState.waitingForExit) {
           _startRearmVerification();
@@ -123,7 +173,10 @@ final class BackgroundArrivalSession {
           (engine!.state != DetectionState.approaching &&
               engine!.state != DetectionState.cooldown &&
               engine!.state != DetectionState.waitingForExit)) {
-        onDiagnostic('LOCATION_IGNORED precise verifier inactive');
+        onDiagnostic(
+          'LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION '
+          'state=${engine!.state.name.toUpperCase()}',
+        );
         return;
       }
       final timestamp = DateTime.tryParse(
@@ -139,6 +192,29 @@ final class BackgroundArrivalSession {
         onDiagnostic('LOCATION_SERVICE_FAILED: malformed background sample');
         return;
       }
+      if (engine!.state == DetectionState.approaching) {
+        _approach?.record(
+          distanceBetween(
+            engine!.config.target,
+            LocationSample(
+              latitude: latitude,
+              longitude: longitude,
+              accuracy: accuracy,
+              timestamp: timestamp,
+            ),
+          ),
+          accuracy,
+          timestamp,
+          accepted: accuracy <= engine!.config.maxAcceptedAccuracy,
+        );
+      }
+      // One line per fix: the persisted log is bounded, and a visit's ENTER
+      // must not scroll out while samples arrive every two seconds.
+      _sampleDetail =
+          'at=${_iso(timestamp)} '
+          'lat=${latitude.toStringAsFixed(5)} '
+          'lon=${longitude.toStringAsFixed(5)} '
+          'age=${_clock().difference(timestamp).inSeconds}s';
       await _process(
         engine!.dispatch(
           LocationReceived(
@@ -171,6 +247,7 @@ final class BackgroundArrivalSession {
   Future<void> _process(DetectionResult result) async {
     // Persist before a stop command can destroy the headless Flutter engine.
     await _saveRuntimeState();
+    _summarizeApproach(result);
     var stopRequested = false;
     try {
       for (final effect in result.effects) {
@@ -202,12 +279,19 @@ final class BackgroundArrivalSession {
             // notification request.
             break;
           case DetectionEffectType.locationSample:
+            final detail = _sampleDetail;
+            _sampleDetail = null;
             onDiagnostic(
               'LOCATION distance=${effect.distance!.toStringAsFixed(1)}m '
-              'accuracy=${effect.accuracy!.toStringAsFixed(1)}m',
+              'accuracy=${effect.accuracy!.toStringAsFixed(1)}m'
+              '${detail == null ? '' : ' $detail'}',
             );
           case DetectionEffectType.locationRejected:
-            onDiagnostic('LOCATION_REJECTED reason=LOW_ACCURACY');
+            onDiagnostic(
+              'LOCATION_REJECTED reason=LOW_ACCURACY '
+              'accuracy=${effect.accuracy!.toStringAsFixed(1)}m '
+              'max=${engine!.config.maxAcceptedAccuracy.round()}m',
+            );
           case DetectionEffectType.innerReached:
             onDiagnostic('INNER_REACHED');
           case DetectionEffectType.notificationRequested:
@@ -223,6 +307,32 @@ final class BackgroundArrivalSession {
             _timeoutTimer?.cancel();
             _timeoutTimer = null;
             onDiagnostic('APPROACH_TIMEOUT');
+          case DetectionEffectType.exitAwaitingConfirmation:
+            final window = engine!.config.exitConfirmationWindow;
+            onDiagnostic(
+              'EXIT_AWAITING_PRECISE_CONFIRMATION '
+              'lastDistance=${effect.distance?.toStringAsFixed(1) ?? 'none'} '
+              'window=${window.inSeconds}s',
+            );
+            final reportedAt = effect.timestamp ?? _clock();
+            _exitConfirmationTimer?.cancel();
+            _exitConfirmationTimer = Timer(window, () {
+              _exitConfirmationTimer = null;
+              unawaited(
+                _process(
+                  engine!.dispatch(
+                    ExitConfirmationElapsed(reportedAt.add(window)),
+                  ),
+                ),
+              );
+            });
+          case DetectionEffectType.exitConfirmed:
+            _exitConfirmationTimer?.cancel();
+            _exitConfirmationTimer = null;
+            onDiagnostic(
+              'EXIT_CONFIRMED '
+              'distance=${effect.distance?.toStringAsFixed(1) ?? 'none'}',
+            );
         }
       }
     } finally {
@@ -232,6 +342,8 @@ final class BackgroundArrivalSession {
         _timeoutTimer = null;
         _rearmTimer?.cancel();
         _rearmTimer = null;
+        _exitConfirmationTimer?.cancel();
+        _exitConfirmationTimer = null;
         onDiagnostic('PRECISE_LOCATION_STOPPED');
         await _stopService();
       }
@@ -246,6 +358,34 @@ final class BackgroundArrivalSession {
     if (waitingForExit && !_preciseVerificationActive) await _stopService();
     _scheduleCooldownTimer();
   }
+
+  /// One line per approach so a missed arrival can be explained without
+  /// reading every sample: how many fixes arrived, how close and how accurate
+  /// they were, and why the approach ended.
+  void _summarizeApproach(DetectionResult result) {
+    final stats = _approach;
+    if (stats == null) return;
+    String? outcome;
+    for (final effect in result.effects) {
+      if (effect.type == DetectionEffectType.innerReached) {
+        outcome = 'ARRIVED';
+      } else if (effect.type == DetectionEffectType.approachTimeout) {
+        outcome = 'TIMEOUT';
+      } else if (effect.type == DetectionEffectType.exitConfirmed) {
+        outcome ??= 'EXIT_CONFIRMED';
+      } else if (effect.type == DetectionEffectType.stateChanged &&
+          effect.from == DetectionState.approaching &&
+          effect.to == DetectionState.armed) {
+        outcome ??= 'EXITED';
+      }
+    }
+    if (outcome == null) return;
+    _approach = null;
+    onDiagnostic(stats.summary(outcome, _clock()));
+  }
+
+  static String _iso(DateTime? value) =>
+      value?.toUtc().toIso8601String() ?? 'none';
 
   /// A persisted cooldown can expire while no background process is running.
   /// Apply it now instead of waiting for a timer that was never scheduled.
@@ -342,5 +482,50 @@ final class BackgroundArrivalSession {
       case NotificationDeliveryResult.failed:
         onDiagnostic('NOTIFICATION_FAILED');
     }
+  }
+}
+
+final class _ApproachStats {
+  _ApproachStats(this.enteredAt);
+
+  final DateTime enteredAt;
+  DateTime? firstSampleAt;
+  int samples = 0;
+  int accepted = 0;
+  double? closest;
+  double? closestAccuracy;
+  double? bestAccuracy;
+
+  void record(
+    double distance,
+    double accuracy,
+    DateTime at, {
+    required bool accepted,
+  }) {
+    samples++;
+    firstSampleAt ??= at;
+    if (bestAccuracy == null || accuracy < bestAccuracy!) {
+      bestAccuracy = accuracy;
+    }
+    if (!accepted) return;
+    this.accepted++;
+    if (closest == null || distance < closest!) {
+      closest = distance;
+      closestAccuracy = accuracy;
+    }
+  }
+
+  String summary(String outcome, DateTime now) {
+    final firstFix = firstSampleAt == null
+        ? 'none'
+        : '${firstSampleAt!.difference(enteredAt).inSeconds}s';
+    return 'APPROACH_SUMMARY outcome=$outcome '
+        'samples=$samples accepted=$accepted '
+        'rejectedLowAccuracy=${samples - accepted} '
+        'closest=${closest == null ? 'none' : '${closest!.toStringAsFixed(1)}m'}'
+        '${closestAccuracy == null ? '' : '@${closestAccuracy!.toStringAsFixed(1)}m'} '
+        'bestAccuracy=${bestAccuracy == null ? 'none' : '${bestAccuracy!.toStringAsFixed(1)}m'} '
+        'firstFixAfterEnter=$firstFix '
+        'duration=${now.difference(enteredAt).inSeconds}s';
   }
 }

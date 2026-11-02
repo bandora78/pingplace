@@ -14,12 +14,17 @@ final class PlacesPipelineDiagnostics extends StatefulWidget {
     required this.controller,
     this.placeManager,
     this.logLimit = 40,
+    this.pipelineLogLimit = 500,
     super.key,
   });
 
   final DevelopmentGeofenceController controller;
   final PlaceManager? placeManager;
   final int logLimit;
+
+  /// The whole stored pipeline log: one visit can produce hundreds of lines,
+  /// and its ENTER must stay visible next to its APPROACH_SUMMARY.
+  final int pipelineLogLimit;
 
   @override
   State<PlacesPipelineDiagnostics> createState() =>
@@ -87,7 +92,7 @@ final class _PlacesPipelineDiagnosticsState
         .take(widget.logLimit)
         .toList();
     final pipelineLog = controller.backgroundDiagnostics.reversed
-        .take(widget.logLimit)
+        .take(widget.pipelineLogLimit)
         .toList();
     return Card(
       key: const Key('places-pipeline-diagnostics'),

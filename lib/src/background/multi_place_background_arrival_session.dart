@@ -26,6 +26,9 @@ final class MultiPlaceBackgroundArrivalSession {
   Future<void> _tail = Future<void>.value();
   static const _legacy = '__legacy__';
 
+  /// How long an Android EXIT may wait for precise confirmation.
+  static const exitConfirmationWindow = Duration(seconds: 60);
+
   void dispose() {
     for (final session in _sessions.values) {
       session.dispose();
@@ -70,6 +73,9 @@ final class MultiPlaceBackgroundArrivalSession {
                 latitude: targetLatitude,
                 longitude: targetLongitude,
               ),
+              // Build 17 never passed the place's own radius, so every place
+              // was verified against the default 300 m outer radius.
+              outerRadius: (payload['outerRadius'] as num?)?.toDouble() ?? 300,
               innerRadius: (payload['innerRadius'] as num?)?.toDouble() ?? 80,
               rearmRadius: (payload['rearmRadius'] as num?)?.toDouble() ?? 350,
               cooldownDuration: Duration(
@@ -81,11 +87,12 @@ final class MultiPlaceBackgroundArrivalSession {
               ),
               maxAcceptedAccuracy:
                   (payload['maxAcceptedAccuracy'] as num?)?.toDouble() ?? 50,
+              exitConfirmationWindow: exitConfirmationWindow,
             )
           : null;
       session = BackgroundArrivalSession(
         onDiagnostic: (message) => onDiagnostic('$placeId $message'),
-        onCommand: onCommand,
+        onCommand: (command) => onCommand(_scoped(command, placeId)),
         runtimeStore: _runtimeFor(placeId),
         notificationService: _notificationsFor(placeId),
         config: config,
@@ -94,6 +101,17 @@ final class MultiPlaceBackgroundArrivalSession {
       _sessions[placeId] = session;
     }
     await session.handleEvent(payload);
+  }
+
+  /// One place finishing must not stop another place's verification: the
+  /// native service stops only when no place still needs precise location.
+  static String _scoped(String command, String placeId) {
+    if (placeId == _legacy) return command;
+    return switch (command) {
+      'stop' => 'stopPlace:$placeId',
+      'startVerification' => 'startVerification:$placeId',
+      _ => command,
+    };
   }
 
   ArrivalRuntimeStore _runtimeFor(String placeId) {
