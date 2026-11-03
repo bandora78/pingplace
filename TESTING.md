@@ -591,15 +591,60 @@ background. It was also confirmed on a second phone.
 Both arrivals were confirmed within the 80 m inner radius, 9 s after verification
 started. This is the short-visit case that Build 17 never notified.
 
-Still pending as separate field tests:
+Follow-up field tests (2026-11-03, Xiaomi 15):
 
-1. **Post-cooldown re-notification.** After a place's 10-minute cooldown has
-   elapsed and it has re-armed, a new visit must notify again. Check that it
-   re-armed: an exit beyond the re-arm distance (~350 m) followed by `ARMED`, or
-   the elapsed cooldown applied on the next ENTER.
-2. **Reboot without opening the app.** Reboot the phone and do not open
-   PingPlace. Visit an enabled place: it must notify. The diagnostics must show
-   `MULTI_GEOFENCE_BOOT_RECOVERY_COMPLETED` before the ENTER.
+1. **Reboot without opening the app: validated.** After a reboot, with
+   PingPlace never opened, two registered places notified on arrival.
+2. **Post-cooldown re-notification: failed in Build 18; fixed in Build 19
+   (APP-10C, below).** A re-armed visit to `legacy-place-1` more than
+   10 minutes later logged `APPROACH_SUMMARY outcome=ARRIVED` (closest 75.8 m),
+   then `NOTIFICATION_REQUESTED` and `NOTIFICATION_SUPPRESSED_DUPLICATE`. The
+   place's state showed `visit=null`. A third place, `אניטה`, notified normally.
+
+## APP-10C post-cooldown re-notification (Build 19)
+
+Root cause: the native runtime bridge stored a cleared visit ID as JSON null.
+Android's `JSONObject.optString` returns the literal string `"null"` for a
+JSON null, so a new background process restored the visit ID `"null"`. When
+the engine entered from ARMED, it kept an existing visit ID (`??=`). Every
+re-armed visit that started in a new process was therefore delivered as
+`<place>:null`. Notifications are de-duplicated by visit ID: the first such
+visit notified, and **every later one at that place was suppressed as a
+duplicate, indefinitely**. Visits that re-armed and re-entered within the same
+process got a fresh ID, which is why the failure was intermittent. This also
+explains `visit=null` in the Places card: a missing ID is not printed at all.
+
+The cooldown and re-arm logic was not at fault. An approach can only start from
+ARMED, never from COOLDOWN or WAITING_FOR_EXIT. The 14:26:03Z arrival therefore
+shows the place had re-armed before that visit. A
+suppressed duplicate does start a new 10-minute cooldown, as any arrival does.
+
+Fixes:
+
+- Entering from ARMED always creates a new visit ID. A restarted approach of
+  the same visit keeps its ID.
+- Native (`RuntimeStateCodec`, pending geofence queue) and Dart both read JSON
+  null, an empty string, or an already-stored `"null"` as absent. State already
+  saved on the device is repaired when it is next read; no data is cleared.
+- `NOTIFICATION_REQUESTED`, `NOTIFICATION_SENT`,
+  `NOTIFICATION_SUPPRESSED_DUPLICATE`, `NOTIFICATION_PERMISSION_MISSING` and
+  `NOTIFICATION_FAILED` now include `visit=<id>`.
+
+Unchanged: at most one notification per visit, independent per-place cooldowns,
+no notification during cooldown or before a confirmed exit beyond 350 m,
+arrival within 80 m with accuracy <= 50 m, and temporary precise location only.
+
+Steps on the Xiaomi 15 (Build 19, installed as an update):
+
+1. Before leaving, check the Places card. A place may still show `visit=null`
+   until its next visit; this is expected.
+2. Visit a place: expect `NOTIFICATION_SENT visit=visit-...`.
+3. Leave beyond ~350 m, wait more than 10 minutes, and return: expect a
+   **second** `NOTIFICATION_SENT` with a different `visit=` value.
+4. Repeat step 3 once more, to cover a third visit restored from storage
+   (Build 18 suppressed this one).
+5. During a cooldown, a revisit must still produce `ENTER_SUPPRESSED
+   reason=COOLDOWN` and no notification.
 
 Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
 seconds apart, and no notification followed.

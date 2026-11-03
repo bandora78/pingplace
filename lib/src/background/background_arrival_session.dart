@@ -295,7 +295,9 @@ final class BackgroundArrivalSession {
           case DetectionEffectType.innerReached:
             onDiagnostic('INNER_REACHED');
           case DetectionEffectType.notificationRequested:
-            onDiagnostic('NOTIFICATION_REQUESTED');
+            onDiagnostic(
+              'NOTIFICATION_REQUESTED visit=${engine?.visitId ?? 'none'}',
+            );
             try {
               await _deliverNotification();
             } catch (error) {
@@ -472,16 +474,15 @@ final class BackgroundArrivalSession {
       visitId: visitId,
       reminderText: _reminderText,
     );
-    switch (result) {
-      case NotificationDeliveryResult.sent:
-        onDiagnostic('NOTIFICATION_SENT');
-      case NotificationDeliveryResult.duplicate:
-        onDiagnostic('NOTIFICATION_SUPPRESSED_DUPLICATE');
-      case NotificationDeliveryResult.permissionMissing:
-        onDiagnostic('NOTIFICATION_PERMISSION_MISSING');
-      case NotificationDeliveryResult.failed:
-        onDiagnostic('NOTIFICATION_FAILED');
-    }
+    final name = switch (result) {
+      NotificationDeliveryResult.sent => 'NOTIFICATION_SENT',
+      NotificationDeliveryResult.duplicate =>
+        'NOTIFICATION_SUPPRESSED_DUPLICATE',
+      NotificationDeliveryResult.permissionMissing =>
+        'NOTIFICATION_PERMISSION_MISSING',
+      NotificationDeliveryResult.failed => 'NOTIFICATION_FAILED',
+    };
+    onDiagnostic('$name visit=$visitId');
   }
 }
 
