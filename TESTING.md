@@ -564,20 +564,42 @@ Steps on the Xiaomi 15:
 
 ## APP-10B short-visit arrival pipeline (Build 18)
 
-**Status: partially field-validated; APP-10B is not resolved.** The owner
-installed the signed Build 18 on the Xiaomi 15 on 2026-11-02. It is
-`1.0.0+18`, versionCode 10018, source `f1b9344`, certificate `906551dd…`, from
-trusted run `41501857948`. These checks passed on the device:
+**Status: field-validated for background arrival. Two field tests are still
+pending (see the end of this status block).** The signed Build 18 was used:
+`1.0.0+18`, versionCode 10018, source `f1b9344`, certificate `906551dd…`,
+trusted run `41501857948`. The owner installed it on the Xiaomi 15 on
+2026-11-02 and tested it there in real visits on 2026-11-03, with the app in the
+background. It was also confirmed on a second phone.
 
 | Area | Field result |
 |---|---|
-| In-place installation | Validated. Installed as an update over Build 17; the app reports `1.0.0+18`. |
-| Data preservation | Validated. Both saved places and their reminders were preserved; both places are registered and enabled. |
+| In-place installation | Validated (2026-11-02). Installed as an update over Build 17; the app reports `1.0.0+18`. |
+| Data preservation | Validated (2026-11-02). Both saved places and their reminders were preserved; both places are registered and enabled. |
 | Diagnostics export | Validated. **Copy full diagnostics** works; **Share diagnostics** opens Android's native share sheet. |
-| Background arrival notifications | **Pending.** Not yet tested in the field. |
+| Background arrival | Validated (2026-11-03). Each place produced `APPROACH_SUMMARY outcome=ARRIVED` followed by `NOTIFICATION_SENT`, with the app in the background. |
+| Multi-place notifications | Validated (2026-11-03). Both places notified independently, each with its own reminder, 54 s apart. |
+| Cooldown suppression | Validated (2026-11-03). Each place entered its own `COOLDOWN`. Revisiting both places during cooldown produced no duplicate notification. |
+| Second device | Confirmed by the owner (2026-11-03). |
 
-APP-10B stays open until background arrival notifications work on the
-Xiaomi 15 in real visits.
+2026-11-03 visit evidence (Xiaomi 15):
+
+| Place | Closest | Accepted samples | Approach duration | Notification |
+|---|---|---|---|---|
+| `legacy-place-1` (דלק יעד) | 78.8 m | 11 of 11 | 9 s | `NOTIFICATION_SENT` 05:23:11Z |
+| `place-1793511714921683-2ec1bef0` (צומת סגולה) | 63.4 m | 9 of 9 | 9 s | `NOTIFICATION_SENT` 05:24:05Z |
+
+Both arrivals were confirmed within the 80 m inner radius, 9 s after verification
+started. This is the short-visit case that Build 17 never notified.
+
+Still pending as separate field tests:
+
+1. **Post-cooldown re-notification.** After a place's 10-minute cooldown has
+   elapsed and it has re-armed, a new visit must notify again. Check that it
+   re-armed: an exit beyond the re-arm distance (~350 m) followed by `ARMED`, or
+   the elapsed cooldown applied on the next ENTER.
+2. **Reboot without opening the app.** Reboot the phone and do not open
+   PingPlace. Visit an enabled place: it must notify. The diagnostics must show
+   `MULTI_GEOFENCE_BOOT_RECOVERY_COMPLETED` before the ENTER.
 
 Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
 seconds apart, and no notification followed.
