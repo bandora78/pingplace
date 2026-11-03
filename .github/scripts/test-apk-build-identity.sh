@@ -23,3 +23,5 @@ if bash .github/scripts/verify-apk-build-identity.sh "${root}/candidate.apk" abc
   exit 1
 fi
 echo "APK build identity regression tests passed"
+
+# Trigger Build 13 candidate CI
