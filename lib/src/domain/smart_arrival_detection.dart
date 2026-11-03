@@ -277,7 +277,10 @@ final class SmartArrivalDetectionEngine {
         if (_state == DetectionState.armed) {
           final enteredAt = at ?? DateTime.now();
           _approachStartedAt = enteredAt;
-          _visitId ??= 'visit-${enteredAt.microsecondsSinceEpoch}';
+          // Entering from ARMED always starts a new visit. A visit ID left
+          // over from an earlier approach (or restored from storage) must
+          // never be reused: notifications are de-duplicated by visit ID.
+          _visitId = 'visit-${enteredAt.microsecondsSinceEpoch}';
           _setState(DetectionState.approaching, effects);
           effects.add(
             const DetectionEffect(DetectionEffectType.preciseLocationStarted),

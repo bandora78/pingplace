@@ -157,7 +157,7 @@ void main() {
     await enterAndSample(value, DateTime.utc(2026, 1, 1));
 
     expect(notifications.deliveredVisitIds, hasLength(1));
-    expect(diagnostics, contains('NOTIFICATION_SENT'));
+    expect(diagnostics, contains(startsWith('NOTIFICATION_SENT visit=')));
     value.dispose();
   });
 
@@ -203,7 +203,9 @@ void main() {
 
     expect(notifications.deliveredVisitIds, hasLength(1));
     expect(
-      diagnostics.where((entry) => entry == 'NOTIFICATION_SENT'),
+      diagnostics.where(
+        (entry) => entry.startsWith('NOTIFICATION_SENT visit='),
+      ),
       hasLength(1),
     );
     value.dispose();
@@ -270,7 +272,10 @@ void main() {
       await enterAndSample(second, at.add(const Duration(minutes: 1)));
 
       expect(notifications.deliveredVisitIds, hasLength(1));
-      expect(secondDiagnostics, isNot(contains('NOTIFICATION_SENT')));
+      expect(
+        secondDiagnostics,
+        isNot(contains(startsWith('NOTIFICATION_SENT'))),
+      );
       second.dispose();
     },
   );
@@ -406,7 +411,10 @@ void main() {
     final diagnostics = <String>[];
     final value = await session(runtime, notifications, diagnostics);
     await enterAndSample(value, DateTime.utc(2026, 1, 1));
-    expect(diagnostics, contains('NOTIFICATION_PERMISSION_MISSING'));
+    expect(
+      diagnostics,
+      contains(startsWith('NOTIFICATION_PERMISSION_MISSING visit=')),
+    );
     value.dispose();
 
     final failing = InMemoryNotificationService()
@@ -418,7 +426,10 @@ void main() {
       failureDiagnostics,
     );
     await enterAndSample(failureSession, DateTime.utc(2026, 1, 1));
-    expect(failureDiagnostics, contains('NOTIFICATION_FAILED'));
+    expect(
+      failureDiagnostics,
+      contains(startsWith('NOTIFICATION_FAILED visit=')),
+    );
     failureSession.dispose();
   });
 }

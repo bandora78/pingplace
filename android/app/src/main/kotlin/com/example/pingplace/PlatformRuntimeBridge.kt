@@ -19,7 +19,6 @@ import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
-import org.json.JSONObject
 import java.time.Instant
 
 object PlatformRuntimeBridge {
@@ -33,7 +32,7 @@ object PlatformRuntimeBridge {
                 val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
                 val key = stateKey(placeId)
                 val serialized = preferences.getString(key, null)
-                result.success(serialized?.let { decodeState(it) })
+                result.success(serialized?.let { RuntimeStateCodec.decode(it) })
             }
             "save" -> {
                 val arguments = call.arguments as? Map<*, *>
@@ -41,7 +40,7 @@ object PlatformRuntimeBridge {
                     result.error("INVALID_ARGUMENT", "Runtime state map is required", null)
                 } else {
                     val placeId = arguments["placeId"] as? String
-                    preferences.edit().putString(stateKey(placeId), encodeState(arguments)).commit()
+                    preferences.edit().putString(stateKey(placeId), RuntimeStateCodec.encode(arguments)).commit()
                     result.success(null)
                 }
             }
@@ -60,35 +59,6 @@ object PlatformRuntimeBridge {
             }
             else -> result.notImplemented()
         }
-    }
-
-    private fun encodeState(arguments: Map<*, *>): String = JSONObject().apply {
-        put("state", arguments["state"] ?: "disarmed")
-        putNullable("targetLatitude", arguments["targetLatitude"])
-        putNullable("targetLongitude", arguments["targetLongitude"])
-        putNullable("approachStartedAt", arguments["approachStartedAt"])
-        putNullable("cooldownUntil", arguments["cooldownUntil"])
-        put("exitObservedDuringCooldown", arguments["exitObservedDuringCooldown"] ?: false)
-        putNullable("visitId", arguments["visitId"])
-    }.toString()
-
-    private fun decodeState(serialized: String): Map<String, Any?> = try {
-        val state = JSONObject(serialized)
-        mapOf(
-            "state" to state.optString("state", "disarmed"),
-            "targetLatitude" to state.optDouble("targetLatitude", Double.NaN).takeUnless { it.isNaN() },
-            "targetLongitude" to state.optDouble("targetLongitude", Double.NaN).takeUnless { it.isNaN() },
-            "approachStartedAt" to state.optString("approachStartedAt").ifEmpty { null },
-            "cooldownUntil" to state.optString("cooldownUntil").ifEmpty { null },
-            "exitObservedDuringCooldown" to state.optBoolean("exitObservedDuringCooldown", false),
-            "visitId" to state.optString("visitId").ifEmpty { null },
-        )
-    } catch (_: Exception) {
-        emptyMap()
-    }
-
-    private fun JSONObject.putNullable(key: String, value: Any?) {
-        put(key, value ?: JSONObject.NULL)
     }
 
     private const val RUNTIME_PREFS = "pingplace_runtime"

@@ -130,8 +130,8 @@ object GeofenceEventBus {
                         PendingGeofenceEvent(
                             type = item.getString("type"),
                             timestamp = item.getString("timestamp"),
-                            error = item.optString("error").ifEmpty { null },
-                            placeId = item.optString("placeId").ifEmpty { null },
+                            error = item.optNullableString("error"),
+                            placeId = item.optNullableString("placeId"),
                         ),
                     )
                 }
