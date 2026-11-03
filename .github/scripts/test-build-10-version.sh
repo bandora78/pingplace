@@ -49,4 +49,4 @@ if (( next_version_code <= baseline_version_code )); then
   exit 1
 fi
 
-echo "Build 13 version metadata and signed versionCode strategy passed"
+echo "Build 18 version metadata and signed versionCode strategy passed"
