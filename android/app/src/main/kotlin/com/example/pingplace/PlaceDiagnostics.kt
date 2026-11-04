@@ -9,7 +9,14 @@ import java.util.Locale
  */
 internal object PlaceDiagnostics {
     /** Receiver entry for one platform transition: what Android delivered and how it was routed. */
-    fun transition(type: String, ids: List<String>, registeredIds: Set<String>): String {
+    fun transition(
+        type: String,
+        ids: List<String>,
+        registeredIds: Set<String>,
+        // APP-10E: receive time minus the triggering fix time; separates a
+        // late platform delivery from a stall inside this process.
+        triggerAgeMillis: Long? = null,
+    ): String {
         val matched = ids.filter { it in registeredIds }
         val legacy = ids.filter { it == LEGACY_ID }
         val unknown = ids.filter { it !in registeredIds && it != LEGACY_ID }
@@ -19,6 +26,7 @@ internal object PlaceDiagnostics {
             append(" places=").append(matched.joinToString(",", "[", "]"))
             if (legacy.isNotEmpty()) append(" legacy=true")
             if (unknown.isNotEmpty()) append(" UNKNOWN=").append(unknown.joinToString(",", "[", "]"))
+            if (triggerAgeMillis != null) append(" triggerAge=").append(triggerAgeMillis).append("ms")
         }
     }
 

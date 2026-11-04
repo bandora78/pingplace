@@ -77,6 +77,50 @@ object MultiPlaceGeofenceRegistration {
 
     fun desiredPlaceIds(context: Context): List<String> = read(context)?.map { it.placeId } ?: emptyList()
 
+    /** Every desired place, read once (empty when none or corrupt). */
+    fun targets(context: Context): List<Target> = read(context) ?: emptyList()
+
+    /**
+     * APP-10E: re-adds only [placeId]'s geofence, with INITIAL_TRIGGER_ENTER,
+     * after its ENTER could not start verification. Same request ID and
+     * PendingIntent, so Android replaces just this geofence; other places'
+     * registrations and states are untouched. Serialized with every other
+     * registration change but never supersedes one, and it runs only while
+     * the place is still desired and confirmed as applied, so it cannot
+     * revive a place that was deleted or disabled meanwhile.
+     */
+    fun recoverEnter(context: Context, placeId: String, callback: (Boolean, String?) -> Unit) {
+        GeofenceLifecycleCoordinator.submitWithoutSuperseding(GeofenceLifecycleCoordinator.Kind.ENTER_RECOVERY, { done ->
+            val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val target = read(context)?.firstOrNull { it.placeId == placeId }
+            val applied = readApplied(context)
+            if (target == null || !preferences.getBoolean(CONFIRMED, false) || (applied != null && placeId !in applied)) {
+                done(false, "Place is not registered")
+                return@submitWithoutSuperseding
+            }
+            validate(context, listOf(target))?.let { done(false, it); return@submitWithoutSuperseding }
+            val request = GeofencingRequest.Builder()
+                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+                .addGeofence(geofence(target))
+                .build()
+            try {
+                LocationServices.getGeofencingClient(context)
+                    .addGeofences(request, GeofencePendingIntent.get(context))
+                    .addOnSuccessListener { done(true, null) }
+                    .addOnFailureListener { done(false, "Geofence re-add failed") }
+            } catch (_: Exception) { done(false, "Geofence re-add failed") }
+        }) { completion ->
+            callback(completion.success, if (completion.stale) "Superseded by a newer registration" else completion.error)
+        }
+    }
+
+    private fun geofence(target: Target): Geofence = Geofence.Builder()
+        .setRequestId(target.placeId)
+        .setCircularRegion(target.latitude, target.longitude, target.radius)
+        .setExpirationDuration(Geofence.NEVER_EXPIRE)
+        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+        .build()
+
     fun hasDesired(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(MODE, false)
 
     fun isMultiMode(context: Context): Boolean = hasDesired(context)
@@ -168,14 +212,7 @@ object MultiPlaceGeofenceRegistration {
         }
         val request = GeofencingRequest.Builder()
             .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-            .addGeofences(targets.map { target ->
-                Geofence.Builder()
-                    .setRequestId(target.placeId)
-                    .setCircularRegion(target.latitude, target.longitude, target.radius)
-                    .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                    .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-                    .build()
-            }).build()
+            .addGeofences(targets.map(::geofence)).build()
         try {
             // Add the replacement set first. If this fails, the previous registrations
             // remain active and the durable confirmation is cleared by submit().

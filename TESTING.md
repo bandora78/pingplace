@@ -873,3 +873,65 @@ background engine events, visit summaries (`APPROACH_SUMMARY`,
 logs oldest first. Exporting never clears or changes a log. Coordinates are
 rounded to 3 decimals (~100 m); distances, accuracies and timestamps are kept.
 Device information is limited to manufacturer, model and Android SDK level.
+
+## APP-10E blocked foreground-service start (Build 21)
+
+Build 20 field test, Xiaomi 15, SDK 36, 2026-11-04. The third pass at
+legacy-place-1 ("דלק יעד") produced no arrival check:
+
+- `19:39:41.004 GEOFENCE_TRANSITION enter ids=[legacy-place-1]`, written by
+  the first statement of `GeofenceBroadcastReceiver.onReceive`.
+- `19:40:20.366 BACKGROUND_EVENT_RECEIVED enter`, the very next write in the
+  same `onReceive`, 39.4 s later. Only SharedPreferences/JSON work separates
+  the two; the thread did not run in between.
+- `19:40:20.375 PRECISE_LOCATION_START_BLOCKED place=legacy-place-1
+  error=ForegroundServiceStartNotAllowedException`.
+- `19:40:20.637` the process was killed (`normal_mem_pressure`).
+- `19:40:26` EXIT; the place re-armed (`REARMED_ON_EXIT state=ARMED`). No
+  `APPROACH_STARTED`, summary or notification exists for the pass.
+
+Cause: Android 12+ lets an app start a foreground service from the background
+only under an exemption; a geofence transition is one, granted by Google Play
+services with each transition broadcast for a short time. Build 20 started the
+service only after its diagnostics and UI-queue writes, so the 39 s stall
+spent the window and Android refused the start. It was not a battery
+restriction (`backgroundRestricted=false`), not a missing permission (that is a
+`SecurityException`) and not a replayed event (one transition line, one
+callback). Why the thread stalled is not shown by the logs.
+
+Build 21:
+
+- The receiver starts every service first, before any diagnostics or
+  SharedPreferences write (`EnterStartRecovery.plan`), and the service calls
+  `startForeground` before any other work.
+- `GEOFENCE_TRANSITION ... triggerAge=Nms`: how old the triggering fix was on
+  receipt, so a late platform delivery can be told from an in-process stall.
+- A refused start is logged in both logs and never reads as a verification:
+  `PRECISE_LOCATION_START_BLOCKED place=... error=... sinceReceive=Nms
+  recovery=REREGISTER|EXHAUSTED|NOT_REGISTERED` (native) and
+  `<place> APPROACH_SUMMARY outcome=START_BLOCKED visit=none ...` (pipeline,
+  shown under Visit summaries). No visit is created.
+- Recovery (`recovery=REREGISTER`): only that place's geofence is re-added
+  with `INITIAL_TRIGGER_ENTER` (`ENTER_RECOVERY_REREGISTERED` /
+  `ENTER_RECOVERY_FAILED`). If the device is still inside, Google Play
+  services sends a new ENTER with its own exemption, handled like any ENTER
+  (cooldown, dedup, visit identity unchanged). If it has left, nothing is
+  sent. Recovery starts no service and no GPS, touches no other place, runs at
+  most once per place per 10 minutes, never supersedes a registration change
+  and never re-adds a deleted or disabled place. A start that follows logs
+  `ENTER_RECOVERY_DELIVERED place=...`.
+
+Limit: if the device has already left (as on 2026-11-04, 6 s before the
+EXIT), a missed arrival cannot be recovered. Starting first removes the
+exposure seen in this log; it cannot help if Android delays the broadcast
+itself beyond the exemption.
+
+Steps on the Xiaomi 15 (Build 21):
+
+1. Repeat the three-visit route. Every ENTER must show
+   `PRECISE_LOCATION_START_REQUESTED`, then `APPROACH_STARTED` or
+   `ENTER_SUPPRESSED`.
+2. Note each `triggerAge` on `GEOFENCE_TRANSITION` lines.
+3. Any `PRECISE_LOCATION_START_BLOCKED` is a finding: export diagnostics and
+   check for `ENTER_RECOVERY_REREGISTERED` and, if still inside,
+   `ENTER_RECOVERY_DELIVERED` followed by a normal approach.

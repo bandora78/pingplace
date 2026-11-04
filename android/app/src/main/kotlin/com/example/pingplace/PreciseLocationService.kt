@@ -70,6 +70,8 @@ class PreciseLocationService : Service() {
         when (intent?.action) {
             ACTION_STOP -> stopUpdates()
             ACTION_START_FROM_GEOFENCE -> {
+                // Promote to foreground before any other work (APP-10E).
+                startForegroundShell()
                 recordDiagnostic("PRECISE_LOCATION_START_REQUESTED place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 intent.getStringExtra(EXTRA_PLACE_ID)?.let { activePlaceIds.add(it) }
                 pendingBackgroundEvents.add(
@@ -292,24 +294,7 @@ class PreciseLocationService : Service() {
         flushBackgroundEvents()
     }
 
-    private fun recordDiagnostic(message: String) {
-        val preferences = getSharedPreferences(BACKGROUND_PREFS, MODE_PRIVATE)
-        val entries = try {
-            val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
-            MutableList(array.length()) { array.getString(it) }
-        } catch (_: Exception) {
-            mutableListOf()
-        }
-        val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
-        val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
-        if (evicted.routine > 0) {
-            editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
-        }
-        if (evicted.critical > 0) {
-            editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
-        }
-        editor.apply()
-    }
+    private fun recordDiagnostic(message: String) = recordPipelineDiagnostic(this, message)
 
     private fun startUpdates() {
         startForegroundShell()
@@ -460,16 +445,16 @@ class PreciseLocationService : Service() {
             instance?.handoffToForeground()
         }
 
-        fun startFromGeofence(context: android.content.Context, target: MultiPlaceGeofenceRegistration.Target) {
+        /** Null when the start was accepted; otherwise the exception's simple name. */
+        fun startFromGeofence(context: android.content.Context, target: MultiPlaceGeofenceRegistration.Target): String? =
             startFromGeofence(context, target.latitude, target.longitude, target)
-        }
 
         fun startFromGeofence(
             context: android.content.Context,
             latitude: Double,
             longitude: Double,
             target: MultiPlaceGeofenceRegistration.Target?,
-        ) {
+        ): String? {
             val intent = Intent(context, PreciseLocationService::class.java).apply {
                 action = ACTION_START_FROM_GEOFENCE
                 putExtra(EXTRA_TARGET_LATITUDE, latitude)
@@ -486,17 +471,35 @@ class PreciseLocationService : Service() {
                     putExtra(EXTRA_REMINDER_TEXT, it.reminderText)
                 }
             }
-            try {
+            return try {
                 androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                null
             } catch (error: Exception) {
-                // For example ForegroundServiceStartNotAllowedException under a
-                // background or battery restriction: the arrival cannot be verified.
-                GeofenceRecovery.recordDiagnostic(
-                    context,
-                    "PRECISE_LOCATION_START_BLOCKED place=${target?.placeId ?: "legacy"} error=${error.javaClass.simpleName}",
-                )
-                GeofenceEventBus.publish(context, "error", "Unable to start background precise location", target?.placeId)
+                // For example ForegroundServiceStartNotAllowedException once the
+                // geofence broadcast's background-start exemption has expired.
+                // The caller logs it and decides on recovery (APP-10E).
+                error.javaClass.simpleName
             }
+        }
+
+        /** Appends to the background pipeline log from outside the service (APP-10E). */
+        fun recordPipelineDiagnostic(context: android.content.Context, message: String) {
+            val preferences = context.getSharedPreferences(BACKGROUND_PREFS, android.content.Context.MODE_PRIVATE)
+            val entries = try {
+                val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+                MutableList(array.length()) { array.getString(it) }
+            } catch (_: Exception) {
+                mutableListOf()
+            }
+            val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
+            val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
+            if (evicted.routine > 0) {
+                editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
+            }
+            if (evicted.critical > 0) {
+                editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
+            }
+            editor.apply()
         }
 
         fun sendBackgroundEvent(

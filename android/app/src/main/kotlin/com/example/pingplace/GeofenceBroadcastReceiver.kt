@@ -3,14 +3,20 @@ package com.example.pingplace
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val receivedAt = SystemClock.elapsedRealtime()
+        val receivedAtWall = System.currentTimeMillis()
         val event = GeofencingEvent.fromIntent(intent)
         if (event == null) {
             publishFailure(context, "Invalid geofencing intent")
@@ -31,31 +37,133 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
             publishFailure(context, error ?: "Geofence transition contained no request IDs")
             return
         }
-        GeofenceRecovery.recordDiagnostic(
-            context,
-            PlaceDiagnostics.transition(type, ids, MultiPlaceGeofenceRegistration.desiredPlaceIds(context).toSet()),
-        )
-        ids.forEach { placeId ->
-            val routedPlaceId = placeId.takeUnless { it == "pingplace-phase0-outer" }
-            GeofenceRecovery.recordBackgroundEvent(context, type, error)
-            GeofenceEventBus.publish(context, type, error, routedPlaceId)
-            val target = MultiPlaceGeofenceRegistration.target(context, placeId)
-            if (type == "enter") {
-                if (target != null) {
-                    PreciseLocationService.startFromGeofence(context, target)
-                } else if (placeId == "pingplace-phase0-outer") {
-                    val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
-                    val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
-                    val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
-                    if (latitude != null && longitude != null) {
-                        PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
-                    } else GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", routedPlaceId)
-                } else {
-                    GeofenceRecovery.recordDiagnostic(context, "GEOFENCE_ENTER_UNKNOWN_PLACE id=$placeId")
-                    GeofenceEventBus.publish(context, "error", "Unknown place registration", routedPlaceId)
+        val targets = MultiPlaceGeofenceRegistration.targets(context)
+        val desiredIds = targets.map { it.placeId }
+        val blocked = mutableListOf<Pair<String?, String>>()
+        val started = mutableListOf<String>()
+        val unknown = mutableListOf<String>()
+        var legacyTargetMissing = false
+        // APP-10E: the start-from-background exemption that comes with this
+        // broadcast is short. Every service start happens before any
+        // diagnostics or UI-queue write; Build 20 lost an ENTER when the
+        // thread stalled 39 s between those writes and the start after them.
+        EnterStartRecovery.plan(type, ids).forEach { step ->
+            when (step) {
+                is EnterStartRecovery.Step.StartVerification -> {
+                    val placeId = step.placeId
+                    val target = targets.firstOrNull { it.placeId == placeId }
+                    if (target != null) {
+                        val failure = PreciseLocationService.startFromGeofence(context, target)
+                        if (failure == null) started += placeId else blocked += placeId to failure
+                    } else if (placeId == PlaceDiagnostics.LEGACY_ID) {
+                        val preferences = context.getSharedPreferences(GeofenceEventBus.PREFS, Context.MODE_PRIVATE)
+                        val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
+                        val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
+                        if (latitude != null && longitude != null) {
+                            PreciseLocationService.startFromGeofence(context, latitude, longitude, null)
+                                ?.let { blocked += null to it }
+                        } else legacyTargetMissing = true
+                    } else unknown += placeId
                 }
-            } else if (type == "exit") {
-                PreciseLocationService.sendBackgroundEvent(context, "exit", null, null, null, null, routedPlaceId, target)
+                is EnterStartRecovery.Step.QueueExit -> {
+                    val placeId = step.placeId
+                    PreciseLocationService.sendBackgroundEvent(
+                        context, "exit", null, null, null, null,
+                        placeId.takeUnless { it == PlaceDiagnostics.LEGACY_ID },
+                        targets.firstOrNull { it.placeId == placeId },
+                    )
+                }
+                EnterStartRecovery.Step.Diagnostics -> {
+                    val triggerAge = event.triggeringLocation?.time?.takeIf { it > 0 }?.let { receivedAtWall - it }
+                    GeofenceRecovery.recordDiagnostic(
+                        context,
+                        PlaceDiagnostics.transition(type, ids, desiredIds.toSet(), triggerAge),
+                    )
+                    ids.forEach { GeofenceRecovery.recordBackgroundEvent(context, type, error) }
+                    started.forEach { placeId ->
+                        if (EnterRecoveryStore.consumeIfRecovered(context, placeId)) {
+                            GeofenceRecovery.recordDiagnostic(context, "ENTER_RECOVERY_DELIVERED place=$placeId")
+                        }
+                    }
+                    unknown.forEach { GeofenceRecovery.recordDiagnostic(context, "GEOFENCE_ENTER_UNKNOWN_PLACE id=$it") }
+                    val recoveries = blocked.mapNotNull { (placeId, failure) ->
+                        recordBlockedStart(context, placeId, failure, SystemClock.elapsedRealtime() - receivedAt, desiredIds)
+                    }
+                    if (recoveries.isNotEmpty()) requestRecoveries(context, recoveries)
+                }
+                EnterStartRecovery.Step.PublishToUi -> {
+                    ids.forEach { placeId ->
+                        GeofenceEventBus.publish(context, type, error, placeId.takeUnless { it == PlaceDiagnostics.LEGACY_ID })
+                    }
+                    unknown.forEach { GeofenceEventBus.publish(context, "error", "Unknown place registration", it) }
+                    if (legacyTargetMissing) {
+                        GeofenceEventBus.publish(context, "error", "Target coordinates are not persisted", null)
+                    }
+                    blocked.forEach { (placeId, _) ->
+                        GeofenceEventBus.publish(context, "error", "Unable to start background precise location", placeId)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * An ENTER whose verification could not start: logged in both logs as an
+     * outcome that is never a verified arrival. Returns the place to recover,
+     * at most once per place in [EnterStartRecovery.WINDOW_MS].
+     */
+    private fun recordBlockedStart(
+        context: Context,
+        placeId: String?,
+        failure: String,
+        sinceReceive: Long,
+        desiredIds: List<String>,
+    ): String? {
+        val now = System.currentTimeMillis()
+        val decision = EnterStartRecovery.onBlocked(
+            placeId,
+            desiredIds,
+            placeId?.let { EnterRecoveryStore.lastRecoveryAt(context, it) },
+            now,
+        )
+        GeofenceRecovery.recordDiagnostic(context, EnterStartRecovery.blockedLine(placeId, failure, sinceReceive, decision))
+        if (placeId != null) {
+            PreciseLocationService.recordPipelineDiagnostic(
+                context,
+                EnterStartRecovery.blockedSummaryLine(placeId, failure, sinceReceive, decision),
+            )
+        }
+        if (decision != EnterStartRecovery.Decision.REREGISTER || placeId == null) return null
+        EnterRecoveryStore.markRequested(context, placeId, now)
+        return placeId
+    }
+
+    /**
+     * Re-adds only these places' geofences with INITIAL_TRIGGER_ENTER. No
+     * service, GPS or other place is touched here: a device still inside gets
+     * a new, platform-issued ENTER; a device that has left gets nothing.
+     */
+    private fun requestRecoveries(context: Context, placeIds: List<String>) {
+        // Keep this process at receiver priority until the re-adds reach
+        // Google Play services; on 2026-11-04 the process was killed 0.3 s
+        // after the blocked start.
+        val pending = goAsync()
+        val finished = AtomicBoolean(false)
+        val handler = Handler(Looper.getMainLooper())
+        val finish = Runnable { if (finished.compareAndSet(false, true)) pending?.finish() }
+        handler.postDelayed(finish, EnterStartRecovery.RECEIVER_HOLD_MS)
+        var remaining = placeIds.size
+        placeIds.forEach { placeId ->
+            MultiPlaceGeofenceRegistration.recoverEnter(context, placeId) { success, reason ->
+                GeofenceRecovery.recordDiagnostic(
+                    context,
+                    if (success) "ENTER_RECOVERY_REREGISTERED place=$placeId initialTrigger=ENTER"
+                    else "ENTER_RECOVERY_FAILED place=$placeId reason=${reason ?: "unknown"}",
+                )
+                if (--remaining == 0) {
+                    handler.removeCallbacks(finish)
+                    finish.run()
+                }
             }
         }
     }
@@ -66,6 +174,26 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         if (!GeofenceEventBus.isAttached()) {
             PreciseLocationService.sendBackgroundEvent(context, "error", null, message, null, null, null)
         }
+    }
+}
+
+/** Per-place time of the last blocked-start recovery request. */
+internal object EnterRecoveryStore {
+    private const val PREFS = "pingplace_enter_recovery"
+
+    fun lastRecoveryAt(context: Context, placeId: String): Long? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(placeId, -1L).takeIf { it > 0 }
+
+    fun markRequested(context: Context, placeId: String, atMillis: Long) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(placeId, atMillis).commit()
+    }
+
+    /** True if a recovery for [placeId] was pending in its window; the marker is cleared either way. */
+    fun consumeIfRecovered(context: Context, placeId: String): Boolean {
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val last = preferences.getLong(placeId, -1L).takeIf { it > 0 } ?: return false
+        preferences.edit().remove(placeId).apply()
+        return EnterStartRecovery.recoveredBy(last, System.currentTimeMillis())
     }
 }
 
