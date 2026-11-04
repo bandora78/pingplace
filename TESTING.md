@@ -724,6 +724,27 @@ Other defects fixed:
   stops while events are pending, GPS stops at once and the service stops
   after those events (`service=STOPPING_AFTER_EVENTS`). The watchdog still
   stops it if Dart never answers.
+- Found in review of 3bf876b (delayed stop): a stop sent while handling an
+  earlier event, for example the EXIT that re-arms a place, could reach the
+  native service after the same place's new ENTER had registered it, and
+  remove it again. The new approach then got no fixes and the service
+  stopped once the ENTER was handled: a missed notification. Every approach
+  start now re-registers its place (`startVerification:<id>`, idempotent:
+  the watchdog is only ever extended) while its own event is still being
+  handled, so the deferred stop sees the place and is cancelled.
+
+Remaining known races (not fixed in Build 20; neither can cause a missed
+notification):
+
+- A stop issued by a timer (approach timeout, cooldown end, re-arm timeout)
+  with no event in flight can still remove a place whose new ENTER the
+  native service registers in the same instant. Its ENTER event is then in
+  flight, so the service waits for it, and the approach re-registers itself
+  as above. Only fixes arriving in the few milliseconds between are lost.
+- A geofence EXIT for a place that needs no measurement (ARMED) keeps the
+  foreground service notification for up to 2 minutes, until the watchdog,
+  with GPS off unless another place is verifying. Build 19 behaved the same,
+  with GPS on. Cosmetic; no arrival is affected.
 
 Diagnostics:
 

@@ -31,7 +31,8 @@ void main() {
 
       expect(session.engine?.state, DetectionState.approaching);
       expect(diagnostics, contains('PRECISE_LOCATION_STARTED'));
-      expect(commands, isEmpty);
+      // The approach re-registers itself (APP-10D); nothing is stopped.
+      expect(commands, ['startVerification']);
 
       await session.handleEvent({
         'type': 'location',

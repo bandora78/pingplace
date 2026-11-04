@@ -294,6 +294,12 @@ final class BackgroundArrivalSession {
             _preciseVerificationActive = true;
             _ignoredFixes = 0;
             onDiagnostic('PRECISE_LOCATION_STARTED');
+            // APP-10D: a stop sent while handling an earlier event can reach
+            // the native service after this place's new ENTER registered it,
+            // and remove it again. Re-registering here, before this event is
+            // handled, keeps the service (which waits for this event) and
+            // the place's fixes for the new approach. Idempotent natively.
+            await onCommand('startVerification');
             final start = _enteredAt ?? _clock();
             _timeoutTimer?.cancel();
             _timeoutTimer = Timer(engine!.config.approachTimeout, () {
