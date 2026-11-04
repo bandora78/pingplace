@@ -8,6 +8,7 @@ import android.content.pm.ServiceInfo
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -21,6 +22,9 @@ import io.flutter.embedding.engine.loader.FlutterLoader
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import java.time.Instant
+
+/** One startForegroundService call: elapsed-realtime bounds and the refusal, if any. */
+data class GeofenceStartAttempt(val invokedAt: Long, val returnedAt: Long, val failure: String?)
 
 class PreciseLocationService : Service() {
     private lateinit var fusedLocationClient: FusedLocationProviderClient
@@ -69,63 +73,160 @@ class PreciseLocationService : Service() {
         lastStartId = startId
         when (intent?.action) {
             ACTION_STOP -> stopUpdates()
-            ACTION_START_FROM_GEOFENCE -> {
-                recordDiagnostic("PRECISE_LOCATION_START_REQUESTED place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
-                intent.getStringExtra(EXTRA_PLACE_ID)?.let { activePlaceIds.add(it) }
-                pendingBackgroundEvents.add(
-                    mapOf(
-                        "type" to "enter",
-                        "targetLatitude" to intent.getDoubleExtra(EXTRA_TARGET_LATITUDE, Double.NaN),
-                        "targetLongitude" to intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN),
-                        "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
-                        "placeId" to intent.getStringExtra(EXTRA_PLACE_ID),
-                        "outerRadius" to intent.getDoubleExtra(EXTRA_OUTER_RADIUS, 300.0),
-                        "innerRadius" to intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0),
-                        "rearmRadius" to intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0),
-                        "cooldownSeconds" to intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L),
-                        "approachTimeoutSeconds" to intent.getLongExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, 600L),
-                        "maxAcceptedAccuracy" to intent.getDoubleExtra(EXTRA_MAX_ACCURACY, 50.0),
-                        "reminderText" to intent.getStringExtra(EXTRA_REMINDER_TEXT),
-                    ),
-                )
-                startBackgroundEngine()
-                startUpdates()
-                armWatchdog(BACKGROUND_WATCHDOG_MS)
-            }
-            ACTION_BACKGROUND_EVENT -> {
-                recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
-                val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
-                // APP-10D: an EXIT (or error) does not by itself need fixes.
-                // Build 19 added the place here, so an ARMED place kept
-                // receiving fixes it ignored and kept GPS running after every
-                // other place had finished, until the watchdog. The Dart
-                // session asks with startVerification when it must measure
-                // the exit distance.
-                val event = mutableMapOf<String, Any?>(
-                    "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
-                    "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
-                    "error" to intent.getStringExtra(EXTRA_ERROR),
-                    "placeId" to placeId,
-                )
-                if (intent.hasExtra(EXTRA_TARGET_LATITUDE) && intent.hasExtra(EXTRA_TARGET_LONGITUDE)) {
-                    event["targetLatitude"] = intent.getDoubleExtra(EXTRA_TARGET_LATITUDE, Double.NaN)
-                    event["targetLongitude"] = intent.getDoubleExtra(EXTRA_TARGET_LONGITUDE, Double.NaN)
-                    event["outerRadius"] = intent.getDoubleExtra(EXTRA_OUTER_RADIUS, 300.0)
-                    event["innerRadius"] = intent.getDoubleExtra(EXTRA_INNER_RADIUS, 80.0)
-                    event["rearmRadius"] = intent.getDoubleExtra(EXTRA_REARM_RADIUS, 350.0)
-                    event["cooldownSeconds"] = intent.getLongExtra(EXTRA_COOLDOWN_SECONDS, 600L)
-                    event["approachTimeoutSeconds"] = intent.getLongExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, 600L)
-                    event["maxAcceptedAccuracy"] = intent.getDoubleExtra(EXTRA_MAX_ACCURACY, 50.0)
-                }
-                pendingBackgroundEvents.add(event)
-                startForegroundShell()
-                armWatchdog(REARM_WATCHDOG_MS)
-                startBackgroundEngine()
-                flushBackgroundEvents()
-            }
+            ACTION_START_FROM_GEOFENCE -> handleGeofenceStart(intent)
+            ACTION_BACKGROUND_EVENT -> handleBackgroundEvent(intent)
             else -> startUpdates()
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * APP-10E: one start for every place of an ENTER callback. Promote to the
+     * foreground first, then read and validate the configuration; a place
+     * that is not registered never gets GPS.
+     */
+    private fun handleGeofenceStart(intent: Intent) {
+        val placeIds = intent.getStringArrayListExtra(EXTRA_PLACE_IDS).orEmpty()
+        val receivedAt = intent.getLongExtra(EXTRA_RECEIVED_ELAPSED, SystemClock.elapsedRealtime())
+        val promotion = promoteToForeground()
+        if (promotion != null) {
+            // Never verifying without the foreground service: log, request
+            // recovery and stop (the system requires startForeground or stop).
+            val recoveries = EnterRecovery.recordBlocked(
+                this,
+                placeIds.map { it.takeUnless { id -> id == PlaceDiagnostics.LEGACY_ID } },
+                promotion,
+                EnterStartRecovery.Stage.PROMOTION,
+                SystemClock.elapsedRealtime() - receivedAt,
+            )
+            if (recoveries.isNotEmpty()) EnterRecovery.request(this, recoveries, receivedAt) { }
+            stopIfIdle()
+            return
+        }
+        recordDiagnostic(
+            "FOREGROUND_PROMOTED sinceReceive=${SystemClock.elapsedRealtime() - receivedAt}ms " +
+                "places=${placeIds.joinToString(",", "[", "]")}",
+        )
+        val readStart = SystemClock.elapsedRealtime()
+        val resolution = EnterStartRecovery.resolve(
+            placeIds,
+            MultiPlaceGeofenceRegistration.targets(this),
+            legacyTarget(),
+        )
+        recordDiagnostic(
+            "GEOFENCE_TARGETS_READ took=${SystemClock.elapsedRealtime() - readStart}ms " +
+                "resolved=${resolution.resolved.size} unknown=${resolution.unknown.joinToString(",", "[", "]")}",
+        )
+        resolution.unknown.forEach { recordDiagnostic("PRECISE_LOCATION_TARGET_UNKNOWN place=$it") }
+        if (resolution.legacyTargetMissing) {
+            GeofenceEventBus.publish(this, "error", "Target coordinates are not persisted", null)
+        }
+        if (resolution.resolved.isEmpty()) {
+            stopIfIdle()
+            return
+        }
+        val timestamp = intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()
+        resolution.resolved.forEach { place ->
+            recordDiagnostic(
+                "PRECISE_LOCATION_START_REQUESTED place=${place.placeId ?: "legacy"} " +
+                    "sinceReceive=${SystemClock.elapsedRealtime() - receivedAt}ms",
+            )
+            place.placeId?.let { activePlaceIds.add(it) }
+            pendingBackgroundEvents.add(
+                mapOf(
+                    "type" to "enter",
+                    "targetLatitude" to place.latitude,
+                    "targetLongitude" to place.longitude,
+                    "timestamp" to timestamp,
+                    "placeId" to place.placeId,
+                    "outerRadius" to (place.target?.radius?.toDouble() ?: 300.0),
+                    "innerRadius" to (place.target?.innerRadius?.toDouble() ?: 80.0),
+                    "rearmRadius" to (place.target?.rearmRadius?.toDouble() ?: 350.0),
+                    "cooldownSeconds" to (place.target?.cooldownSeconds ?: 600L),
+                    "approachTimeoutSeconds" to (place.target?.approachTimeoutSeconds ?: 600L),
+                    "maxAcceptedAccuracy" to (place.target?.maxAcceptedAccuracy?.toDouble() ?: 50.0),
+                    "reminderText" to place.target?.reminderText,
+                ),
+            )
+        }
+        startBackgroundEngine()
+        startUpdates()
+        armWatchdog(BACKGROUND_WATCHDOG_MS)
+    }
+
+    private fun handleBackgroundEvent(intent: Intent) {
+        val type = intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"
+        val placeIds = intent.getStringArrayListExtra(EXTRA_PLACE_IDS)
+        val promotion = promoteToForeground()
+        if (promotion != null) {
+            recordDiagnostic(
+                "BACKGROUND_EVENT_START_BLOCKED stage=PROMOTION type=$type " +
+                    "places=${(placeIds ?: listOfNotNull(intent.getStringExtra(EXTRA_PLACE_ID))).joinToString(",", "[", "]")} " +
+                    "error=$promotion",
+            )
+            stopIfIdle()
+            return
+        }
+        val timestamp = intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()
+        // APP-10D: an EXIT (or error) does not by itself need fixes. Build 19
+        // added the place here, so an ARMED place kept receiving fixes it
+        // ignored and kept GPS running after every other place had finished,
+        // until the watchdog. The Dart session asks with startVerification
+        // when it must measure the exit distance.
+        val events = if (placeIds != null) {
+            val targets = MultiPlaceGeofenceRegistration.targets(this)
+            placeIds.map { id ->
+                val placeId = id.takeUnless { it == PlaceDiagnostics.LEGACY_ID }
+                mutableMapOf<String, Any?>(
+                    "type" to type,
+                    "timestamp" to timestamp,
+                    "error" to null,
+                    "placeId" to placeId,
+                ).also { event ->
+                    // The place's configuration lets it re-arm with the right radii.
+                    targets.firstOrNull { it.placeId == id }?.let { target ->
+                        event["targetLatitude"] = target.latitude
+                        event["targetLongitude"] = target.longitude
+                        event["outerRadius"] = target.radius.toDouble()
+                        event["innerRadius"] = target.innerRadius.toDouble()
+                        event["rearmRadius"] = target.rearmRadius.toDouble()
+                        event["cooldownSeconds"] = target.cooldownSeconds
+                        event["approachTimeoutSeconds"] = target.approachTimeoutSeconds
+                        event["maxAcceptedAccuracy"] = target.maxAcceptedAccuracy.toDouble()
+                    }
+                }
+            }
+        } else {
+            listOf(
+                mutableMapOf<String, Any?>(
+                    "type" to type,
+                    "timestamp" to timestamp,
+                    "error" to intent.getStringExtra(EXTRA_ERROR),
+                    "placeId" to intent.getStringExtra(EXTRA_PLACE_ID),
+                ),
+            )
+        }
+        events.forEach { event ->
+            recordDiagnostic("BACKGROUND_EVENT_QUEUED type=$type place=${event["placeId"] ?: "legacy"}")
+            pendingBackgroundEvents.add(event)
+        }
+        armWatchdog(REARM_WATCHDOG_MS)
+        startBackgroundEngine()
+        flushBackgroundEvents()
+    }
+
+    private fun legacyTarget(): Pair<Double, Double>? {
+        val preferences = getSharedPreferences(GeofenceEventBus.PREFS, MODE_PRIVATE)
+        val latitude = preferences.getString("target_latitude", null)?.toDoubleOrNull()
+        val longitude = preferences.getString("target_longitude", null)?.toDoubleOrNull()
+        return if (latitude != null && longitude != null) latitude to longitude else null
+    }
+
+    /** Stops the service unless a place is verifying or Dart still has events to handle. */
+    private fun stopIfIdle() {
+        val decision = VerificationPolicy.stopPlace(activePlaceIds, "", eventsInProgress())
+        if (decision.stopService) stopUpdates(stopService = true)
+        else if (decision.deferStop) stopDeferred = true
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -292,27 +393,15 @@ class PreciseLocationService : Service() {
         flushBackgroundEvents()
     }
 
-    private fun recordDiagnostic(message: String) {
-        val preferences = getSharedPreferences(BACKGROUND_PREFS, MODE_PRIVATE)
-        val entries = try {
-            val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
-            MutableList(array.length()) { array.getString(it) }
-        } catch (_: Exception) {
-            mutableListOf()
-        }
-        val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
-        val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
-        if (evicted.routine > 0) {
-            editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
-        }
-        if (evicted.critical > 0) {
-            editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
-        }
-        editor.apply()
-    }
+    private fun recordDiagnostic(message: String) = recordPipelineDiagnostic(this, message)
 
     private fun startUpdates() {
-        startForegroundShell()
+        promoteToForeground()?.let { error ->
+            // GPS only ever runs inside the foreground service.
+            recordDiagnostic("PRECISE_LOCATION_NOT_STARTED reason=FOREGROUND_PROMOTION_FAILED error=$error")
+            stopIfIdle()
+            return
+        }
         if (locationCallback != null) return
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, VerificationPolicy.INTERVAL_MS)
             .setMinUpdateIntervalMillis(VerificationPolicy.MIN_INTERVAL_MS)
@@ -387,19 +476,32 @@ class PreciseLocationService : Service() {
         watchdog.postDelayed(watchdogStop, deadline - now)
     }
 
-    private fun startForegroundShell() {
+    /**
+     * Null once the service is in the foreground; otherwise the exception's
+     * simple name. APP-10E: Android can refuse the promotion
+     * (ForegroundServiceStartNotAllowedException, or SecurityException for
+     * the location type); unguarded, that crashed the process and every
+     * place verifying in it.
+     */
+    private fun promoteToForeground(): String? {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("PingPlace")
             .setContentText("Checking arrival location temporarily")
             .setSmallIcon(applicationInfo.icon)
             .setOngoing(true)
             .build()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            notification,
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-        )
+        return try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
+            )
+            null
+        } catch (error: Exception) {
+            recordDiagnostic("FOREGROUND_PROMOTION_FAILED error=${error.javaClass.simpleName}")
+            error.javaClass.simpleName
+        }
     }
 
     private fun stopUpdates(stopService: Boolean = true) {
@@ -439,6 +541,8 @@ class PreciseLocationService : Service() {
         const val EXTRA_APPROACH_TIMEOUT_SECONDS = "approachTimeoutSeconds"
         const val EXTRA_MAX_ACCURACY = "maxAcceptedAccuracy"
         const val EXTRA_REMINDER_TEXT = "reminderText"
+        const val EXTRA_PLACE_IDS = "placeIds"
+        const val EXTRA_RECEIVED_ELAPSED = "receivedElapsedRealtime"
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
         const val BACKGROUND_PREFS = "pingplace_background"
         const val BACKGROUND_DIAGNOSTICS = "diagnostics"
@@ -460,43 +564,68 @@ class PreciseLocationService : Service() {
             instance?.handoffToForeground()
         }
 
-        fun startFromGeofence(context: android.content.Context, target: MultiPlaceGeofenceRegistration.Target) {
-            startFromGeofence(context, target.latitude, target.longitude, target)
+        /**
+         * APP-10E: one start for every place of an ENTER callback, built from
+         * the platform's request IDs only (no storage access), so it runs
+         * while the geofence exemption is still open. The service validates
+         * the IDs once it is in the foreground.
+         */
+        fun startFromGeofence(context: android.content.Context, placeIds: List<String>, receivedAt: Long): GeofenceStartAttempt =
+            startGeofenceIntent(context, ACTION_START_FROM_GEOFENCE, "enter", placeIds, receivedAt)
+
+        /**
+         * EXITs of one callback in one start. Always startForegroundService:
+         * Build 20 used startService while isRunning was still true for a
+         * service that had already begun stopping, which Android refuses
+         * from the background.
+         */
+        fun sendExitEvents(context: android.content.Context, placeIds: List<String>, receivedAt: Long): GeofenceStartAttempt =
+            startGeofenceIntent(context, ACTION_BACKGROUND_EVENT, "exit", placeIds, receivedAt)
+
+        private fun startGeofenceIntent(
+            context: android.content.Context,
+            action: String,
+            type: String,
+            placeIds: List<String>,
+            receivedAt: Long,
+        ): GeofenceStartAttempt {
+            val intent = Intent(context, PreciseLocationService::class.java).apply {
+                this.action = action
+                putExtra(EXTRA_EVENT_TYPE, type)
+                putStringArrayListExtra(EXTRA_PLACE_IDS, ArrayList(placeIds))
+                putExtra(EXTRA_RECEIVED_ELAPSED, receivedAt)
+                putExtra(EXTRA_TIMESTAMP, Instant.now().toString())
+            }
+            val invokedAt = SystemClock.elapsedRealtime()
+            val failure = try {
+                androidx.core.content.ContextCompat.startForegroundService(context, intent)
+                null
+            } catch (error: Exception) {
+                // For example ForegroundServiceStartNotAllowedException once the
+                // geofence broadcast's background-start exemption has expired.
+                error.javaClass.simpleName
+            }
+            return GeofenceStartAttempt(invokedAt, SystemClock.elapsedRealtime(), failure)
         }
 
-        fun startFromGeofence(
-            context: android.content.Context,
-            latitude: Double,
-            longitude: Double,
-            target: MultiPlaceGeofenceRegistration.Target?,
-        ) {
-            val intent = Intent(context, PreciseLocationService::class.java).apply {
-                action = ACTION_START_FROM_GEOFENCE
-                putExtra(EXTRA_TARGET_LATITUDE, latitude)
-                putExtra(EXTRA_TARGET_LONGITUDE, longitude)
-                putExtra(EXTRA_TIMESTAMP, Instant.now().toString())
-                target?.let {
-                    putExtra(EXTRA_PLACE_ID, it.placeId)
-                    putExtra(EXTRA_OUTER_RADIUS, it.radius.toDouble())
-                    putExtra(EXTRA_INNER_RADIUS, it.innerRadius.toDouble())
-                    putExtra(EXTRA_REARM_RADIUS, it.rearmRadius.toDouble())
-                    putExtra(EXTRA_COOLDOWN_SECONDS, it.cooldownSeconds)
-                    putExtra(EXTRA_APPROACH_TIMEOUT_SECONDS, it.approachTimeoutSeconds)
-                    putExtra(EXTRA_MAX_ACCURACY, it.maxAcceptedAccuracy.toDouble())
-                    putExtra(EXTRA_REMINDER_TEXT, it.reminderText)
-                }
+        /** Appends to the background pipeline log from outside the service (APP-10E). */
+        fun recordPipelineDiagnostic(context: android.content.Context, message: String) {
+            val preferences = context.getSharedPreferences(BACKGROUND_PREFS, android.content.Context.MODE_PRIVATE)
+            val entries = try {
+                val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+                MutableList(array.length()) { array.getString(it) }
+            } catch (_: Exception) {
+                mutableListOf()
             }
-            try {
-                androidx.core.content.ContextCompat.startForegroundService(context, intent)
-            } catch (error: Exception) {
-                // For example ForegroundServiceStartNotAllowedException under a
-                // background or battery restriction: the arrival cannot be verified.
-                GeofenceRecovery.recordDiagnostic(
-                    context,
-                    "PRECISE_LOCATION_START_BLOCKED place=${target?.placeId ?: "legacy"} error=${error.javaClass.simpleName}",
-                )
-                GeofenceEventBus.publish(context, "error", "Unable to start background precise location", target?.placeId)
+            val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
+            val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
+            if (evicted.routine > 0) {
+                editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
             }
+            if (evicted.critical > 0) {
+                editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
+            }
+            editor.apply()
         }
 
         fun sendBackgroundEvent(

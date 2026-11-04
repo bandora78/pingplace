@@ -13,6 +13,12 @@ class PlaceDiagnosticsTest {
     }
 
     @Test
+    fun transitionReportsHowOldTheTriggeringFixWasOnReceipt() {
+        val line = PlaceDiagnostics.transition("enter", listOf("legacy-place-1"), setOf("legacy-place-1"), 1_250)
+        assertEquals("GEOFENCE_TRANSITION enter ids=[legacy-place-1] places=[legacy-place-1] triggerAge=1250ms", line)
+    }
+
+    @Test
     fun transitionFlagsUnknownAndLegacyIds() {
         val line = PlaceDiagnostics.transition(
             "exit",

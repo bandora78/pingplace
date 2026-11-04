@@ -173,7 +173,9 @@ final class NativeVerificationFake {
     return next;
   }
 
-  Future<void> enter(String id, DateTime at) {
+  /// A geofence ENTER handled at [at]. [transitionAt] models a delivery
+  /// that reached the service later than the transition it reports.
+  Future<void> enter(String id, DateTime at, {DateTime? transitionAt}) {
     _now = at;
     final session = _process();
     activePlaceIds.add(id);
@@ -182,8 +184,25 @@ final class NativeVerificationFake {
       ..._places[id]!.config,
       'type': 'enter',
       'reminderText': 'Buy milk',
-      'timestamp': at.toIso8601String(),
+      'timestamp': (transitionAt ?? at).toIso8601String(),
     });
+  }
+
+  int blockedStarts = 0;
+
+  /// APP-10E: Android refused startForegroundService for this ENTER
+  /// (ForegroundServiceStartNotAllowedException). The service, GPS and the
+  /// Dart engine are not started, nothing reaches Dart, and the receiver
+  /// writes a START_BLOCKED outcome to the pipeline log. A service that is
+  /// already running for another place is not affected.
+  void enterBlocked(String id, DateTime at, {int sinceReceiveMs = 39362}) {
+    _now = at;
+    blockedStarts++;
+    diagnostics.add(
+      '$id APPROACH_SUMMARY outcome=START_BLOCKED visit=none stage=START '
+      'error=ForegroundServiceStartNotAllowedException '
+      'sinceReceive=${sinceReceiveMs}ms recovery=REREGISTER',
+    );
   }
 
   Future<void> exit(String id, DateTime at) {

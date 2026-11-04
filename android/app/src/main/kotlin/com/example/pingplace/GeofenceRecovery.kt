@@ -14,7 +14,7 @@ import java.time.Instant
 
 /** Serializes all platform mutations in this process, including Activity recreation. */
 internal object GeofenceLifecycleCoordinator {
-    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL, MULTI_RECONCILE }
+    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL, MULTI_RECONCILE, ENTER_RECOVERY }
 
     data class Completion(
         val generation: Long,
@@ -39,9 +39,29 @@ internal object GeofenceLifecycleCoordinator {
         kind: Kind,
         action: ((Boolean, String?) -> Unit) -> Unit,
         callback: (Completion) -> Unit,
+    ): Long = enqueue(kind, action, callback, supersede = true)
+
+    /**
+     * Queued behind every earlier operation like [submit], but does not make
+     * earlier operations stale: an APP-10E single-place re-add must never
+     * report a user's in-flight registration change as superseded. It is
+     * itself skipped as stale if a newer operation arrives before it runs;
+     * that operation re-adds or removes the place from the newest state.
+     */
+    fun submitWithoutSuperseding(
+        kind: Kind,
+        action: ((Boolean, String?) -> Unit) -> Unit,
+        callback: (Completion) -> Unit,
+    ): Long = enqueue(kind, action, callback, supersede = false)
+
+    private fun enqueue(
+        kind: Kind,
+        action: ((Boolean, String?) -> Unit) -> Unit,
+        callback: (Completion) -> Unit,
+        supersede: Boolean,
     ): Long {
         val request = synchronized(lock) {
-            val generation = ++latestGeneration
+            val generation = if (supersede) ++latestGeneration else latestGeneration
             Request(kind, generation, action, callback).also(queue::addLast)
         }
         pump()
@@ -88,6 +108,7 @@ internal object GeofenceLifecycleCoordinator {
             Kind.REGISTER, Kind.RESTORE -> "Geofence registration failed"
             Kind.REMOVE, Kind.RETRY_REMOVAL -> "Platform removal failed"
             Kind.MULTI_RECONCILE -> "Multi-place geofence reconciliation failed"
+            Kind.ENTER_RECOVERY -> "Geofence re-add failed"
         }
 }
 

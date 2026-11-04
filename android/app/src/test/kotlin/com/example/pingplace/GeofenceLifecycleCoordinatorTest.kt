@@ -63,6 +63,73 @@ class GeofenceLifecycleCoordinatorTest {
         )
         assertTrue(events.indexOf("restore-complete") < events.indexOf("retry-start"))
     }
+
+    @Test
+    fun anEnterRecoveryNeverMakesAnInFlightRegistrationStale() {
+        val events = mutableListOf<String>()
+        var registerDone: ((Boolean, String?) -> Unit)? = null
+        GeofenceLifecycleCoordinator.submit(
+            GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE,
+            { done ->
+                events += "register-start"
+                registerDone = done
+            },
+            { completion -> events += "register-stale=${completion.stale}" },
+        )
+        GeofenceLifecycleCoordinator.submitWithoutSuperseding(
+            GeofenceLifecycleCoordinator.Kind.ENTER_RECOVERY,
+            { done ->
+                events += "recovery-start"
+                done(true, null)
+            },
+            { completion -> events += "recovery-stale=${completion.stale}" },
+        )
+
+        registerDone!!.invoke(true, null)
+
+        // Serialized after the registration, which still completes as current.
+        assertEquals(
+            listOf("register-start", "register-stale=false", "recovery-start", "recovery-stale=false"),
+            events,
+        )
+    }
+
+    @Test
+    fun aQueuedEnterRecoveryIsSkippedWhenANewerRegistrationArrives() {
+        val events = mutableListOf<String>()
+        var firstDone: ((Boolean, String?) -> Unit)? = null
+        GeofenceLifecycleCoordinator.submit(
+            GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE,
+            { done ->
+                events += "register-1"
+                firstDone = done
+            },
+            { },
+        )
+        GeofenceLifecycleCoordinator.submitWithoutSuperseding(
+            GeofenceLifecycleCoordinator.Kind.ENTER_RECOVERY,
+            { done ->
+                events += "recovery-platform-add"
+                done(true, null)
+            },
+            { completion -> events += "recovery-stale=${completion.stale}" },
+        )
+        // For example the place was disabled meanwhile: the newer state wins.
+        GeofenceLifecycleCoordinator.submit(
+            GeofenceLifecycleCoordinator.Kind.MULTI_RECONCILE,
+            { done ->
+                events += "register-2"
+                done(true, null)
+            },
+            { },
+        )
+
+        firstDone!!.invoke(true, null)
+
+        assertEquals(listOf("register-1", "recovery-stale=true", "register-2"), events)
+        assertFalse(events.contains("recovery-platform-add"))
+    }
+
     @Test
     fun overlappingRegisterRemoveRegisterSkipsTheStaleRemovalBeforeItMutatesPlatform() {
         val events = mutableListOf<String>()
