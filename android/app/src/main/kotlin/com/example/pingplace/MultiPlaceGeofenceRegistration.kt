@@ -92,9 +92,15 @@ object MultiPlaceGeofenceRegistration {
     fun recoverEnter(context: Context, placeId: String, callback: (Boolean, String?) -> Unit) {
         GeofenceLifecycleCoordinator.submitWithoutSuperseding(GeofenceLifecycleCoordinator.Kind.ENTER_RECOVERY, { done ->
             val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val target = read(context)?.firstOrNull { it.placeId == placeId }
-            val applied = readApplied(context)
-            if (target == null || !preferences.getBoolean(CONFIRMED, false) || (applied != null && placeId !in applied)) {
+            val desired = read(context).orEmpty()
+            val target = desired.firstOrNull { it.placeId == placeId }
+            if (target == null || !EnterStartRecovery.mayReRegister(
+                    placeId,
+                    desired.map { it.placeId },
+                    preferences.getBoolean(CONFIRMED, false),
+                    readApplied(context),
+                )
+            ) {
                 done(false, "Place is not registered")
                 return@submitWithoutSuperseding
             }

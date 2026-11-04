@@ -199,7 +199,7 @@ final class NativeVerificationFake {
     _now = at;
     blockedStarts++;
     diagnostics.add(
-      '$id APPROACH_SUMMARY outcome=START_BLOCKED visit=none '
+      '$id APPROACH_SUMMARY outcome=START_BLOCKED visit=none stage=START '
       'error=ForegroundServiceStartNotAllowedException '
       'sinceReceive=${sinceReceiveMs}ms recovery=REREGISTER',
     );

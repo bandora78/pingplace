@@ -191,4 +191,48 @@ void main() {
     expect(native.gpsOn, isFalse);
     expect(native.serviceRunning, isFalse);
   });
+
+  // Overlapping geofences: one Android callback can report ENTER for both
+  // places. Build 21 starts them with one service start.
+  test(
+    'one callback with two ENTERs verifies both places independently',
+    () async {
+      final native = _native();
+      await native.enter(_legacy.id, _at('19:50:00'));
+      await native.enter(_junction.id, _at('19:50:00'));
+      await native.fixes(_legacy.north(40), _at('19:50:02'), 3);
+      await native.fixes(_junction.north(40), _at('19:50:10'), 3);
+
+      expect(native.notifications.deliveredVisitIds, [
+        startsWith('${_legacy.id}:visit-'),
+        startsWith('${_junction.id}:visit-'),
+      ]);
+      expect(native.gpsOn, isFalse);
+      expect(native.serviceRunning, isFalse);
+    },
+  );
+
+  test('one refused start for a two-place callback: both are logged, both '
+      'recover, each notifies once', () async {
+    final native = _native();
+    native
+      ..enterBlocked(_legacy.id, _at('19:50:00'), sinceReceiveMs: 15000)
+      ..enterBlocked(_junction.id, _at('19:50:00'), sinceReceiveMs: 15000);
+    expect(native.count('outcome=START_BLOCKED'), 2);
+    expect(native.serviceRunning, isFalse);
+
+    // Each place's geofence is re-added on its own; both ENTERs return.
+    await native.enter(_legacy.id, _at('19:50:03'));
+    await native.enter(_junction.id, _at('19:50:03'));
+    await native.fixes(_legacy.north(40), _at('19:50:05'), 3);
+    await native.fixes(_junction.north(40), _at('19:50:12'), 3);
+    // A duplicate initial-trigger ENTER for the same visit changes nothing.
+    await native.enter(_legacy.id, _at('19:50:20'));
+    await native.fixes(_legacy.north(40), _at('19:50:21'), 3);
+
+    expect(native.notifications.deliveredVisitIds, hasLength(2));
+    expect(native.count('outcome=ARRIVED'), 2);
+    expect(native.gpsOn, isFalse);
+    expect(native.serviceRunning, isFalse);
+  });
 }
