@@ -280,12 +280,15 @@ void main() {
     await rig.send(_enter(_shop, _t0.add(_s(2))));
     await rig.send(_sample(_home, 30, _t0.add(_s(10))));
 
-    expect(rig.commands, ['stopPlace:$_home']);
+    // Each approach re-registers itself when it starts (APP-10D).
+    List<String> stops() =>
+        rig.commands.where((c) => c.startsWith('stop')).toList();
+    expect(stops(), ['stopPlace:$_home']);
     expect(rig.state(_shop), DetectionState.approaching);
     await rig.send(_sample(_shop, 50, _t0.add(_s(20))));
 
     expect(rig.notifications.deliveredVisitIds, hasLength(2));
-    expect(rig.commands, ['stopPlace:$_home', 'stopPlace:$_shop']);
+    expect(stops(), ['stopPlace:$_home', 'stopPlace:$_shop']);
   });
 
   test(

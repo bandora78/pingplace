@@ -296,4 +296,69 @@ void main() {
       );
     });
   });
+
+  group('a delayed stop never ends a newer approach', () {
+    // An earlier event's stop for a place reaches the native service after the
+    // place's new ENTER was registered: here the EXIT that re-arms the place
+    // and an ENTER queued right behind it (turning back at the boundary).
+    // At 3bf876b the stop removed the place and the deferred service stop
+    // ended the new approach once the ENTER was handled: no fix, no
+    // notification.
+    test('EXIT and ENTER for the same place queued together', () async {
+      final native = _native();
+      native.runtime.placeSnapshots[_home.id] = DetectionRuntimeSnapshot(
+        state: DetectionState.cooldown,
+        target: const TargetLocation(latitude: 32.0, longitude: 34.8),
+        cooldownUntil: _t0.subtract(_min(5)),
+        exitObservedDuringCooldown: true,
+        visitId: 'visit-old',
+      );
+
+      await Future.wait([
+        native.exit(_home.id, _t0),
+        native.enter(_home.id, _t0.add(_s(1))),
+      ]);
+
+      expect(native.serviceRunning, isTrue);
+      expect(native.gpsOn, isTrue);
+      expect(native.activePlaceIds, [_home.id]);
+      await native.fix(_home.north(40), _t0.add(_s(5)));
+      expect(native.droppedFixes, 0);
+      expect(native.notifications.deliveredVisitIds, [
+        startsWith('${_home.id}:visit-'),
+      ]);
+      expect(
+        native.notifications.deliveredVisitIds.single,
+        isNot(contains('visit-old')),
+      );
+      expect(native.serviceRunning, isFalse);
+    });
+
+    test('a stale stop while another place keeps the service', () async {
+      final native = _native();
+      native.runtime.placeSnapshots[_home.id] = DetectionRuntimeSnapshot(
+        state: DetectionState.cooldown,
+        target: const TargetLocation(latitude: 32.0, longitude: 34.8),
+        cooldownUntil: _t0.subtract(_min(5)),
+        exitObservedDuringCooldown: true,
+        visitId: 'visit-old',
+      );
+      await native.enter(_shop.id, _t0);
+
+      await Future.wait([
+        native.exit(_home.id, _t0.add(_s(1))),
+        native.enter(_home.id, _t0.add(_s(2))),
+      ]);
+      expect(native.activePlaceIds, containsAll([_home.id, _shop.id]));
+      await native.fix(_home.north(40), _t0.add(_s(6)));
+
+      expect(native.notifications.deliveredVisitIds, [
+        startsWith('${_home.id}:visit-'),
+      ]);
+      expect(
+        native.runtime.placeSnapshots[_shop.id]?.state,
+        DetectionState.approaching,
+      );
+    });
+  });
 }
