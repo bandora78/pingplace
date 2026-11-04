@@ -660,6 +660,37 @@ notification result, about 150 `EXIT_OBSERVED_DURING_COOLDOWN` and 196
 while that place was ARMED. The missed visit's own lines had been evicted, so
 the failing visit is explained from code and a reproduction, not from its log.
 
+Full report (export 06:18:30Z) evidence:
+
+- The pipeline log retains only 05:37:28-05:40:44Z: 196 `legacy-place-1
+  LOCATION_IGNORED ... state=ARMED`, 150 `EXIT_OBSERVED_DURING_COOLDOWN` and
+  149 `LOCATION` lines for place 2 (one fix per second), 5 other lines.
+- Native callbacks that morning: ENTER legacy-place-1 05:28:44, EXIT 05:29:29;
+  ENTER Anita 05:29:34, EXIT 05:29:54; ENTER place 2 05:29:44, EXIT 05:30:54.
+  None after 05:30:54.
+- Place 2 re-armed at 05:39:58, so it arrived at 05:29:58 (cooldown 10 min).
+  Its stop was `KEPT_FOR [legacy-place-1]`, and the watchdog at 05:40:44 is
+  exactly 11 minutes after place 2's ENTER.
+- legacy-place-1 was ARMED at 05:37 with no visit ID, so the 05:28:44 visit
+  never arrived (an arrival would still be in cooldown) and no approach state
+  survived (an approach leaves its visit ID). Of the possible states before
+  that ENTER, only an expired cooldown with an observed exit, re-armed inside
+  the ENTER, explains both, together with the service stopping before the
+  approach was saved. A suppressed ENTER (WAITING_FOR_EXIT) would have left
+  the place in that state or re-armed it on EXIT, which removes it from the
+  GPS list. Neither matches.
+- Anita (visit started 05:29:34, the ENTER time) is ARMED with that visit ID:
+  a 20-second pass that ended without an arrival.
+
+`test/field_replay_2026_11_04_test.dart` replays this timeline. Against the
+Build 19 code it notifies only place 2 and logs `EXIT_OBSERVED_DURING_COOLDOWN`
+for every fix, with GPS still running at the end. With Build 20 it notifies at
+legacy-place-1 and place 2, stops GPS, and logs under 150 lines. The test
+store cannot lose a save when the service stops, so in the Build 19 replay
+legacy-place-1 keeps its visit ID and its EXIT removes it from the GPS list.
+On the phone the save was lost and it stayed on the list (the 196
+`LOCATION_IGNORED state=ARMED`), which Build 20's EXIT change prevents.
+
 Root cause (reproduced): a place that left during its cooldown (exit observed)
 and returned after the cooldown had expired while no process was running
 re-armed inside the ENTER handler. The re-arm emitted "precise location
