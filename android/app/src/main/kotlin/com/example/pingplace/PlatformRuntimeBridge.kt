@@ -285,10 +285,16 @@ object ArrivalNotificationBridge {
     }
 
     private fun backgroundDiagnostics(context: Context): List<String> = try {
-        val serialized = context.getSharedPreferences("pingplace_background", Context.MODE_PRIVATE)
-            .getString("diagnostics", "[]")
-        val array = JSONArray(serialized)
-        buildList { for (index in 0 until array.length()) add(array.getString(index)) }
+        val preferences = context.getSharedPreferences(PreciseLocationService.BACKGROUND_PREFS, Context.MODE_PRIVATE)
+        val array = JSONArray(preferences.getString(PreciseLocationService.BACKGROUND_DIAGNOSTICS, "[]"))
+        val entries = List(array.length()) { array.getString(it) }
+        // Not stored: states how much history the bounded log has dropped.
+        val retention = "${Instant.now()} " + DiagnosticRetention.summaryLine(
+            retained = entries.size,
+            evictedRoutine = preferences.getLong(PreciseLocationService.EVICTED_ROUTINE, 0L),
+            evictedCritical = preferences.getLong(PreciseLocationService.EVICTED_CRITICAL, 0L),
+        )
+        listOf(retention) + entries
     } catch (_: Exception) {
         emptyList()
     }

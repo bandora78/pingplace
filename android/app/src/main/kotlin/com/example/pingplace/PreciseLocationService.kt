@@ -92,7 +92,12 @@ class PreciseLocationService : Service() {
             ACTION_BACKGROUND_EVENT -> {
                 recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
-                if (placeId != null) activePlaceIds.add(placeId)
+                // APP-10D: an EXIT (or error) does not by itself need fixes.
+                // Build 19 added the place here, so an ARMED place kept
+                // receiving fixes it ignored and kept GPS running after every
+                // other place had finished, until the watchdog. The Dart
+                // session asks with startVerification when it must measure
+                // the exit distance.
                 val event = mutableMapOf<String, Any?>(
                     "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
                     "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
@@ -251,14 +256,21 @@ class PreciseLocationService : Service() {
 
     private fun recordDiagnostic(message: String) {
         val preferences = getSharedPreferences(BACKGROUND_PREFS, MODE_PRIVATE)
-        val diagnostics = try {
-            JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+        val entries = try {
+            val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+            MutableList(array.length()) { array.getString(it) }
         } catch (_: Exception) {
-            JSONArray()
+            mutableListOf()
         }
-        diagnostics.put("${Instant.now()} $message")
-        while (diagnostics.length() > MAX_DIAGNOSTICS) diagnostics.remove(0)
-        preferences.edit().putString(BACKGROUND_DIAGNOSTICS, diagnostics.toString()).apply()
+        val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
+        val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
+        if (evicted.routine > 0) {
+            editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
+        }
+        if (evicted.critical > 0) {
+            editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
+        }
+        editor.apply()
     }
 
     private fun startUpdates() {
@@ -391,10 +403,11 @@ class PreciseLocationService : Service() {
         const val EXTRA_MAX_ACCURACY = "maxAcceptedAccuracy"
         const val EXTRA_REMINDER_TEXT = "reminderText"
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
-        private const val BACKGROUND_PREFS = "pingplace_background"
-        private const val BACKGROUND_DIAGNOSTICS = "diagnostics"
-        // A 10-minute approach at one fix per 2 s must not push its ENTER out.
-        private const val MAX_DIAGNOSTICS = 500
+        const val BACKGROUND_PREFS = "pingplace_background"
+        const val BACKGROUND_DIAGNOSTICS = "diagnostics"
+        // Bounded at DiagnosticRetention.MAX_ENTRIES; routine lines go first.
+        const val EVICTED_ROUTINE = "diagnostics_evicted_routine"
+        const val EVICTED_CRITICAL = "diagnostics_evicted_critical"
         private const val BACKGROUND_WATCHDOG_MS = 11 * 60 * 1000L
         private const val REARM_WATCHDOG_MS = 2 * 60 * 1000L
         private const val CHANNEL_ID = "pingplace_precise_location"

@@ -32,7 +32,14 @@ final class BackgroundArrivalSession {
   String? _sampleDetail;
   String _reminderText = 'עצור בתחנת דלק יעד';
   bool _preciseVerificationActive = false;
+  bool _exitObservedLogged = false;
+  int _ignoredFixes = 0;
   Future<void> _eventTail = Future<void>.value();
+
+  /// Log the first ignored fix of a run, then every [_ignoredFixLogEvery]th
+  /// with a count, so fixes routed to a place that does not need them cannot
+  /// push visit and notification evidence out of the bounded log.
+  static const _ignoredFixLogEvery = 30;
 
   void dispose() {
     _timeoutTimer?.cancel();
@@ -98,7 +105,11 @@ final class BackgroundArrivalSession {
       _enteredAt = timestamp;
       // An exit observed during a cooldown that has since expired re-arms the
       // place now, so this ENTER starts a new visit instead of being ignored.
-      await _applyElapsedCooldown();
+      // APP-10D: the re-arm must not release the place's precise location.
+      // Build 19 forwarded the re-arm's stop to the native service, which
+      // stopped routing fixes to this place (and stopped GPS when no other
+      // place was verifying) just before this ENTER started the approach.
+      await _applyElapsedCooldown(releaseVerification: false);
       switch (engine!.state) {
         case DetectionState.approaching:
           // Persisted APPROACHING without a running verifier means the
@@ -106,9 +117,11 @@ final class BackgroundArrivalSession {
           // ENTER in that state, so the place could never notify again.
           onDiagnostic(
             _preciseVerificationActive
-                ? 'ENTER_DURING_ACTIVE_APPROACH window restarted'
+                ? 'ENTER_DURING_ACTIVE_APPROACH window restarted '
+                      'visit=${engine!.visitId ?? 'none'}'
                 : 'APPROACH_RESTARTED_FROM_PERSISTED_STATE '
-                      'since=${_iso(engine!.approachStartedAt)}',
+                      'since=${_iso(engine!.approachStartedAt)} '
+                      'visit=${engine!.visitId ?? 'none'}',
           );
           _exitConfirmationTimer?.cancel();
           _exitConfirmationTimer = null;
@@ -119,7 +132,8 @@ final class BackgroundArrivalSession {
           onDiagnostic(
             'ENTER_SUPPRESSED reason=COOLDOWN '
             'until=${_iso(engine!.cooldownUntil)} '
-            'exitObserved=${engine!.exitObservedDuringCooldown}',
+            'exitObserved=${engine!.exitObservedDuringCooldown} '
+            'lastVisit=${engine!.visitId ?? 'none'}',
           );
           if (!_preciseVerificationActive) await _stopService();
           return;
@@ -127,7 +141,8 @@ final class BackgroundArrivalSession {
           onDiagnostic(
             'ENTER_SUPPRESSED reason=WAITING_FOR_EXIT '
             'rearm needs a precise sample >= '
-            '${engine!.config.rearmRadius.round()}m after the last arrival',
+            '${engine!.config.rearmRadius.round()}m after the last arrival '
+            'lastVisit=${engine!.visitId ?? 'none'}',
           );
           if (!_preciseVerificationActive) await _stopService();
           return;
@@ -139,6 +154,9 @@ final class BackgroundArrivalSession {
       _approach = _ApproachStats(timestamp);
       await _process(engine!.dispatch(const Arm()));
       await _process(engine!.dispatch(OuterEnter(at: timestamp)));
+      if (engine!.state == DetectionState.approaching) {
+        onDiagnostic('APPROACH_STARTED visit=${engine!.visitId ?? 'none'}');
+      }
     } else if (type == 'exit') {
       onDiagnostic('BACKGROUND_EXIT_RECEIVED');
       if (engine != null) {
@@ -173,10 +191,14 @@ final class BackgroundArrivalSession {
           (engine!.state != DetectionState.approaching &&
               engine!.state != DetectionState.cooldown &&
               engine!.state != DetectionState.waitingForExit)) {
-        onDiagnostic(
-          'LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION '
-          'state=${engine!.state.name.toUpperCase()}',
-        );
+        _ignoredFixes++;
+        if (_ignoredFixes == 1 || _ignoredFixes % _ignoredFixLogEvery == 0) {
+          onDiagnostic(
+            'LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION '
+            'state=${engine!.state.name.toUpperCase()} '
+            'count=$_ignoredFixes',
+          );
+        }
         return;
       }
       final timestamp = DateTime.tryParse(
@@ -244,11 +266,18 @@ final class BackgroundArrivalSession {
     }
   }
 
-  Future<void> _process(DetectionResult result) async {
+  /// [releaseVerification] false keeps the native service routing fixes to
+  /// this place when the result stops precise location, because the event
+  /// being handled is about to start a new approach that needs them.
+  Future<void> _process(
+    DetectionResult result, {
+    bool releaseVerification = true,
+  }) async {
     // Persist before a stop command can destroy the headless Flutter engine.
     await _saveRuntimeState();
     _summarizeApproach(result);
     var stopRequested = false;
+    var rearmVerificationComplete = false;
     try {
       for (final effect in result.effects) {
         if (effect.type == DetectionEffectType.preciseLocationStopped) {
@@ -260,8 +289,10 @@ final class BackgroundArrivalSession {
         switch (effect.type) {
           case DetectionEffectType.stateChanged:
             onDiagnostic('STATE ${effect.from!.name} -> ${effect.to!.name}');
+            if (effect.to == DetectionState.armed) _exitObservedLogged = false;
           case DetectionEffectType.preciseLocationStarted:
             _preciseVerificationActive = true;
+            _ignoredFixes = 0;
             onDiagnostic('PRECISE_LOCATION_STARTED');
             final start = _enteredAt ?? _clock();
             _timeoutTimer?.cancel();
@@ -304,7 +335,19 @@ final class BackgroundArrivalSession {
               onDiagnostic('NOTIFICATION_FAILED: $error');
             }
           case DetectionEffectType.exitObservedDuringCooldown:
-            onDiagnostic('EXIT_OBSERVED_DURING_COOLDOWN');
+            // The engine reports this for every fix beyond the re-arm radius.
+            // One is enough: the place re-arms when its cooldown ends.
+            if (!_exitObservedLogged) {
+              _exitObservedLogged = true;
+              onDiagnostic(
+                'EXIT_OBSERVED_DURING_COOLDOWN '
+                'rearmAt=${_iso(engine!.cooldownUntil)}',
+              );
+            }
+            if (_preciseVerificationActive &&
+                engine!.state == DetectionState.cooldown) {
+              rearmVerificationComplete = true;
+            }
           case DetectionEffectType.approachTimeout:
             _timeoutTimer?.cancel();
             _timeoutTimer = null;
@@ -346,6 +389,22 @@ final class BackgroundArrivalSession {
         _rearmTimer = null;
         _exitConfirmationTimer?.cancel();
         _exitConfirmationTimer = null;
+        if (releaseVerification) {
+          onDiagnostic('PRECISE_LOCATION_STOPPED');
+          await _stopService();
+        } else {
+          onDiagnostic('PRECISE_LOCATION_KEPT reason=NEW_APPROACH');
+        }
+      } else if (rearmVerificationComplete) {
+        // Nothing left to measure for this place until its cooldown ends;
+        // stop only this place, never another place's verification.
+        _preciseVerificationActive = false;
+        _rearmTimer?.cancel();
+        _rearmTimer = null;
+        onDiagnostic(
+          'REARM_VERIFICATION_COMPLETE exitObserved=true '
+          'rearmAt=${_iso(engine!.cooldownUntil)}',
+        );
         onDiagnostic('PRECISE_LOCATION_STOPPED');
         await _stopService();
       }
@@ -366,7 +425,6 @@ final class BackgroundArrivalSession {
   /// they were, and why the approach ended.
   void _summarizeApproach(DetectionResult result) {
     final stats = _approach;
-    if (stats == null) return;
     String? outcome;
     for (final effect in result.effects) {
       if (effect.type == DetectionEffectType.innerReached) {
@@ -382,8 +440,25 @@ final class BackgroundArrivalSession {
       }
     }
     if (outcome == null) return;
+    final visit = engine?.visitId ?? 'none';
+    if (stats == null) {
+      // The approach began in an earlier process (killed by the watchdog or
+      // the OS) and ended here: its samples are gone, but its end is not.
+      final endedApproach = result.effects.any(
+        (effect) =>
+            effect.type == DetectionEffectType.stateChanged &&
+            effect.from == DetectionState.approaching,
+      );
+      if (endedApproach) {
+        onDiagnostic(
+          'APPROACH_SUMMARY outcome=$outcome visit=$visit restored=true '
+          'samples=unknown',
+        );
+      }
+      return;
+    }
     _approach = null;
-    onDiagnostic(stats.summary(outcome, _clock()));
+    onDiagnostic(stats.summary(outcome, _clock(), visit));
   }
 
   static String _iso(DateTime? value) =>
@@ -391,17 +466,24 @@ final class BackgroundArrivalSession {
 
   /// A persisted cooldown can expire while no background process is running.
   /// Apply it now instead of waiting for a timer that was never scheduled.
-  Future<void> _applyElapsedCooldown() async {
+  Future<void> _applyElapsedCooldown({bool releaseVerification = true}) async {
     final until = engine?.cooldownUntil;
     if (engine?.state != DetectionState.cooldown || until == null) return;
     if (_clock().isBefore(until)) return;
-    onDiagnostic('COOLDOWN_ELAPSED_WHILE_STOPPED');
-    await _process(engine!.dispatch(CooldownElapsed(until)));
+    onDiagnostic(
+      'COOLDOWN_ELAPSED_WHILE_STOPPED until=${_iso(until)} '
+      'exitObserved=${engine!.exitObservedDuringCooldown}',
+    );
+    await _process(
+      engine!.dispatch(CooldownElapsed(until)),
+      releaseVerification: releaseVerification,
+    );
   }
 
   void _startRearmVerification() {
     if (_preciseVerificationActive) return;
     _preciseVerificationActive = true;
+    _ignoredFixes = 0;
     _rearmTimer?.cancel();
     _rearmTimer = Timer(engine!.config.approachTimeout, () {
       unawaited(_handleRearmTimeout());
@@ -516,11 +598,11 @@ final class _ApproachStats {
     }
   }
 
-  String summary(String outcome, DateTime now) {
+  String summary(String outcome, DateTime now, String visit) {
     final firstFix = firstSampleAt == null
         ? 'none'
         : '${firstSampleAt!.difference(enteredAt).inSeconds}s';
-    return 'APPROACH_SUMMARY outcome=$outcome '
+    return 'APPROACH_SUMMARY outcome=$outcome visit=$visit '
         'samples=$samples accepted=$accepted '
         'rejectedLowAccuracy=${samples - accepted} '
         'closest=${closest == null ? 'none' : '${closest!.toStringAsFixed(1)}m'}'
