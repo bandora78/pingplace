@@ -31,6 +31,9 @@ class PreciseLocationService : Service() {
     private var backgroundEngineStarting = false
     private val pendingBackgroundEvents = mutableListOf<Map<String, Any?>>()
     private val activePlaceIds = linkedSetOf<String>()
+    // Events handed to Dart that it has not finished handling.
+    private var inFlightEvents = 0
+    private var stopDeferred = false
     private var lastStartId = 0
     private var updatesStartedAtMillis = 0L
     private var firstFixLogged = false
@@ -92,7 +95,12 @@ class PreciseLocationService : Service() {
             ACTION_BACKGROUND_EVENT -> {
                 recordDiagnostic("BACKGROUND_EVENT_QUEUED type=${intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"} place=${intent.getStringExtra(EXTRA_PLACE_ID) ?: "legacy"}")
                 val placeId = intent.getStringExtra(EXTRA_PLACE_ID)
-                if (placeId != null) activePlaceIds.add(placeId)
+                // APP-10D: an EXIT (or error) does not by itself need fixes.
+                // Build 19 added the place here, so an ARMED place kept
+                // receiving fixes it ignored and kept GPS running after every
+                // other place had finished, until the watchdog. The Dart
+                // session asks with startVerification when it must measure
+                // the exit distance.
                 val event = mutableMapOf<String, Any?>(
                     "type" to (intent.getStringExtra(EXTRA_EVENT_TYPE) ?: "error"),
                     "timestamp" to (intent.getStringExtra(EXTRA_TIMESTAMP) ?: Instant.now().toString()),
@@ -175,11 +183,17 @@ class PreciseLocationService : Service() {
                         if (placeId == null) {
                             stopUpdates(stopService = true)
                         } else {
-                            val decision = VerificationPolicy.stopPlace(activePlaceIds, placeId)
+                            val decision = VerificationPolicy.stopPlace(activePlaceIds, placeId, eventsInProgress())
                             activePlaceIds.remove(placeId)
                             if (decision.stopService) {
                                 recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=STOPPING")
                                 stopUpdates(stopService = true)
+                            } else if (decision.deferStop) {
+                                // No place needs fixes: GPS off now, the service
+                                // once Dart has handled every queued event.
+                                recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=STOPPING_AFTER_EVENTS events=${eventsInProgress()}")
+                                stopLocationUpdatesOnly()
+                                stopDeferred = true
                             } else {
                                 recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=KEPT_FOR ${decision.remaining.joinToString(",", "[", "]")}")
                             }
@@ -231,8 +245,37 @@ class PreciseLocationService : Service() {
         if (!backgroundReady) return
         val channel = backgroundControl ?: return
         while (pendingBackgroundEvents.isNotEmpty()) {
-            channel.invokeMethod("event", pendingBackgroundEvents.removeAt(0))
+            inFlightEvents++
+            channel.invokeMethod(
+                "event",
+                pendingBackgroundEvents.removeAt(0),
+                object : MethodChannel.Result {
+                    override fun success(result: Any?) = eventHandled()
+                    override fun error(code: String, message: String?, details: Any?) = eventHandled()
+                    override fun notImplemented() = eventHandled()
+                },
+            )
         }
+    }
+
+    private fun eventsInProgress(): Int = inFlightEvents + pendingBackgroundEvents.size
+
+    private fun eventHandled() {
+        inFlightEvents = maxOf(0, inFlightEvents - 1)
+        if (!stopDeferred) return
+        if (activePlaceIds.isNotEmpty()) {
+            // A place started verifying meanwhile; its own stop decides.
+            stopDeferred = false
+        } else if (VerificationPolicy.runDeferredStop(stopDeferred, activePlaceIds, eventsInProgress())) {
+            recordDiagnostic("BACKGROUND_SERVICE_STOPPING after queued events")
+            stopUpdates(stopService = true)
+        }
+    }
+
+    private fun stopLocationUpdatesOnly() {
+        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
+        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+        locationCallback = null
     }
 
     private fun sendBackgroundEvent(payload: Map<String, Any?>) {
@@ -251,14 +294,21 @@ class PreciseLocationService : Service() {
 
     private fun recordDiagnostic(message: String) {
         val preferences = getSharedPreferences(BACKGROUND_PREFS, MODE_PRIVATE)
-        val diagnostics = try {
-            JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+        val entries = try {
+            val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
+            MutableList(array.length()) { array.getString(it) }
         } catch (_: Exception) {
-            JSONArray()
+            mutableListOf()
         }
-        diagnostics.put("${Instant.now()} $message")
-        while (diagnostics.length() > MAX_DIAGNOSTICS) diagnostics.remove(0)
-        preferences.edit().putString(BACKGROUND_DIAGNOSTICS, diagnostics.toString()).apply()
+        val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
+        val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
+        if (evicted.routine > 0) {
+            editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
+        }
+        if (evicted.critical > 0) {
+            editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
+        }
+        editor.apply()
     }
 
     private fun startUpdates() {
@@ -353,9 +403,8 @@ class PreciseLocationService : Service() {
     }
 
     private fun stopUpdates(stopService: Boolean = true) {
-        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
-        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
-        locationCallback = null
+        if (stopService) stopDeferred = false
+        stopLocationUpdatesOnly()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         // stopSelf(startId) leaves the service running if a newer start (for
         // example another place's ENTER) is already queued.
@@ -391,10 +440,11 @@ class PreciseLocationService : Service() {
         const val EXTRA_MAX_ACCURACY = "maxAcceptedAccuracy"
         const val EXTRA_REMINDER_TEXT = "reminderText"
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
-        private const val BACKGROUND_PREFS = "pingplace_background"
-        private const val BACKGROUND_DIAGNOSTICS = "diagnostics"
-        // A 10-minute approach at one fix per 2 s must not push its ENTER out.
-        private const val MAX_DIAGNOSTICS = 500
+        const val BACKGROUND_PREFS = "pingplace_background"
+        const val BACKGROUND_DIAGNOSTICS = "diagnostics"
+        // Bounded at DiagnosticRetention.MAX_ENTRIES; routine lines go first.
+        const val EVICTED_ROUTINE = "diagnostics_evicted_routine"
+        const val EVICTED_CRITICAL = "diagnostics_evicted_critical"
         private const val BACKGROUND_WATCHDOG_MS = 11 * 60 * 1000L
         private const val REARM_WATCHDOG_MS = 2 * 60 * 1000L
         private const val CHANNEL_ID = "pingplace_precise_location"
@@ -507,5 +557,6 @@ class PreciseLocationService : Service() {
         backgroundEngineStarting = false
         backgroundReady = false
         pendingBackgroundEvents.clear()
+        inFlightEvents = 0
     }
 }

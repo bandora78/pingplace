@@ -646,6 +646,126 @@ Steps on the Xiaomi 15 (Build 19, installed as an update):
 5. During a cooldown, a revisit must still produce `ENTER_SUPPRESSED
    reason=COOLDOWN` and no notification.
 
+Build 19 field result (2026-11-04): install and data preservation passed; the
+third visit to legacy-place-1 did not notify. See APP-10D.
+
+## APP-10D third-visit failure and log flooding (Build 20)
+
+Field evidence (Build 19, Xiaomi 15, export 2026-11-04T05:43:03Z): three
+visits to legacy-place-1, the third without a notification; two visits to
+location 2. The 500-entry background log held no `APPROACH_SUMMARY` and no
+notification result, about 150 `EXIT_OBSERVED_DURING_COOLDOWN` and 196
+`LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION` lines, and
+`BACKGROUND_VERIFICATION_WATCHDOG_STOPPED` for legacy-place-1 at 05:40:44Z
+while that place was ARMED. The missed visit's own lines had been evicted, so
+the failing visit is explained from code and a reproduction, not from its log.
+
+Full report (export 06:18:30Z) evidence:
+
+- The pipeline log retains only 05:37:28-05:40:44Z: 196 `legacy-place-1
+  LOCATION_IGNORED ... state=ARMED`, 150 `EXIT_OBSERVED_DURING_COOLDOWN` and
+  149 `LOCATION` lines for place 2 (one fix per second), 5 other lines.
+- Native callbacks that morning: ENTER legacy-place-1 05:28:44, EXIT 05:29:29;
+  ENTER Anita 05:29:34, EXIT 05:29:54; ENTER place 2 05:29:44, EXIT 05:30:54.
+  None after 05:30:54.
+- Place 2 re-armed at 05:39:58, so it arrived at 05:29:58 (cooldown 10 min).
+  Its stop was `KEPT_FOR [legacy-place-1]`, and the watchdog at 05:40:44 is
+  exactly 11 minutes after place 2's ENTER.
+- legacy-place-1 was ARMED at 05:37 with no visit ID, so the 05:28:44 visit
+  never arrived (an arrival would still be in cooldown) and no approach state
+  survived (an approach leaves its visit ID). Of the possible states before
+  that ENTER, only an expired cooldown with an observed exit, re-armed inside
+  the ENTER, explains both, together with the service stopping before the
+  approach was saved. A suppressed ENTER (WAITING_FOR_EXIT) would have left
+  the place in that state or re-armed it on EXIT, which removes it from the
+  GPS list. Neither matches.
+- Anita (visit started 05:29:34, the ENTER time) is ARMED with that visit ID:
+  a 20-second pass that ended without an arrival.
+
+`test/field_replay_2026_11_04_test.dart` replays this timeline. Against the
+Build 19 code it notifies only place 2 and logs `EXIT_OBSERVED_DURING_COOLDOWN`
+for every fix, with GPS still running at the end. With Build 20 it notifies at
+legacy-place-1 and place 2, stops GPS, and logs under 150 lines. The test
+store cannot lose a save when the service stops, so in the Build 19 replay
+legacy-place-1 keeps its visit ID and its EXIT removes it from the GPS list.
+On the phone the save was lost and it stayed on the list (the 196
+`LOCATION_IGNORED state=ARMED`), which Build 20's EXIT change prevents.
+
+Root cause (reproduced): a place that left during its cooldown (exit observed)
+and returned after the cooldown had expired while no process was running
+re-armed inside the ENTER handler. The re-arm emitted "precise location
+stopped", which the session forwarded as `stopPlace:<id>`. The native service
+removed the place from the places it routes fixes to and, with no other place
+verifying, stopped GPS and the service. The same ENTER then started the
+approach (`STATE armed -> approaching`, `PRECISE_LOCATION_STARTED`), but no
+fix ever reached it: no ARRIVED, no summary, no notification. Whether a visit
+is affected depends only on when the previous visit's EXIT came: within the
+10-minute cooldown (affected) or after it (not affected). Visit identity is
+not involved: the reproduction gets a new `visit-...` ID for every visit.
+
+Other defects fixed:
+
+- A geofence EXIT registered the place for GPS fixes in the native service even
+  when the place needed none (for example an ARMED place). It then received
+  and ignored every fix (`LOCATION_IGNORED`), and kept GPS running after every
+  other place had finished, until the watchdog. The session now asks for fixes
+  explicitly (`startVerification`) when it must measure an exit.
+- After an exit was observed during the cooldown, GPS kept running for that
+  place and logged `EXIT_OBSERVED_DURING_COOLDOWN` for every fix. Nothing more
+  needs measuring: the place now stops only its own verification
+  (`REARM_VERIFICATION_COMPLETE`) and re-arms when the cooldown ends, as
+  before. Another place's approach continues.
+- Found in review: with the EXIT change above, nothing kept the service alive
+  for EXITs that Dart had not handled yet. When one geofence callback reports
+  EXIT for several places (as at 2026-11-03T21:33:22Z), the first place's stop
+  could destroy the engine with the other EXITs still queued, so a place
+  waiting to measure its exit would miss it. The native service now counts
+  events delivered to Dart until Dart has handled them. When the last place
+  stops while events are pending, GPS stops at once and the service stops
+  after those events (`service=STOPPING_AFTER_EVENTS`). The watchdog still
+  stops it if Dart never answers.
+
+Diagnostics:
+
+- The background log evicts routine per-fix lines (`LOCATION distance=`,
+  `LOCATION_IGNORED`, `LOCATION_REJECTED`, `EXIT_OBSERVED_DURING_COOLDOWN`,
+  `BACKGROUND_EVENT_QUEUED`) before anything else. State transitions, visit
+  summaries, notification results, startup failures and errors are evicted
+  only when nothing routine is left. The export starts with
+  `LOG_RETENTION retained=N max=500 evictedRoutine=N evictedCritical=N`.
+- `LOCATION_IGNORED` is logged for the first ignored fix and then every 30th,
+  with `count=N`. `EXIT_OBSERVED_DURING_COOLDOWN` is logged once per cooldown.
+- New: `APPROACH_STARTED visit=...`; `PRECISE_LOCATION_KEPT
+  reason=NEW_APPROACH`; `COOLDOWN_ELAPSED_WHILE_STOPPED until=...
+  exitObserved=...`. `APPROACH_SUMMARY` includes `visit=`. An approach that
+  ends in a later process (watchdog or OS kill) gets `APPROACH_SUMMARY ...
+  restored=true samples=unknown`. `ENTER_SUPPRESSED` includes `lastVisit=`.
+
+Unchanged: arrival within 80 m at accuracy <= 50 m, 10-minute per-place
+cooldowns, re-arm only after a confirmed exit beyond 350 m, at most one
+notification per visit, temporary precise location only, saved places and
+reminders.
+
+Steps on the Xiaomi 15 (Build 20, installed as an update):
+
+1. Visit legacy-place-1: expect `APPROACH_STARTED visit=...`, then
+   `APPROACH_SUMMARY outcome=ARRIVED` and `NOTIFICATION_SENT` with the same
+   visit ID.
+2. Leave **within 10 minutes** of arriving, beyond about 350 m. Expect one
+   `EXIT_OBSERVED_DURING_COOLDOWN`, then `REARM_VERIFICATION_COMPLETE` and the
+   GPS notification going away.
+3. Return more than 10 minutes after the arrival. Expect
+   `COOLDOWN_ELAPSED_WHILE_STOPPED ... exitObserved=true`,
+   `PRECISE_LOCATION_KEPT reason=NEW_APPROACH`, `APPROACH_STARTED` and a
+   notification with a new visit ID. This is the Build 19 failure.
+4. Repeat once, leaving **after** the cooldown instead (`REARMED_ON_EXIT`), and
+   return for a third notification.
+5. A revisit during a cooldown must still produce `ENTER_SUPPRESSED
+   reason=COOLDOWN` and no notification.
+6. Export diagnostics. The first background line should show
+   `evictedCritical=0`, and each visit should have its summary and
+   notification result.
+
 Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
 seconds apart, and no notification followed.
 
