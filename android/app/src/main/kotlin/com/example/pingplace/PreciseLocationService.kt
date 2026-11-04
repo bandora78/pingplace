@@ -31,6 +31,9 @@ class PreciseLocationService : Service() {
     private var backgroundEngineStarting = false
     private val pendingBackgroundEvents = mutableListOf<Map<String, Any?>>()
     private val activePlaceIds = linkedSetOf<String>()
+    // Events handed to Dart that it has not finished handling.
+    private var inFlightEvents = 0
+    private var stopDeferred = false
     private var lastStartId = 0
     private var updatesStartedAtMillis = 0L
     private var firstFixLogged = false
@@ -180,11 +183,17 @@ class PreciseLocationService : Service() {
                         if (placeId == null) {
                             stopUpdates(stopService = true)
                         } else {
-                            val decision = VerificationPolicy.stopPlace(activePlaceIds, placeId)
+                            val decision = VerificationPolicy.stopPlace(activePlaceIds, placeId, eventsInProgress())
                             activePlaceIds.remove(placeId)
                             if (decision.stopService) {
                                 recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=STOPPING")
                                 stopUpdates(stopService = true)
+                            } else if (decision.deferStop) {
+                                // No place needs fixes: GPS off now, the service
+                                // once Dart has handled every queued event.
+                                recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=STOPPING_AFTER_EVENTS events=${eventsInProgress()}")
+                                stopLocationUpdatesOnly()
+                                stopDeferred = true
                             } else {
                                 recordDiagnostic("PLACE_VERIFICATION_STOPPED place=$placeId service=KEPT_FOR ${decision.remaining.joinToString(",", "[", "]")}")
                             }
@@ -236,8 +245,37 @@ class PreciseLocationService : Service() {
         if (!backgroundReady) return
         val channel = backgroundControl ?: return
         while (pendingBackgroundEvents.isNotEmpty()) {
-            channel.invokeMethod("event", pendingBackgroundEvents.removeAt(0))
+            inFlightEvents++
+            channel.invokeMethod(
+                "event",
+                pendingBackgroundEvents.removeAt(0),
+                object : MethodChannel.Result {
+                    override fun success(result: Any?) = eventHandled()
+                    override fun error(code: String, message: String?, details: Any?) = eventHandled()
+                    override fun notImplemented() = eventHandled()
+                },
+            )
         }
+    }
+
+    private fun eventsInProgress(): Int = inFlightEvents + pendingBackgroundEvents.size
+
+    private fun eventHandled() {
+        inFlightEvents = maxOf(0, inFlightEvents - 1)
+        if (!stopDeferred) return
+        if (activePlaceIds.isNotEmpty()) {
+            // A place started verifying meanwhile; its own stop decides.
+            stopDeferred = false
+        } else if (VerificationPolicy.runDeferredStop(stopDeferred, activePlaceIds, eventsInProgress())) {
+            recordDiagnostic("BACKGROUND_SERVICE_STOPPING after queued events")
+            stopUpdates(stopService = true)
+        }
+    }
+
+    private fun stopLocationUpdatesOnly() {
+        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
+        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
+        locationCallback = null
     }
 
     private fun sendBackgroundEvent(payload: Map<String, Any?>) {
@@ -365,9 +403,8 @@ class PreciseLocationService : Service() {
     }
 
     private fun stopUpdates(stopService: Boolean = true) {
-        if (locationCallback != null) recordDiagnostic("PRECISE_LOCATION_STOPPED_NATIVE")
-        locationCallback?.let { fusedLocationClient.removeLocationUpdates(it) }
-        locationCallback = null
+        if (stopService) stopDeferred = false
+        stopLocationUpdatesOnly()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         // stopSelf(startId) leaves the service running if a newer start (for
         // example another place's ENTER) is already queued.
@@ -520,5 +557,6 @@ class PreciseLocationService : Service() {
         backgroundEngineStarting = false
         backgroundReady = false
         pendingBackgroundEvents.clear()
+        inFlightEvents = 0
     }
 }

@@ -44,7 +44,10 @@ final class FakePlace {
 ///   finished, until the watchdog stopped it.)
 /// * `startVerification:<id>` adds the place and starts GPS.
 /// * `stopPlace:<id>` removes the place; when no place is left, GPS stops and
-///   the service stops, destroying the headless engine (this process).
+///   the service stops, destroying the headless engine (this process). While
+///   Dart is still handling delivered events, the service stop waits for them
+///   (`deferStopsWhileEventsInFlight`); events still queued for a destroyed
+///   engine are lost.
 /// * Every fix is fanned out to every place in `activePlaceIds`; while GPS is
 ///   off, or the service is stopped, fixes never reach Dart.
 /// * The verification watchdog stops GPS and the service.
@@ -64,6 +67,15 @@ final class NativeVerificationFake {
   bool gpsOn = false;
   int droppedFixes = 0;
   int processes = 0;
+  int lostEvents = 0;
+
+  /// False models the service as of 20a5f13: a stop that left no place
+  /// verifying destroyed the engine at once, with events Dart had not yet
+  /// handled (for example a second EXIT from the same geofence callback).
+  bool deferStopsWhileEventsInFlight = true;
+  int _inFlight = 0;
+  bool _stopDeferred = false;
+  Future<void> _tail = Future<void>.value();
   DateTime _now;
   MultiPlaceBackgroundArrivalSession? _session;
 
@@ -93,7 +105,17 @@ final class NativeVerificationFake {
     switch (name) {
       case 'stopPlace':
         activePlaceIds.remove(placeId);
-        if (activePlaceIds.isEmpty) _stopService('STOPPING');
+        if (activePlaceIds.isEmpty) {
+          if (deferStopsWhileEventsInFlight && _inFlight > 0) {
+            gpsOn = false;
+            _stopDeferred = true;
+            diagnostics.add(
+              '-- NATIVE SERVICE STOP_DEFERRED events=$_inFlight',
+            );
+          } else {
+            _stopService('STOPPING');
+          }
+        }
       case 'stop':
         activePlaceIds.clear();
         _stopService('STOPPING');
@@ -105,6 +127,7 @@ final class NativeVerificationFake {
 
   void _stopService(String reason) {
     gpsOn = false;
+    _stopDeferred = false;
     diagnostics.add('-- NATIVE SERVICE $reason');
     // The engine is destroyed; its timers die with it. Work already running
     // in the current event may still finish, as on the device.
@@ -119,12 +142,43 @@ final class NativeVerificationFake {
     _stopService('WATCHDOG_STOPPED');
   }
 
+  /// Hands [payload] to the engine of [session]'s process. It is handled in
+  /// order, after events delivered earlier, and is lost if that process's
+  /// service has stopped by then.
+  Future<void> _deliver(
+    MultiPlaceBackgroundArrivalSession session,
+    Map<String, Object?> payload,
+  ) {
+    _inFlight++;
+    final next = _tail.then((_) async {
+      try {
+        if (!identical(_session, session)) {
+          lostEvents++;
+          diagnostics.add(
+            '-- EVENT LOST type=${payload['type']} place=${payload['placeId']}',
+          );
+          return;
+        }
+        await session.handleEvent(payload);
+      } finally {
+        _inFlight--;
+        if (_stopDeferred && activePlaceIds.isNotEmpty) {
+          _stopDeferred = false;
+        } else if (_stopDeferred && _inFlight == 0) {
+          _stopService('STOPPING_AFTER_EVENTS');
+        }
+      }
+    });
+    _tail = next.catchError((Object _) {});
+    return next;
+  }
+
   Future<void> enter(String id, DateTime at) {
     _now = at;
     final session = _process();
     activePlaceIds.add(id);
     gpsOn = true;
-    return session.handleEvent({
+    return _deliver(session, {
       ..._places[id]!.config,
       'type': 'enter',
       'reminderText': 'Buy milk',
@@ -135,7 +189,7 @@ final class NativeVerificationFake {
   Future<void> exit(String id, DateTime at) {
     _now = at;
     final session = _process();
-    return session.handleEvent({
+    return _deliver(session, {
       ..._places[id]!.config,
       'type': 'exit',
       'timestamp': at.toIso8601String(),
@@ -151,7 +205,7 @@ final class NativeVerificationFake {
       return;
     }
     for (final id in activePlaceIds.toList()) {
-      await session.handleEvent({
+      await _deliver(session, {
         'type': 'location',
         'placeId': id,
         'latitude': position.$1,

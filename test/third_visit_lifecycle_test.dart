@@ -233,4 +233,67 @@ void main() {
       DetectionState.armed,
     );
   });
+
+  group('EXITs from one geofence callback', () {
+    // 2026-11-03T21:33:22Z: one callback reported EXIT for all three places.
+    // Home's cooldown had expired with an exit observed, so its EXIT re-arms
+    // it at once and stops its verification. The shop's EXIT, queued right
+    // behind it, still needs GPS to measure its exit.
+    Future<NativeVerificationFake> clusteredExits({required bool defer}) async {
+      final native = _native()..deferStopsWhileEventsInFlight = defer;
+      native.runtime.placeSnapshots[_home.id] = DetectionRuntimeSnapshot(
+        state: DetectionState.cooldown,
+        target: const TargetLocation(latitude: 32.0, longitude: 34.8),
+        cooldownUntil: _t0.subtract(_min(5)),
+        exitObservedDuringCooldown: true,
+        visitId: 'visit-home',
+      );
+      native.runtime.placeSnapshots[_shop.id] = DetectionRuntimeSnapshot(
+        state: DetectionState.cooldown,
+        target: const TargetLocation(latitude: 32.05, longitude: 34.8),
+        cooldownUntil: _t0.add(_min(5)),
+        visitId: 'visit-shop',
+      );
+      await Future.wait([
+        native.exit(_home.id, _t0),
+        native.exit(_shop.id, _t0),
+      ]);
+      await native.fixes(_shop.north(600), _t0.add(_s(2)), 3);
+      return native;
+    }
+
+    test(
+      'a stop for one place never drops the queued EXIT of another place',
+      () async {
+        final native = await clusteredExits(defer: true);
+
+        expect(native.lostEvents, 0);
+        expect(native.count('${_home.id} REARMED_ON_EXIT'), 1);
+        expect(native.count('${_shop.id} BACKGROUND_EXIT_RECEIVED'), 1);
+        expect(native.count('${_shop.id} EXIT_OBSERVED_DURING_COOLDOWN'), 1);
+        expect(
+          native.runtime.placeSnapshots[_shop.id]?.exitObservedDuringCooldown,
+          isTrue,
+        );
+        expect(
+          native.runtime.placeSnapshots[_home.id]?.state,
+          DetectionState.armed,
+        );
+        // Both done: GPS and the service stop.
+        expect(native.serviceRunning, isFalse);
+        expect(native.gpsOn, isFalse);
+      },
+    );
+
+    test('reproduction: stopping at once loses the queued EXIT', () async {
+      final native = await clusteredExits(defer: false);
+
+      expect(native.lostEvents, 1);
+      expect(native.count('${_shop.id} BACKGROUND_EXIT_RECEIVED'), 0);
+      expect(
+        native.runtime.placeSnapshots[_shop.id]?.exitObservedDuringCooldown,
+        isFalse,
+      );
+    });
+  });
 }

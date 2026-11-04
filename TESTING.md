@@ -715,6 +715,15 @@ Other defects fixed:
   needs measuring: the place now stops only its own verification
   (`REARM_VERIFICATION_COMPLETE`) and re-arms when the cooldown ends, as
   before. Another place's approach continues.
+- Found in review: with the EXIT change above, nothing kept the service alive
+  for EXITs that Dart had not handled yet. When one geofence callback reports
+  EXIT for several places (as at 2026-11-03T21:33:22Z), the first place's stop
+  could destroy the engine with the other EXITs still queued, so a place
+  waiting to measure its exit would miss it. The native service now counts
+  events delivered to Dart until Dart has handled them. When the last place
+  stops while events are pending, GPS stops at once and the service stops
+  after those events (`service=STOPPING_AFTER_EVENTS`). The watchdog still
+  stops it if Dart never answers.
 
 Diagnostics:
 
