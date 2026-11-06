@@ -626,6 +626,9 @@ final class _ApproachStats {
         // APP-10F: the first and the last (deciding) fix of the approach:
         // how old each was when it arrived, how accurate, and when it was
         // taken relative to the ENTER (negative: before the ENTER).
+        // Diagnostic measurements only: no arrival, rejection or cooldown
+        // decision reads them. They compare the provider's fix time with
+        // this phone's wall clock (see _Fix).
         '${_describe('firstFix', firstFix)} '
         '${_describe('lastFix', lastFix)}';
   }
@@ -644,7 +647,14 @@ final class _ApproachStats {
 }
 
 /// One fix as the approach saw it: when it was taken, its accuracy, and
-/// when it reached the session.
+/// when it reached the session. Diagnostics only (APP-10F).
+///
+/// Wall-clock limits: [at] is the provider's fix time (UTC) and
+/// [receivedAt] is this phone's wall clock when Dart handled the fix, and
+/// the ENTER time is the receiver's wall clock. An offset between the phone
+/// clock and the provider's time, or a clock change during the approach,
+/// shifts every Age and FromEnter value; Age also includes time the fix
+/// waited in the native queue (for example while the engine started).
 final class _Fix {
   const _Fix({
     required this.at,

@@ -20,6 +20,13 @@ package com.example.pingplace
  * - LIFECYCLE: engine and service plumbing (state changes, starts, stops).
  * - SAMPLE: per-fix lines; the newest ones are what a field report needs.
  *
+ * Retention is bounded, not permanent: every tier, OUTCOME included, drops
+ * its oldest entries once its budget is full (about 50 visits of outcomes).
+ * Every eviction is counted per tier (evictedOutcome, evictedLifecycle,
+ * evictedSample) and reported in the export's LOG_RETENTION line, so lost
+ * evidence is always visible; evictedOutcome > 0 means the oldest outcomes
+ * in the export are not the oldest that happened.
+ *
  * Entries keep their chronological order and format. Pure Kotlin, JVM tested.
  */
 internal object DiagnosticRetention {

@@ -1009,6 +1009,17 @@ callback to act on (see the APP-10F report). Diagnostics-only changes:
   time minus ENTER time; negative means the fix predates the ENTER, e.g. a
   cached location delivered with the GPS request).
 
+- **Bounded, not permanent.** Every tier, OUTCOME included, evicts its
+  oldest entries once full (about 50 visits of outcomes). Each eviction is
+  counted per tier and shown in `LOG_RETENTION`; `evictedOutcome > 0` means
+  older outcomes existed that the export no longer contains.
+- **Fix ages are diagnostic only.** No arrival, rejection or cooldown
+  decision uses `firstFix*`/`lastFix*` in Build 22. They compare the
+  provider's fix time with the phone's wall clock: a clock offset or a clock
+  change during the approach shifts them, and `…Age` includes time the fix
+  waited in the native queue (for example while the engine started). Treat
+  sub-second values as approximate.
+
 No arrival, notification, cooldown or GPS behaviour changes.
 
 Steps on the Xiaomi 15 and the second phone (Build 22), same car:
