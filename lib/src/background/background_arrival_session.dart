@@ -228,6 +228,7 @@ final class BackgroundArrivalSession {
           accuracy,
           timestamp,
           accepted: accuracy <= engine!.config.maxAcceptedAccuracy,
+          receivedAt: _clock(),
         );
       }
       // One line per fix: the persisted log is bounded, and a visit's ENTER
@@ -584,15 +585,21 @@ final class _ApproachStats {
   double? closest;
   double? closestAccuracy;
   double? bestAccuracy;
+  _Fix? firstFix;
+  _Fix? lastFix;
 
   void record(
     double distance,
     double accuracy,
     DateTime at, {
     required bool accepted,
+    required DateTime receivedAt,
   }) {
     samples++;
     firstSampleAt ??= at;
+    final fix = _Fix(at: at, accuracy: accuracy, receivedAt: receivedAt);
+    firstFix ??= fix;
+    lastFix = fix;
     if (bestAccuracy == null || accuracy < bestAccuracy!) {
       bestAccuracy = accuracy;
     }
@@ -605,7 +612,7 @@ final class _ApproachStats {
   }
 
   String summary(String outcome, DateTime now, String visit) {
-    final firstFix = firstSampleAt == null
+    final firstFixAfter = firstSampleAt == null
         ? 'none'
         : '${firstSampleAt!.difference(enteredAt).inSeconds}s';
     return 'APPROACH_SUMMARY outcome=$outcome visit=$visit '
@@ -614,7 +621,38 @@ final class _ApproachStats {
         'closest=${closest == null ? 'none' : '${closest!.toStringAsFixed(1)}m'}'
         '${closestAccuracy == null ? '' : '@${closestAccuracy!.toStringAsFixed(1)}m'} '
         'bestAccuracy=${bestAccuracy == null ? 'none' : '${bestAccuracy!.toStringAsFixed(1)}m'} '
-        'firstFixAfterEnter=$firstFix '
-        'duration=${now.difference(enteredAt).inSeconds}s';
+        'firstFixAfterEnter=$firstFixAfter '
+        'duration=${now.difference(enteredAt).inSeconds}s '
+        // APP-10F: the first and the last (deciding) fix of the approach:
+        // how old each was when it arrived, how accurate, and when it was
+        // taken relative to the ENTER (negative: before the ENTER).
+        '${_describe('firstFix', firstFix)} '
+        '${_describe('lastFix', lastFix)}';
   }
+
+  String _describe(String name, _Fix? fix) {
+    if (fix == null) {
+      return '${name}Age=none ${name}Accuracy=none ${name}FromEnter=none';
+    }
+    return '${name}Age=${_seconds(fix.receivedAt.difference(fix.at))} '
+        '${name}Accuracy=${fix.accuracy.toStringAsFixed(1)}m '
+        '${name}FromEnter=${_seconds(fix.at.difference(enteredAt))}';
+  }
+
+  static String _seconds(Duration value) =>
+      '${(value.inMilliseconds / 1000).toStringAsFixed(1)}s';
+}
+
+/// One fix as the approach saw it: when it was taken, its accuracy, and
+/// when it reached the session.
+final class _Fix {
+  const _Fix({
+    required this.at,
+    required this.accuracy,
+    required this.receivedAt,
+  });
+
+  final DateTime at;
+  final double accuracy;
+  final DateTime receivedAt;
 }

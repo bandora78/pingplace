@@ -215,8 +215,14 @@ final class NativeVerificationFake {
     });
   }
 
-  /// One GPS fix at ([latitude], [longitude]).
-  Future<void> fix((double, double) position, DateTime at) async {
+  /// One GPS fix at ([latitude], [longitude]), delivered at [at]. [takenAt]
+  /// models a cached or late fix (default: taken when delivered).
+  Future<void> fix(
+    (double, double) position,
+    DateTime at, {
+    DateTime? takenAt,
+    double accuracy = 5.0,
+  }) async {
     _now = at;
     final session = _session;
     if (session == null || !gpsOn) {
@@ -229,8 +235,8 @@ final class NativeVerificationFake {
         'placeId': id,
         'latitude': position.$1,
         'longitude': position.$2,
-        'accuracy': 5.0,
-        'timestamp': at.toIso8601String(),
+        'accuracy': accuracy,
+        'timestamp': (takenAt ?? at).toIso8601String(),
       });
     }
   }

@@ -984,3 +984,38 @@ for every stage so the next report can narrow it.
    check for `ENTER_RECOVERY_REQUESTED`, `ENTER_RECOVERY_REREGISTERED`, the
    receiver release line and, if you were still inside,
    `ENTER_RECOVERY_DELIVERED` followed by a normal approach.
+
+## APP-10F diagnostics retention and approach evidence (Build 22)
+
+Build 21 field reports, 2026-11-05/06: a Xiaomi 15 (24129PN74G) and a second
+Xiaomi (23078PND5G) in the same car on the same route. The Xiaomi 15 never
+received a Sagula ENTER on 6 November; its Delek EXIT arrived 80 s after the
+second phone's, at the moment the car left Sagula. The app received no
+callback to act on (see the APP-10F report). Diagnostics-only changes:
+
+- **Per-tier retention** of the background pipeline log (`DiagnosticRetention`):
+  OUTCOME 300 (visit start, summary, notification result, suppression,
+  exit/re-arm decisions, watchdog, blocked starts, every failure and any
+  unknown line), LIFECYCLE 200 (state changes, engine and service plumbing),
+  SAMPLE 150 (per-fix lines). Each tier evicts only its own oldest entries.
+  Build 21's routine-first rule had left zero fixes in a 500-entry log and
+  evicted 111 outcome/lifecycle lines.
+- Export header: `LOG_RETENTION retained=N outcomes=a/300 lifecycle=b/200
+  samples=c/150 evictedOutcome= evictedLifecycle= evictedSample=
+  [beforeBuild22=evictedRoutine:R,evictedCritical:C] policy=PER_TIER`.
+  After installing Build 22 the old counters are reported once as history.
+- **`APPROACH_SUMMARY`** adds, for the first and the last (deciding) fix:
+  `…Age` (delivery time minus fix time), `…Accuracy`, and `…FromEnter` (fix
+  time minus ENTER time; negative means the fix predates the ENTER, e.g. a
+  cached location delivered with the GPS request).
+
+No arrival, notification, cooldown or GPS behaviour changes.
+
+Steps on the Xiaomi 15 and the second phone (Build 22), same car:
+
+1. Repeat the route. Export both phones right after the trip.
+2. `LOG_RETENTION ... evictedOutcome=0`, and `samples=` above 0 with the
+   latest visit's `LOCATION distance=` lines present.
+3. For every arrival, note `firstFixAge`, `firstFixAccuracy` and
+   `firstFixFromEnter`. These decide the stale-location policy (pending).
+4. Compare `GEOFENCE_TRANSITION` times for the same place between phones.
