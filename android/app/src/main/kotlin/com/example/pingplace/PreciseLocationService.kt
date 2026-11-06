@@ -546,9 +546,7 @@ class PreciseLocationService : Service() {
         const val BACKGROUND_CONTROL_CHANNEL = "pingplace/background/control"
         const val BACKGROUND_PREFS = "pingplace_background"
         const val BACKGROUND_DIAGNOSTICS = "diagnostics"
-        // Bounded at DiagnosticRetention.MAX_ENTRIES; routine lines go first.
-        const val EVICTED_ROUTINE = "diagnostics_evicted_routine"
-        const val EVICTED_CRITICAL = "diagnostics_evicted_critical"
+        // Bounded per tier by DiagnosticRetention (APP-10F).
         private const val BACKGROUND_WATCHDOG_MS = 11 * 60 * 1000L
         private const val REARM_WATCHDOG_MS = 2 * 60 * 1000L
         private const val CHANNEL_ID = "pingplace_precise_location"
@@ -610,22 +608,7 @@ class PreciseLocationService : Service() {
 
         /** Appends to the background pipeline log from outside the service (APP-10E). */
         fun recordPipelineDiagnostic(context: android.content.Context, message: String) {
-            val preferences = context.getSharedPreferences(BACKGROUND_PREFS, android.content.Context.MODE_PRIVATE)
-            val entries = try {
-                val array = JSONArray(preferences.getString(BACKGROUND_DIAGNOSTICS, "[]"))
-                MutableList(array.length()) { array.getString(it) }
-            } catch (_: Exception) {
-                mutableListOf()
-            }
-            val evicted = DiagnosticRetention.append(entries, "${Instant.now()} $message")
-            val editor = preferences.edit().putString(BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
-            if (evicted.routine > 0) {
-                editor.putLong(EVICTED_ROUTINE, preferences.getLong(EVICTED_ROUTINE, 0L) + evicted.routine)
-            }
-            if (evicted.critical > 0) {
-                editor.putLong(EVICTED_CRITICAL, preferences.getLong(EVICTED_CRITICAL, 0L) + evicted.critical)
-            }
-            editor.apply()
+            DiagnosticRetention.record(PipelineLogStorage(context), "${Instant.now()} $message")
         }
 
         fun sendBackgroundEvent(
@@ -687,5 +670,28 @@ class PreciseLocationService : Service() {
         backgroundReady = false
         pendingBackgroundEvents.clear()
         inFlightEvents = 0
+    }
+}
+
+/** The pipeline log in SharedPreferences, re-read on every write (APP-10F). */
+private class PipelineLogStorage(context: android.content.Context) : DiagnosticRetention.Storage {
+    private val preferences = context.getSharedPreferences(
+        PreciseLocationService.BACKGROUND_PREFS,
+        android.content.Context.MODE_PRIVATE,
+    )
+
+    override fun entries(): MutableList<String> = try {
+        val array = JSONArray(preferences.getString(PreciseLocationService.BACKGROUND_DIAGNOSTICS, "[]"))
+        MutableList(array.length()) { array.getString(it) }
+    } catch (_: Exception) {
+        mutableListOf()
+    }
+
+    override fun counter(key: String): Long = preferences.getLong(key, 0L)
+
+    override fun save(entries: List<String>, counterIncrements: Map<String, Long>) {
+        val editor = preferences.edit().putString(PreciseLocationService.BACKGROUND_DIAGNOSTICS, JSONArray(entries).toString())
+        counterIncrements.forEach { (key, increment) -> editor.putLong(key, counter(key) + increment) }
+        editor.apply()
     }
 }
