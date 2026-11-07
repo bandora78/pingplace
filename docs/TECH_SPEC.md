@@ -159,3 +159,53 @@ retry. Confirmation is written only after every required platform step succeeds.
 Android geofence quotas are device/service dependent; this implementation
 rejects more than 100 enabled places and reports partial reconciliation
 failures.
+
+
+## Phase 1 APP-11 map location picker (Build 23)
+
+**Scope exception.** AGENTS.md and PHASE_0_SPEC.md exclude map UI from
+Phase 0. APP-11 is an explicitly authorized, narrowly scoped Phase 1 UI
+enhancement: a map that fills the place editor's latitude and longitude. It
+does not change the Phase 0/Phase 1 detection contract. Outer, inner and
+re-arm radii, cooldown, geofence registration, the receiver, the precise
+location service, the background session, notifications and diagnostics are
+unchanged. There is no place search, URL resolution, reverse geocoding or
+current-location request.
+
+**Boundary.** `MapLocationPickerScreen` returns a `GeoPoint` or null. It never
+reads or writes the place database and never calls the registrar. The editor
+writes the confirmed point into its coordinate fields; only Save commits a
+change, through `PlaceManager.add`/`update`, so persistence, registration,
+rollback and runtime-reset policy are exactly those of APP-10. A selection
+equal to the current fields leaves the text untouched (an unchanged location
+causes no registration and keeps runtime state). The map is drawn behind
+`PlaceMapSurface`; widget tests use a fake surface without tiles or network.
+
+**Coordinates.** `coordinates.dart` is pure Dart. Editor text is Dart's
+shortest round-trip form, so a map value is stored with full precision;
+display uses six decimals inside a left-to-right isolate (U+2066/U+2069) so
+Hebrew RTL layout cannot reorder signs or values. Pasted pairs are read in
+Google Maps order, `latitude, longitude`; order is never guessed, values are
+never clamped or snapped, and links are rejected without being opened.
+
+**Map provider.** `flutter_map` 8.3.2 (BSD-3-Clause; pure Flutter, no API key,
+no Google Play services dependency, iOS-capable) with raster tiles. The
+default tile source is the OpenStreetMap Foundation's public server, used
+under its tile usage policy: identifying User-Agent
+(`flutter_map (com.example.pingplace)`), visible attribution, no bulk or
+offline prefetch, HTTP-header caching (on-device cache bounded to 50 MB). It
+has no SLA and may throttle or block; it is acceptable for field testing, not
+for a public release. `--dart-define=PINGPLACE_MAP_TILE_URL` (and
+`PINGPLACE_MAP_ATTRIBUTION`) switch to a commercial provider without code
+changes; any key passed that way is embedded in the APK and must be
+restricted on the provider side. `google_maps_flutter` was not chosen: it
+needs a Google Cloud project with billing and an API key in the manifest,
+renders through a platform view that widget tests cannot exercise, and ties
+the picker to Google Play services.
+
+**Network and privacy.** The picker downloads tiles for the visible area only
+while it is open. Tile requests reveal the viewed area and the device IP to
+the tile provider; no place, reminder or device location is sent. The app
+now declares `INTERNET` in the main manifest (debug builds, including the
+field-test APKs, already had it). No new location permission; the map never
+requests the device location.

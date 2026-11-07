@@ -1030,3 +1030,36 @@ Steps on the Xiaomi 15 and the second phone (Build 22), same car:
 3. For every arrival, note `firstFixAge`, `firstFixAccuracy` and
    `firstFixFromEnter`. These decide the stale-location policy (pending).
 4. Compare `GEOFENCE_TRANSITION` times for the same place between phones.
+
+
+## APP-11 map location picker (Build 23)
+
+UI only; see TECH_SPEC.md "Phase 1 APP-11". Detection, registration and
+diagnostics behave exactly as in Build 22.
+
+Automated coverage:
+
+- `test/coordinates_test.dart`: order, precision, negatives, boundaries,
+  NaN/infinity, malformed pairs, links refused, bidi marks, LTR display,
+  radius preview, initial map position.
+- `test/map_location_picker_test.dart` (fake map surface, no network): new
+  and existing places, marker and viewport, confirm/cancel/back, unchanged
+  selection, tile failure fallback, double-open guard, disposed editor,
+  pasted pairs, RTL labels; Save through PlaceManager, registration and
+  rollback, runtime reset only for a moved place, restart persistence.
+- `test/flutter_map_surface_test.dart`: the production flutter_map surface
+  with unreachable tiles: circle radii in metres, markers, taps, tile errors.
+
+Manual check on the phone (needs internet for tiles):
+
+1. Edit an existing place, then tap "בחר מיקום במפה": the map opens on the saved
+   marker with the blue outer circle (its radius) and the green 80 m circle.
+2. Tap "ביטול": coordinates unchanged. Leave the editor without saving: the
+   place list and the Android registration status are unchanged.
+3. Add a place: tap the map, zoom in, tap again to adjust, "אישור מיקום". The
+   latitude/longitude fields fill in; nothing is saved until "שמירה".
+4. Paste `31.732600, 34.757743` into "הדבקת קואורדינטות" and tap "החלה":
+   latitude 31.7326, longitude 34.757743. A Google Maps link shows an error.
+5. Airplane mode, open the map: an error banner appears; manual entry still
+   works.
+6. Repeat the usual arrival route: behaviour as in Build 22.

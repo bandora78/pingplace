@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:pingplace/src/geofence/geofence_service.dart';
 import 'package:pingplace/src/persistence/place.dart';
 import 'package:pingplace/src/persistence/place_repositories.dart';
@@ -19,9 +21,20 @@ base class FakePlaceRegistrar implements PlaceRegistrar {
   List<String> get appliedIds => [for (final p in applied) p.placeId];
   List<String> get lastIds => [for (final p in calls.last) p.placeId];
 
+  Completer<void>? _hold;
+
+  /// Holds the next registerPlaces calls until the returned completer
+  /// completes, to observe the UI while a save is in progress.
+  Completer<void> holdNext() => _hold = Completer<void>();
+
   @override
   Future<void> registerPlaces(List<GeofencePlaceRegistration> places) async {
     calls.add(List.unmodifiable(places));
+    final hold = _hold;
+    if (hold != null) {
+      await hold.future;
+      _hold = null;
+    }
     if (failNext > 0) {
       failNext--;
       // Like the native add-then-remove reconcile: a failed add leaves the
