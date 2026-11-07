@@ -35,12 +35,10 @@ final class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
   late final TextEditingController latitude;
   late final TextEditingController longitude;
   late final TextEditingController radius;
-  late final TextEditingController pasted;
   late bool enabled;
   bool saving = false;
   bool mapOpen = false;
   String? error;
-  String? pasteError;
 
   bool get isEdit => widget.existing != null;
 
@@ -55,7 +53,6 @@ final class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
     radius = TextEditingController(
       text: (place?.outerRadius ?? 300).round().toString(),
     );
-    pasted = TextEditingController();
     enabled = place?.enabled ?? true;
   }
 
@@ -66,7 +63,6 @@ final class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
     latitude.dispose();
     longitude.dispose();
     radius.dispose();
-    pasted.dispose();
     super.dispose();
   }
 
@@ -174,24 +170,7 @@ final class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
     }
     final point = chosen;
     if (!mounted || point == null) return;
-    setState(() {
-      _applyPoint(point);
-      pasteError = null;
-    });
-  }
-
-  void _applyPasted() {
-    final result = parseCoordinatePair(pasted.text);
-    setState(() {
-      final point = result.point;
-      if (point == null) {
-        pasteError = pasteErrorMessage(result.error!);
-        return;
-      }
-      _applyPoint(point);
-      pasteError = null;
-      pasted.clear();
-    });
+    setState(() => _applyPoint(point));
   }
 
   @override
@@ -266,38 +245,6 @@ final class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
               icon: const Icon(Icons.map_outlined),
               label: const Text('בחר מיקום במפה'),
             ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    key: const Key('place-paste-coordinates'),
-                    controller: pasted,
-                    textDirection: TextDirection.ltr,
-                    decoration: InputDecoration(
-                      labelText: 'הדבקת קואורדינטות',
-                      helperText:
-                          'קו רוחב, קו אורך\n'
-                          'לדוגמה: ${ltr('31.732600, 34.757743')}',
-                      helperMaxLines: 2,
-                      errorText: pasteError,
-                      errorMaxLines: 3,
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: TextButton(
-                    key: const Key('place-apply-pasted'),
-                    onPressed: saving ? null : _applyPasted,
-                    child: const Text('החלה'),
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 12),
             TextField(
               key: const Key('place-radius'),
@@ -349,19 +296,6 @@ String placeErrorMessage(String code) => switch (code) {
   'RADIUS_OUT_OF_RANGE' =>
     'רדיוס חייב להיות בין ${PlaceDraft.minRadius.round()} ל-${PlaceDraft.maxRadius.round()} מטרים',
   _ => code,
-};
-
-String pasteErrorMessage(CoordinatePasteError error) => switch (error) {
-  CoordinatePasteError.empty => 'נא להדביק קו רוחב וקו אורך',
-  CoordinatePasteError.unsupportedLink =>
-    'קישורים אינם נתמכים. בגוגל מפות לחצו על הנקודה והעתיקו את המספרים '
-        '(קו רוחב, קו אורך).',
-  CoordinatePasteError.malformed =>
-    'יש להדביק שני מספרים עשרוניים מופרדים בפסיק: קו רוחב, קו אורך',
-  CoordinatePasteError.latitudeOutOfRange =>
-    'המספר הראשון הוא קו הרוחב וחייב להיות בין ‎-90 ל-90',
-  CoordinatePasteError.longitudeOutOfRange =>
-    'המספר השני הוא קו האורך וחייב להיות בין ‎-180 ל-180',
 };
 
 String placeOutcomeMessage(PlaceOperationResult result) =>

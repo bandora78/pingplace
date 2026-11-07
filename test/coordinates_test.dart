@@ -2,99 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pingplace/src/places/coordinates.dart';
 
 void main() {
-  group('parseCoordinatePair', () {
-    GeoPoint ok(String input) {
-      final result = parseCoordinatePair(input);
-      expect(result.error, isNull, reason: input);
-      return result.point!;
-    }
-
-    CoordinatePasteError fails(String input) {
-      final result = parseCoordinatePair(input);
-      expect(result.point, isNull, reason: input);
-      return result.error!;
-    }
-
-    test('reads Google Maps order: latitude first, longitude second', () {
-      final p = ok('31.732600, 34.757743');
-      expect(p.latitude, 31.7326);
-      expect(p.longitude, 34.757743);
-    });
-
-    test('never swaps: a longitude-first pair is rejected, not corrected', () {
-      // 34.75 is a valid latitude, so this pair is read as given...
-      final p = ok('34.757743, 31.732600');
-      expect(p.latitude, 34.757743);
-      // ...and a pair that is only valid when swapped is refused.
-      expect(fails('120.5, 45.1'), CoordinatePasteError.latitudeOutOfRange);
-    });
-
-    test('keeps full precision', () {
-      final p = ok('31.73260012345678, 34.75774398765432');
-      expect(p.latitude, 31.73260012345678);
-      expect(p.longitude, 34.75774398765432);
-    });
-
-    test('negative coordinates and the exact boundaries', () {
-      expect(ok('-33.8688, -151.2093').longitude, -151.2093);
-      expect(ok('-90, -180').latitude, -90);
-      expect(ok('90, 180').longitude, 180);
-      expect(ok('0,0').latitude, 0);
-      expect(ok('+31.5,+34.5').longitude, 34.5);
-    });
-
-    test('out of range values name the offending coordinate', () {
-      expect(fails('90.000001, 34'), CoordinatePasteError.latitudeOutOfRange);
-      expect(fails('-91, 34'), CoordinatePasteError.latitudeOutOfRange);
-      expect(fails('31, 180.5'), CoordinatePasteError.longitudeOutOfRange);
-      expect(fails('31, -181'), CoordinatePasteError.longitudeOutOfRange);
-    });
-
-    test('malformed input is rejected', () {
-      for (final input in [
-        '31.7326',
-        '31.7326 34.7577',
-        '31,7326, 34,7577',
-        '31.7, 34.7, 5',
-        'NaN, 34',
-        'Infinity, 34',
-        '31.7, -Infinity',
-        '1e1, 34',
-        '0x1F, 34',
-        '31°43\'57"N, 34°45\'28"E',
-        'abc, def',
-        '31.7,',
-        ', 34.7',
-      ]) {
-        expect(fails(input), CoordinatePasteError.malformed, reason: input);
-      }
-      expect(fails('   '), CoordinatePasteError.empty);
-    });
-
-    test('links are refused and never scanned for numbers', () {
-      for (final input in [
-        'https://www.google.com/maps/@31.7326,34.7577,17z',
-        'https://maps.app.goo.gl/AbCdEf123',
-        'maps.app.goo.gl/xyz',
-        'google.com/maps/place/31.7326,34.7577',
-        'geo:31.7326,34.7577',
-        'www.example.com/31.7,34.7',
-      ]) {
-        expect(
-          fails(input),
-          CoordinatePasteError.unsupportedLink,
-          reason: input,
-        );
-      }
-    });
-
-    test('bidi marks added by an RTL copy are ignored', () {
-      final p = ok('\u200F\u206631.7326, 34.7577\u2069\u200E');
-      expect(p.latitude, 31.7326);
-      expect(p.longitude, 34.7577);
-    });
-  });
-
   group('parseCoordinate and editorText', () {
     test('editor text round-trips every double exactly', () {
       for (final value in [
@@ -113,6 +20,11 @@ void main() {
       for (final input in ['', 'NaN', 'Infinity', '-Infinity', '1,5', 'x']) {
         expect(parseCoordinate(input), isNull, reason: input);
       }
+    });
+
+    test('ignores bidi marks around a typed value', () {
+      expect(parseCoordinate('\u200F\u206631.7326\u2069\u200E'), 31.7326);
+      expect(parseCoordinate('\u2066-34.5\u2069'), -34.5);
     });
   });
 
