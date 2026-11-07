@@ -9,6 +9,11 @@ Explain why location is required before requesting it. Ask only for the minimum 
 ## Home
 Show places with active reminder counts and top reminders. Primary action is +.
 
+Phase 1 (APP-12, Build 24): an overall monitoring status at the top that
+claims "active" only when Android confirmed every enabled place, then one
+card per place (name, reminder, status, on/off switch, menu with Edit and
+Delete). Coordinates and radius are shown only in the place editor.
+
 ## Creation
 User types or dictates a natural sentence, for example:
 “כשאני מגיע לברקו תזכיר לי לקנות סכינים לחריצת לחם.”

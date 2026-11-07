@@ -1045,7 +1045,7 @@ Automated coverage:
 - `test/map_location_picker_test.dart` (fake map surface, no network): new
   and existing places, marker and viewport, confirm/cancel/back, unchanged
   selection, tile failure fallback, double-open guard, disposed editor,
-  pasted pairs, RTL labels; Save through PlaceManager, registration and
+  RTL labels; Save through PlaceManager, registration and
   rollback, runtime reset only for a moved place, restart persistence.
 - `test/flutter_map_surface_test.dart`: the production flutter_map surface
   with unreachable tiles: circle radii in metres, markers, taps, tile errors.
@@ -1058,8 +1058,54 @@ Manual check on the phone (needs internet for tiles):
    place list and the Android registration status are unchanged.
 3. Add a place: tap the map, zoom in, tap again to adjust, "אישור מיקום". The
    latitude/longitude fields fill in; nothing is saved until "שמירה".
-4. Paste `31.732600, 34.757743` into "הדבקת קואורדינטות" and tap "החלה":
-   latitude 31.7326, longitude 34.757743. A Google Maps link shows an error.
+4. (Removed in Build 24, APP-11A: there is no coordinate-paste field.)
 5. Airplane mode, open the map: an error banner appears; manual entry still
    works.
 6. Repeat the usual arrival route: behaviour as in Build 22.
+
+
+## APP-12 card home screen and APP-11A editor (Build 24)
+
+Automated coverage:
+
+- `test/home_status_test.dart`: status priority, permissions, partial,
+  pending, unknown, empty and all-disabled; an enabled but unconfirmed place
+  is never "active".
+- `test/place_cards_test.dart`: card content (no coordinates/radius), long
+  Hebrew text at 360 dp and 2x text scale, RTL order, the four registration
+  states, content tap vs. switch vs. menu, double-open guard, stored-value
+  switch, one operation for repeated taps, busy-disabled controls, rollback,
+  rollback failure, failed retry, delete cancel/confirm/failure, delete
+  refused after another operation started, labels and tap targets.
+- `test/pingplace_home_screen_test.dart`: no premature permission warning,
+  location and notification recovery, controller and setup failures, resume
+  refresh (no registration, no write, no prompt), duplicate resumes, refresh
+  failure, no refresh while PlaceManager is busy, disposal during a refresh,
+  seven taps and long press open Developer Mode, version and commit shown.
+- `test/map_location_picker_test.dart`: the paste field and "החלה" are gone;
+  map and manual entry unchanged.
+
+Manual check on the phone (install over Build 23 with "Update"; never
+uninstall or clear data):
+
+1. Open the app: the existing places are all present, as cards in Hebrew.
+2. The banner shows "המעקב פעיל" with the right place count only when every
+   enabled place shows "פעיל · מאושר ע״י Android".
+3. Turn one place off: only that card changes to "מעקב כבוי"; the others stay
+   active. Turn it back on: it returns to "פעיל · מאושר ע״י Android".
+4. Tap a card: the editor opens. Menu (⋮) → "עריכה" also opens it; the switch
+   and the menu do not.
+5. Menu → "מחיקה" → "ביטול" keeps the place. Delete a test place → "מחיקה":
+   it disappears and stays deleted after a restart.
+6. In the editor: "בחר מיקום במפה" fills latitude/longitude; nothing is saved
+   until "שמירה". Typed coordinates also save. There is no paste field and no
+   "החלה" button.
+7. Restart the app: all places are kept.
+8. Seven taps (or a long press) on the version opens Developer Mode; the
+   version shows Build 24 and the commit.
+9. Settings → turn PingPlace notifications off, return to the app: the banner
+   shows "נדרשת הרשאת התראות". "הפעלת התראות" or "הגדרות התראות" restores it.
+   Do the same with location ("רק בזמן השימוש"): "נדרשת הרשאת מיקום גם ברקע".
+   Restore "כל הזמן" before driving.
+10. Drive to a saved place: one reminder on arrival, no duplicate during the
+    same visit (as in Build 22/23).
