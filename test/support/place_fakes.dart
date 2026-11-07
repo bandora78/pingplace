@@ -46,8 +46,12 @@ base class FakePlaceRegistrar implements PlaceRegistrar {
     confirmed = true;
   }
 
+  /// Android status reads (every PlaceManager reload makes one).
+  int statusReads = 0;
+
   @override
   Future<PlaceRegistrationStatus> status() async {
+    statusReads++;
     if (statusError != null) throw statusError!;
     final ids = appliedIds.toSet();
     return PlaceRegistrationStatus(
