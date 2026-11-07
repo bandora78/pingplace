@@ -110,3 +110,102 @@ Migration runs inside the same serialized `PlaceDatabase` transaction as
 repository writes. A failed source read or commit is reported through
 `PlacePersistenceCoordinator.initializationFailure` and does not register or
 remove a platform geofence.
+## Phase 1 APP-09 multi-geofence
+
+Enabled places are represented by stable Place IDs, which are the Android
+Geofence request IDs. Reconciliation is serialized and idempotent: only enabled
+places are submitted, disabled/deleted IDs are removed, and each callback is
+checked against the current reconciliation generation. A partial add failure is
+reported as partial, not as full registration success.
+
+Android Geofencing APIs and OEM implementations impose platform limits on the
+number of simultaneous geofences (the exact limit is device/service dependent).
+APP-09 reports rejected registrations and retains the durable place records; it
+does not silently delete or disable places. The legacy single-target request is
+kept until replacement requests are accepted, preserving Build 11/12 migration
+compatibility during transition.
+
+Detection ownership remains per Place. Each place has its own SmartArrival
+engine, cooldown/rearm state and place-level notification visit ID. Multiple
+reminders for one place are presented as one place-level arrival notification
+using the place's stable notification identity; reminder text is combined by the
+notification adapter according to its explicit presentation policy. Events with
+an unknown or stale Place ID are diagnostic-only and cannot change another
+place's state. No permanent background GPS is introduced.
+
+
+## Phase 1 APP-09 multi-place runtime
+
+Enabled places are registered with Android using their stable Place IDs as
+request IDs. A transition may contain several triggering IDs; the receiver
+emits one event per distinct ID and the headless service routes each event and
+subsequent precise samples to that place's independent engine. Runtime snapshots
+are stored under per-place keys, including cooldown, rearm-related state and
+visit identity.
+
+A place's reminders are presented as one notification per arrival visit. The
+deterministic policy is stored reminder order, trimmed non-empty text joined by
+` • `; if no reminder exists, the default arrival text is used. Notification
+deduplication uses `placeId:visitId`, so simultaneous places cannot collide.
+
+The desired multi-registration document is validated fail-closed. Corrupt data
+never becomes an empty set; startup records a diagnostic and falls back to the
+last known legacy target. A confirmed identical desired set is a no-op; recovery
+reconciles platform state. Reconciliation adds the complete desired set before
+removing obsolete place IDs or the legacy request. If add fails, existing
+registrations remain active; if an obsolete or legacy removal fails, the new
+registrations remain active and the durable confirmation flag is cleared for
+retry. Confirmation is written only after every required platform step succeeds.
+Android geofence quotas are device/service dependent; this implementation
+rejects more than 100 enabled places and reports partial reconciliation
+failures.
+
+
+## Phase 1 APP-11 map location picker (Build 23)
+
+**Scope exception.** AGENTS.md and PHASE_0_SPEC.md exclude map UI from
+Phase 0. APP-11 is an explicitly authorized, narrowly scoped Phase 1 UI
+enhancement: a map that fills the place editor's latitude and longitude. It
+does not change the Phase 0/Phase 1 detection contract. Outer, inner and
+re-arm radii, cooldown, geofence registration, the receiver, the precise
+location service, the background session, notifications and diagnostics are
+unchanged. There is no place search, URL resolution, reverse geocoding or
+current-location request.
+
+**Boundary.** `MapLocationPickerScreen` returns a `GeoPoint` or null. It never
+reads or writes the place database and never calls the registrar. The editor
+writes the confirmed point into its coordinate fields; only Save commits a
+change, through `PlaceManager.add`/`update`, so persistence, registration,
+rollback and runtime-reset policy are exactly those of APP-10. A selection
+equal to the current fields leaves the text untouched (an unchanged location
+causes no registration and keeps runtime state). The map is drawn behind
+`PlaceMapSurface`; widget tests use a fake surface without tiles or network.
+
+**Coordinates.** `coordinates.dart` is pure Dart. Editor text is Dart's
+shortest round-trip form, so a map value is stored with full precision;
+display uses six decimals inside a left-to-right isolate (U+2066/U+2069) so
+Hebrew RTL layout cannot reorder signs or values. Pasted pairs are read in
+Google Maps order, `latitude, longitude`; order is never guessed, values are
+never clamped or snapped, and links are rejected without being opened.
+
+**Map provider.** `flutter_map` 8.3.2 (BSD-3-Clause; pure Flutter, no API key,
+no Google Play services dependency, iOS-capable) with raster tiles. The
+default tile source is the OpenStreetMap Foundation's public server, used
+under its tile usage policy: identifying User-Agent
+(`flutter_map (com.example.pingplace)`), visible attribution, no bulk or
+offline prefetch, HTTP-header caching (on-device cache bounded to 50 MB). It
+has no SLA and may throttle or block; it is acceptable for field testing, not
+for a public release. `--dart-define=PINGPLACE_MAP_TILE_URL` (and
+`PINGPLACE_MAP_ATTRIBUTION`) switch to a commercial provider without code
+changes; any key passed that way is embedded in the APK and must be
+restricted on the provider side. `google_maps_flutter` was not chosen: it
+needs a Google Cloud project with billing and an API key in the manifest,
+renders through a platform view that widget tests cannot exercise, and ties
+the picker to Google Play services.
+
+**Network and privacy.** The picker downloads tiles for the visible area only
+while it is open. Tile requests reveal the viewed area and the device IP to
+the tile provider; no place, reminder or device location is sent. The app
+now declares `INTERNET` in the main manifest (debug builds, including the
+field-test APKs, already had it). No new location permission; the map never
+requests the device location.

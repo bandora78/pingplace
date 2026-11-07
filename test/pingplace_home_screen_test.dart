@@ -10,6 +10,8 @@ import 'package:pingplace/src/location/location_service.dart';
 import 'package:pingplace/src/notification/notification_service.dart';
 import 'package:pingplace/src/runtime/arrival_runtime_store.dart';
 
+import 'support/place_fakes.dart';
+
 final class HomeFakeGeofenceService implements GeofenceService {
   final eventsController = StreamController<GeofenceEvent>.broadcast();
   int eventsReadCount = 0;
@@ -41,6 +43,13 @@ final class HomeFakeGeofenceService implements GeofenceService {
   @override
   Future<bool> get desiredMonitoring async => registered;
 
+  @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async =>
+      registered
+          ? DesiredMonitoringState.enabled
+          : savedRegistration != null
+          ? DesiredMonitoringState.disabled
+          : DesiredMonitoringState.unknown;
 
   @override
   Future<GeofenceRegistration?> get registration async => savedRegistration;
@@ -51,6 +60,9 @@ final class HomeFakeGeofenceService implements GeofenceService {
 
   @override
   Future<bool> restoreRegistration() async => registered;
+
+  @override
+  Stream<void> get statusChanges => const Stream<void>.empty();
 
   @override
   Future<void> register({
@@ -134,10 +146,16 @@ void main() {
   testWidgets('production home hides developer controls', (tester) async {
     final controller = createController();
     await tester.pumpWidget(
-      MaterialApp(home: PingPlaceHomeScreen(controller: controller)),
+      MaterialApp(
+        home: PingPlaceHomeScreen(
+          controller: controller,
+          placeManager: PlaceTestRig().manager(),
+        ),
+      ),
     );
 
-    expect(find.text('היעד הפעיל'), findsOneWidget);
+    expect(find.text('המקומות שלי'), findsOneWidget);
+    expect(find.text('היעד הפעיל'), findsNothing);
     expect(find.textContaining('SIMULATE OUTER ENTER'), findsNothing);
     expect(find.text('EVENT LOG'), findsNothing);
 
@@ -149,7 +167,12 @@ void main() {
   ) async {
     final controller = createController();
     await tester.pumpWidget(
-      MaterialApp(home: PingPlaceHomeScreen(controller: controller)),
+      MaterialApp(
+        home: PingPlaceHomeScreen(
+          controller: controller,
+          placeManager: PlaceTestRig().manager(),
+        ),
+      ),
     );
 
     final version = find.byKey(const Key('developer-mode-gesture'));
@@ -171,7 +194,12 @@ void main() {
     await controller.initialize();
 
     await tester.pumpWidget(
-      MaterialApp(home: PingPlaceHomeScreen(controller: controller)),
+      MaterialApp(
+        home: PingPlaceHomeScreen(
+          controller: controller,
+          placeManager: PlaceTestRig().manager(),
+        ),
+      ),
     );
     await tester.pump();
     expect(service.eventsReadCount, 1);

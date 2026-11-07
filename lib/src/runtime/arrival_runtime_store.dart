@@ -14,7 +14,15 @@ abstract interface class ArrivalRuntimeStore {
   Future<void> saveReminderText(String value);
 }
 
-final class MethodChannelArrivalRuntimeStore implements ArrivalRuntimeStore {
+abstract interface class PerPlaceArrivalRuntimeStore {
+  Future<DetectionRuntimeSnapshot?> loadForPlace(String placeId);
+  Future<void> saveForPlace(String placeId, DetectionRuntimeSnapshot snapshot);
+  Future<void> clearForPlace(String placeId);
+  Future<String> loadReminderTextForPlace(String placeId);
+}
+
+final class MethodChannelArrivalRuntimeStore
+    implements ArrivalRuntimeStore, PerPlaceArrivalRuntimeStore {
   MethodChannelArrivalRuntimeStore({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel(_channelName);
 
@@ -44,6 +52,35 @@ final class MethodChannelArrivalRuntimeStore implements ArrivalRuntimeStore {
   Future<void> saveReminderText(String value) =>
       _channel.invokeMethod<void>('saveReminderText', value);
 
+  @override
+  Future<DetectionRuntimeSnapshot?> loadForPlace(String placeId) async {
+    final value = await _channel.invokeMethod<Map<dynamic, dynamic>>('load', {
+      'placeId': placeId,
+    });
+    if (value == null) return null;
+    return _parseSnapshot(value);
+  }
+
+  @override
+  Future<void> saveForPlace(
+    String placeId,
+    DetectionRuntimeSnapshot snapshot,
+  ) => _channel.invokeMethod<void>('save', {
+    ..._encodeSnapshot(snapshot),
+    'placeId': placeId,
+  });
+
+  @override
+  Future<void> clearForPlace(String placeId) =>
+      _channel.invokeMethod<void>('clear', {'placeId': placeId});
+
+  @override
+  Future<String> loadReminderTextForPlace(String placeId) async =>
+      await _channel.invokeMethod<String>('loadReminderText', {
+        'placeId': placeId,
+      }) ??
+      'עצור בתחנת דלק יעד';
+
   static Map<String, Object?> _encodeSnapshot(
     DetectionRuntimeSnapshot snapshot,
   ) => {
@@ -72,18 +109,28 @@ final class MethodChannelArrivalRuntimeStore implements ArrivalRuntimeStore {
             )
           : null,
       approachStartedAt: DateTime.tryParse(
-        value['approachStartedAt'] as String? ?? '',
+        _nullableString(value['approachStartedAt']) ?? '',
       ),
-      cooldownUntil: DateTime.tryParse(value['cooldownUntil'] as String? ?? ''),
+      cooldownUntil: DateTime.tryParse(
+        _nullableString(value['cooldownUntil']) ?? '',
+      ),
       exitObservedDuringCooldown:
           value['exitObservedDuringCooldown'] as bool? ?? false,
-      visitId: value['visitId'] as String?,
+      visitId: _nullableString(value['visitId']),
     );
   }
+
+  /// Builds up to 18 stored a cleared field as JSON null, which Android's
+  /// `JSONObject.optString` reads back as the literal string "null".
+  static String? _nullableString(Object? value) =>
+      value is String && value.isNotEmpty && value != 'null' ? value : null;
 }
 
-final class InMemoryArrivalRuntimeStore implements ArrivalRuntimeStore {
+final class InMemoryArrivalRuntimeStore
+    implements ArrivalRuntimeStore, PerPlaceArrivalRuntimeStore {
   DetectionRuntimeSnapshot? snapshot;
+  final Map<String, DetectionRuntimeSnapshot> placeSnapshots = {};
+  final Map<String, String> placeReminderTexts = {};
   String reminderText = 'עצור בתחנת דלק יעד';
 
   @override
@@ -100,4 +147,22 @@ final class InMemoryArrivalRuntimeStore implements ArrivalRuntimeStore {
 
   @override
   Future<void> saveReminderText(String value) async => reminderText = value;
+
+  @override
+  Future<DetectionRuntimeSnapshot?> loadForPlace(String placeId) async =>
+      placeSnapshots[placeId];
+
+  @override
+  Future<void> saveForPlace(
+    String placeId,
+    DetectionRuntimeSnapshot value,
+  ) async => placeSnapshots[placeId] = value;
+
+  @override
+  Future<void> clearForPlace(String placeId) async =>
+      placeSnapshots.remove(placeId);
+
+  @override
+  Future<String> loadReminderTextForPlace(String placeId) async =>
+      placeReminderTexts[placeId] ?? reminderText;
 }

@@ -413,3 +413,653 @@ concurrent migration and repository writes, idempotent migration, and the
 absence of platform register/remove calls. A migration initialization failure
 is exposed through the coordinator diagnostic field and must be recorded with
 its type and reason.
+## APP-09 multi-place validation
+
+Verify multiple enabled places, overlapping regions, per-place cooldown/rearm,
+removed/disabled IDs, duplicate ENTER/EXIT delivery, process/reboot recovery,
+partial registration failure, and the copyable Developer Mode report. Android's
+simultaneous geofence limit and Xiaomi/HyperOS delivery behavior must be recorded
+from a physical device; automated tests do not prove OEM delivery.
+
+
+## APP-09 multi-place background validation
+
+Use at least two enabled places with different coordinates and reminders. Confirm
+that an Android transition containing multiple triggering IDs produces one event
+per Place ID, that each place starts temporary precise verification, and that
+location samples do not change another place's state. Cross the inner radius for
+both places and confirm exactly one notification per place with reminder text
+joined in saved order. Kill the UI process, repeat the transition, reboot, and
+confirm per-place runtime state, cooldown/rearm and notification deduplication
+remain intact. Corrupt the multi-place desired document in a test build and
+confirm diagnostics show failure while the legacy target remains active. Record
+actual Xiaomi 15/HyperOS results; automated tests do not replace this evidence.
+
+## APP-09A diagnostics refresh (Build 15)
+
+**Status: field-validated and complete.** Verified on the Xiaomi 15 with the
+signed Build 15 (`1.0.0+15`, versionCode 10015, source `79ed55a`, certificate
+`906551dd…`): platform registration confirmation refreshes immediately,
+without restarting the app.
+
+Regression: Build 14 showed `Registration: REGISTERED`, `Engine state: ARMED`
+but `Platform registration confirmed: NO / UNKNOWN` until the app was restarted.
+Diagnostics are now re-read after every register, remove and recovery attempt,
+when native startup reconciliation finishes, when the app returns to the
+foreground, and via **Refresh diagnostics**. Platform confirmation has three
+states: `YES` (Android confirmed), `NO (not confirmed by Android)`, and
+`UNKNOWN (platform state not readable)`. Only `YES` reflects an Android
+confirmation.
+
+On the Xiaomi 15, in Developer Mode:
+
+1. Cold-start the app with monitoring enabled. Within a few seconds, without
+   leaving the screen, confirmation must change from `NO` to `YES` once startup
+   reconciliation finishes, and `Diagnostics refreshed` must update.
+2. Disable monitoring. Confirmation must change to `NO` immediately and the
+   engine must be `DISARMED`.
+3. Edit the target and enable monitoring. Confirmation must change to `YES`
+   without restarting the app.
+4. Turn location services off and register. Registration must fail visibly and
+   confirmation must show `NO`, never `YES`.
+5. Background the app, cross the geofence, and return. `Last background event`
+   must update without restarting.
+
+## APP-10 multi-place management (Build 16)
+
+The place list is now the only source of geofence registrations. The legacy
+single-target registration is retired: Developer Mode buttons for it are
+disabled, and the native layer rejects legacy register/remove/restore calls
+once places are registered (`LEGACY_REGISTRATION_DISABLED`).
+
+**Upgrade from Build 15 (do first, do not uninstall or clear data):**
+
+1. Before upgrading, note the coordinates, radius, reminder text and monitoring
+   state shown on the Build 15 home screen.
+2. Install Build 16 as an update and open it. The list must contain exactly one
+   place, `מקום קיים`, with those values. Builds 12-15 never wrote home-screen
+   edits back to the place list; Build 16 adopts them once
+   (Developer Mode diagnostics: `LEGACY_SYNC: ADOPTED_LEGACY_EDITS ...` or
+   `ALREADY_IN_SYNC`). If monitoring was off in Build 15, the place is off.
+3. The place must show `פעיל · מאושר ע״י Android` when enabled.
+
+**Multi-place:**
+
+4. Add two more places at different locations. Existing places must be unchanged.
+5. Edit one place's reminder text and radius; the other places must be unchanged.
+6. Turn one place off. Its status shows `מעקב כבוי`; the others stay confirmed.
+7. Visit each enabled place. Each produces one notification with its own
+   reminder text. A second ENTER at the same place within 10 minutes does not
+   notify again; another place still notifies.
+8. Visit the disabled place: no notification.
+9. Delete a place: a confirmation dialog appears; Cancel keeps it, Delete
+   removes it. Visiting the deleted place produces no notification.
+
+**Persistence and recovery:**
+
+10. Force-stop the app and reopen: all places, settings and on/off states remain.
+11. Reboot the phone **without opening the app**, then visit an enabled place:
+    it must notify (boot recovery now restores places; before Build 16 it did
+    not). Diagnostics show `MULTI_GEOFENCE_BOOT_RECOVERY_COMPLETED`.
+12. Revoke background location, then enable a place: the change is rolled back
+    with a message and the previous places remain. Disabling or deleting the
+    last enabled place still works without the permission. Grant the
+    permission and tap **בדיקת הרשאות**: a failed registration is retried.
+
+## APP-10A background arrival field test (Build 17)
+
+Build 16 field report: two places visited with the app in the background, no
+notifications. Last geofence callback was an EXIT at 05:42:20Z; boot recovery
+completed at 05:50:19Z; no callback of any kind arrived afterwards.
+
+Fixed in Build 17:
+
+- Each place could notify only once. After an arrival the background service
+  stops, so the place's EXIT arrives in a new background process, where it was
+  dropped (`BACKGROUND_EVENT_IGNORED unknown place id`). The place stayed in
+  cooldown/waiting-for-exit and ignored every later ENTER. EXIT now restores the
+  place's saved state and re-arms it; an elapsed cooldown is applied on EXIT and
+  ENTER.
+- Per-place state recorded for an old location (for example `legacy-place-1`
+  before the Build 16 sync) is discarded at startup.
+
+Still unexplained from the Build 16 evidence: Android delivered no geofence
+callbacks after the 05:50Z boot recovery. Build 17 records what is needed to
+explain this. In Developer Mode, the **Places pipeline** card shows:
+
+- System health: location permission, location services, battery optimization,
+  background restriction, notifications.
+- `APP_PROCESS_EXIT reason=...`: why the app process last ended.
+  `FORCE_STOPPED ... GEOFENCES_CLEARED_BY_ANDROID` means Android removed every
+  geofence (HyperOS "clear all" in recents, or battery cleanup, can do this).
+  The first Build 17 start lists up to 16 earlier exits, so it can show whether
+  this happened during the Build 16 test.
+- `MULTI_GEOFENCE_APPLIED source=... id@lat,lon/rRADIUS`: the exact geofences
+  registered (location rounded to ~100 m).
+- `GEOFENCE_TRANSITION enter|exit ids=[...] places=[...]`: every callback with
+  its place IDs.
+- Per place: registration state and arrival state (`state=ARMED|COOLDOWN|...`).
+- The background arrival pipeline log (sessions, samples, notifications).
+- The legacy engine fields are labelled legacy and do not describe places.
+
+Steps on the Xiaomi 15:
+
+1. Install Build 17 as an update. Open the app once, then open Developer Mode
+   and copy the Places pipeline card (all text is selectable). Note any
+   `APP_PROCESS_EXIT ... GEOFENCES_CLEARED_BY_ANDROID` lines and the System
+   health values.
+2. Recommended HyperOS settings for the test (Settings → Apps → PingPlace):
+   Autostart on; Battery saver "No restrictions"; Location "Allow all the time";
+   lock the app in recents and do not use "clear all".
+3. Each place must show `state=ARMED` (or `NONE`) before leaving for a visit.
+4. Visit place A with the app in the background: expect a notification and a
+   `GEOFENCE_TRANSITION enter ... places=[A]` line.
+5. Leave place A (beyond the re-arm distance, ~350 m): expect a
+   `GEOFENCE_TRANSITION exit` line and, in the pipeline log,
+   `BACKGROUND_EXIT_RESTORING_PERSISTED_STATE` then a return to `ARMED`.
+6. Visit place A again later: a **second** notification is expected (this was
+   the Build 16 defect). Repeat for place B.
+7. If no notification arrives, copy the Places pipeline card immediately and
+   note the visit times (local) and how long you stayed.
+
+## APP-10B short-visit arrival pipeline (Build 18)
+
+**Status: field-validated for background arrival. Two field tests are still
+pending (see the end of this status block).** The signed Build 18 was used:
+`1.0.0+18`, versionCode 10018, source `f1b9344`, certificate `906551dd…`,
+trusted run `41501857948`. The owner installed it on the Xiaomi 15 on
+2026-11-02 and tested it there in real visits on 2026-11-03, with the app in the
+background. It was also confirmed on a second phone.
+
+| Area | Field result |
+|---|---|
+| In-place installation | Validated (2026-11-02). Installed as an update over Build 17; the app reports `1.0.0+18`. |
+| Data preservation | Validated (2026-11-02). Both saved places and their reminders were preserved; both places are registered and enabled. |
+| Diagnostics export | Validated. **Copy full diagnostics** works; **Share diagnostics** opens Android's native share sheet. |
+| Background arrival | Validated (2026-11-03). Each place produced `APPROACH_SUMMARY outcome=ARRIVED` followed by `NOTIFICATION_SENT`, with the app in the background. |
+| Multi-place notifications | Validated (2026-11-03). Both places notified independently, each with its own reminder, 54 s apart. |
+| Cooldown suppression | Validated (2026-11-03). Each place entered its own `COOLDOWN`. Revisiting both places during cooldown produced no duplicate notification. |
+| Second device | Confirmed by the owner (2026-11-03). |
+
+2026-11-03 visit evidence (Xiaomi 15):
+
+| Place | Closest | Accepted samples | Approach duration | Notification |
+|---|---|---|---|---|
+| `legacy-place-1` (דלק יעד) | 78.8 m | 11 of 11 | 9 s | `NOTIFICATION_SENT` 05:23:11Z |
+| `place-1793511714921683-2ec1bef0` (צומת סגולה) | 63.4 m | 9 of 9 | 9 s | `NOTIFICATION_SENT` 05:24:05Z |
+
+Both arrivals were confirmed within the 80 m inner radius, 9 s after verification
+started. This is the short-visit case that Build 17 never notified.
+
+Follow-up field tests (2026-11-03, Xiaomi 15):
+
+1. **Reboot without opening the app: validated.** After a reboot, with
+   PingPlace never opened, two registered places notified on arrival.
+2. **Post-cooldown re-notification: failed in Build 18; fixed in Build 19
+   (APP-10C, below).** A re-armed visit to `legacy-place-1` more than
+   10 minutes later logged `APPROACH_SUMMARY outcome=ARRIVED` (closest 75.8 m),
+   then `NOTIFICATION_REQUESTED` and `NOTIFICATION_SUPPRESSED_DUPLICATE`. The
+   place's state showed `visit=null`. A third place, `אניטה`, notified normally.
+
+## APP-10C post-cooldown re-notification (Build 19)
+
+Root cause: the native runtime bridge stored a cleared visit ID as JSON null.
+Android's `JSONObject.optString` returns the literal string `"null"` for a
+JSON null, so a new background process restored the visit ID `"null"`. When
+the engine entered from ARMED, it kept an existing visit ID (`??=`). Every
+re-armed visit that started in a new process was therefore delivered as
+`<place>:null`. Notifications are de-duplicated by visit ID: the first such
+visit notified, and **every later one at that place was suppressed as a
+duplicate, indefinitely**. Visits that re-armed and re-entered within the same
+process got a fresh ID, which is why the failure was intermittent. This also
+explains `visit=null` in the Places card: a missing ID is not printed at all.
+
+The cooldown and re-arm logic was not at fault. An approach can only start from
+ARMED, never from COOLDOWN or WAITING_FOR_EXIT. The 14:26:03Z arrival therefore
+shows the place had re-armed before that visit. A
+suppressed duplicate does start a new 10-minute cooldown, as any arrival does.
+
+Fixes:
+
+- Entering from ARMED always creates a new visit ID. A restarted approach of
+  the same visit keeps its ID.
+- Native (`RuntimeStateCodec`, pending geofence queue) and Dart both read JSON
+  null, an empty string, or an already-stored `"null"` as absent. State already
+  saved on the device is repaired when it is next read; no data is cleared.
+- `NOTIFICATION_REQUESTED`, `NOTIFICATION_SENT`,
+  `NOTIFICATION_SUPPRESSED_DUPLICATE`, `NOTIFICATION_PERMISSION_MISSING` and
+  `NOTIFICATION_FAILED` now include `visit=<id>`.
+
+Unchanged: at most one notification per visit, independent per-place cooldowns,
+no notification during cooldown or before a confirmed exit beyond 350 m,
+arrival within 80 m with accuracy <= 50 m, and temporary precise location only.
+
+Steps on the Xiaomi 15 (Build 19, installed as an update):
+
+1. Before leaving, check the Places card. A place may still show `visit=null`
+   until its next visit; this is expected.
+2. Visit a place: expect `NOTIFICATION_SENT visit=visit-...`.
+3. Leave beyond ~350 m, wait more than 10 minutes, and return: expect a
+   **second** `NOTIFICATION_SENT` with a different `visit=` value.
+4. Repeat step 3 once more, to cover a third visit restored from storage
+   (Build 18 suppressed this one).
+5. During a cooldown, a revisit must still produce `ENTER_SUPPRESSED
+   reason=COOLDOWN` and no notification.
+
+Build 19 field result (2026-11-04): install and data preservation passed; the
+third visit to legacy-place-1 did not notify. See APP-10D.
+
+## APP-10D third-visit failure and log flooding (Build 20)
+
+Field evidence (Build 19, Xiaomi 15, export 2026-11-04T05:43:03Z): three
+visits to legacy-place-1, the third without a notification; two visits to
+location 2. The 500-entry background log held no `APPROACH_SUMMARY` and no
+notification result, about 150 `EXIT_OBSERVED_DURING_COOLDOWN` and 196
+`LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION` lines, and
+`BACKGROUND_VERIFICATION_WATCHDOG_STOPPED` for legacy-place-1 at 05:40:44Z
+while that place was ARMED. The missed visit's own lines had been evicted, so
+the failing visit is explained from code and a reproduction, not from its log.
+
+Full report (export 06:18:30Z) evidence:
+
+- The pipeline log retains only 05:37:28-05:40:44Z: 196 `legacy-place-1
+  LOCATION_IGNORED ... state=ARMED`, 150 `EXIT_OBSERVED_DURING_COOLDOWN` and
+  149 `LOCATION` lines for place 2 (one fix per second), 5 other lines.
+- Native callbacks that morning: ENTER legacy-place-1 05:28:44, EXIT 05:29:29;
+  ENTER Anita 05:29:34, EXIT 05:29:54; ENTER place 2 05:29:44, EXIT 05:30:54.
+  None after 05:30:54.
+- Place 2 re-armed at 05:39:58, so it arrived at 05:29:58 (cooldown 10 min).
+  Its stop was `KEPT_FOR [legacy-place-1]`, and the watchdog at 05:40:44 is
+  exactly 11 minutes after place 2's ENTER.
+- legacy-place-1 was ARMED at 05:37 with no visit ID, so the 05:28:44 visit
+  never arrived (an arrival would still be in cooldown) and no approach state
+  survived (an approach leaves its visit ID). Of the possible states before
+  that ENTER, only an expired cooldown with an observed exit, re-armed inside
+  the ENTER, explains both, together with the service stopping before the
+  approach was saved. A suppressed ENTER (WAITING_FOR_EXIT) would have left
+  the place in that state or re-armed it on EXIT, which removes it from the
+  GPS list. Neither matches.
+- Anita (visit started 05:29:34, the ENTER time) is ARMED with that visit ID:
+  a 20-second pass that ended without an arrival.
+
+`test/field_replay_2026_11_04_test.dart` replays this timeline. Against the
+Build 19 code it notifies only place 2 and logs `EXIT_OBSERVED_DURING_COOLDOWN`
+for every fix, with GPS still running at the end. With Build 20 it notifies at
+legacy-place-1 and place 2, stops GPS, and logs under 150 lines. The test
+store cannot lose a save when the service stops, so in the Build 19 replay
+legacy-place-1 keeps its visit ID and its EXIT removes it from the GPS list.
+On the phone the save was lost and it stayed on the list (the 196
+`LOCATION_IGNORED state=ARMED`), which Build 20's EXIT change prevents.
+
+Root cause (reproduced): a place that left during its cooldown (exit observed)
+and returned after the cooldown had expired while no process was running
+re-armed inside the ENTER handler. The re-arm emitted "precise location
+stopped", which the session forwarded as `stopPlace:<id>`. The native service
+removed the place from the places it routes fixes to and, with no other place
+verifying, stopped GPS and the service. The same ENTER then started the
+approach (`STATE armed -> approaching`, `PRECISE_LOCATION_STARTED`), but no
+fix ever reached it: no ARRIVED, no summary, no notification. Whether a visit
+is affected depends only on when the previous visit's EXIT came: within the
+10-minute cooldown (affected) or after it (not affected). Visit identity is
+not involved: the reproduction gets a new `visit-...` ID for every visit.
+
+Other defects fixed:
+
+- A geofence EXIT registered the place for GPS fixes in the native service even
+  when the place needed none (for example an ARMED place). It then received
+  and ignored every fix (`LOCATION_IGNORED`), and kept GPS running after every
+  other place had finished, until the watchdog. The session now asks for fixes
+  explicitly (`startVerification`) when it must measure an exit.
+- After an exit was observed during the cooldown, GPS kept running for that
+  place and logged `EXIT_OBSERVED_DURING_COOLDOWN` for every fix. Nothing more
+  needs measuring: the place now stops only its own verification
+  (`REARM_VERIFICATION_COMPLETE`) and re-arms when the cooldown ends, as
+  before. Another place's approach continues.
+- Found in review: with the EXIT change above, nothing kept the service alive
+  for EXITs that Dart had not handled yet. When one geofence callback reports
+  EXIT for several places (as at 2026-11-03T21:33:22Z), the first place's stop
+  could destroy the engine with the other EXITs still queued, so a place
+  waiting to measure its exit would miss it. The native service now counts
+  events delivered to Dart until Dart has handled them. When the last place
+  stops while events are pending, GPS stops at once and the service stops
+  after those events (`service=STOPPING_AFTER_EVENTS`). The watchdog still
+  stops it if Dart never answers.
+- Found in review of 3bf876b (delayed stop): a stop sent while handling an
+  earlier event, for example the EXIT that re-arms a place, could reach the
+  native service after the same place's new ENTER had registered it, and
+  remove it again. The new approach then got no fixes and the service
+  stopped once the ENTER was handled: a missed notification. Every approach
+  start now re-registers its place (`startVerification:<id>`, idempotent:
+  the watchdog is only ever extended) while its own event is still being
+  handled, so the deferred stop sees the place and is cancelled.
+
+Remaining known races (not fixed in Build 20; neither can cause a missed
+notification):
+
+- A stop issued by a timer (approach timeout, cooldown end, re-arm timeout)
+  with no event in flight can still remove a place whose new ENTER the
+  native service registers in the same instant. Its ENTER event is then in
+  flight, so the service waits for it, and the approach re-registers itself
+  as above. Only fixes arriving in the few milliseconds between are lost.
+- A geofence EXIT for a place that needs no measurement (ARMED) keeps the
+  foreground service notification for up to 2 minutes, until the watchdog,
+  with GPS off unless another place is verifying. Build 19 behaved the same,
+  with GPS on. Cosmetic; no arrival is affected.
+
+Diagnostics:
+
+- The background log evicts routine per-fix lines (`LOCATION distance=`,
+  `LOCATION_IGNORED`, `LOCATION_REJECTED`, `EXIT_OBSERVED_DURING_COOLDOWN`,
+  `BACKGROUND_EVENT_QUEUED`) before anything else. State transitions, visit
+  summaries, notification results, startup failures and errors are evicted
+  only when nothing routine is left. The export starts with
+  `LOG_RETENTION retained=N max=500 evictedRoutine=N evictedCritical=N`.
+- `LOCATION_IGNORED` is logged for the first ignored fix and then every 30th,
+  with `count=N`. `EXIT_OBSERVED_DURING_COOLDOWN` is logged once per cooldown.
+- New: `APPROACH_STARTED visit=...`; `PRECISE_LOCATION_KEPT
+  reason=NEW_APPROACH`; `COOLDOWN_ELAPSED_WHILE_STOPPED until=...
+  exitObserved=...`. `APPROACH_SUMMARY` includes `visit=`. An approach that
+  ends in a later process (watchdog or OS kill) gets `APPROACH_SUMMARY ...
+  restored=true samples=unknown`. `ENTER_SUPPRESSED` includes `lastVisit=`.
+
+Unchanged: arrival within 80 m at accuracy <= 50 m, 10-minute per-place
+cooldowns, re-arm only after a confirmed exit beyond 350 m, at most one
+notification per visit, temporary precise location only, saved places and
+reminders.
+
+Steps on the Xiaomi 15 (Build 20, installed as an update):
+
+1. Visit legacy-place-1: expect `APPROACH_STARTED visit=...`, then
+   `APPROACH_SUMMARY outcome=ARRIVED` and `NOTIFICATION_SENT` with the same
+   visit ID.
+2. Leave **within 10 minutes** of arriving, beyond about 350 m. Expect one
+   `EXIT_OBSERVED_DURING_COOLDOWN`, then `REARM_VERIFICATION_COMPLETE` and the
+   GPS notification going away.
+3. Return more than 10 minutes after the arrival. Expect
+   `COOLDOWN_ELAPSED_WHILE_STOPPED ... exitObserved=true`,
+   `PRECISE_LOCATION_KEPT reason=NEW_APPROACH`, `APPROACH_STARTED` and a
+   notification with a new visit ID. This is the Build 19 failure.
+4. Repeat once, leaving **after** the cooldown instead (`REARMED_ON_EXIT`), and
+   return for a third notification.
+5. A revisit during a cooldown must still produce `ENTER_SUPPRESSED
+   reason=COOLDOWN` and no notification.
+6. Export diagnostics. The first background line should show
+   `evictedCritical=0`, and each visit should have its summary and
+   notification result.
+
+Build 17 field evidence: Android delivered ENTER and EXIT for both places, 40-55
+seconds apart, and no notification followed.
+
+Root cause (confirmed from the Build 17 logs): the headless background Dart
+entrypoint never initialized the Flutter binding. Its first channel call threw,
+so it never reported `ready`. The native service started GPS (fixes every 2 s
+at 3.8 m accuracy were logged) but queued every ENTER, fix and EXIT for a Dart
+side that never ran. No place was evaluated, so both places showed
+`state=NONE`, and no Dart diagnostic could be written. The fixes kept running
+until the watchdog stopped them. This affects every build that uses the
+headless engine. The entrypoint now initializes the binding. The native
+service logs `BACKGROUND_ENGINE_STARTING`, `BACKGROUND_ENGINE_READY after=...`
+and, if Dart has not answered within 15 s, `BACKGROUND_ENGINE_NOT_READY`.
+The Places pipeline card now reloads the native logs when opened and shows
+when it was loaded (Build 17 showed the pipeline log as of app start).
+
+Behaviour change for the multi-place background pipeline (approval required;
+the legacy single-target controller and the simulator are unchanged):
+
+- Android geofence transitions are wake-ups, not arrival evidence. During an
+  approach, a precise fix beyond the outer radius no longer ends the approach on
+  its own (Android often fires ENTER while the device is still outside).
+- An Android EXIT during an approach waits up to 60 s for precise confirmation:
+  a fix beyond the outer radius ends the approach (`EXIT_CONFIRMED`); an inner
+  fix still arrives and notifies; no evidence within 60 s ends it.
+- Arrival is unchanged: one accepted fix (accuracy <= 50 m) within the inner
+  radius (80 m). There is no dwell requirement. The 10-minute cooldown, the
+  re-arm distance and duplicate prevention are unchanged.
+
+Defects fixed:
+
+- Each place is verified against its own outer radius (Build 17 always used
+  300 m).
+- Fixes that arrived while the background engine was still starting were
+  dropped silently; they are now queued.
+- A persisted `APPROACHING` state (verifying process killed) made every later
+  ENTER a no-op; the ENTER now restarts verification.
+- One place finishing stopped precise location for every place, and any
+  background event shortened the 11-minute approach watchdog to 2 minutes. Both
+  are now per place.
+- An ENTER suppressed by cooldown or waiting-for-exit left GPS running until the
+  watchdog; it now releases precise location and logs why.
+- Fix interval reduced from 5 s to 2 s while verifying (an 80 m inner radius is
+  crossed in about 11 s at 50 km/h).
+
+New diagnostics (pipeline log, prefixed with the place ID):
+
+- `ENTER_SUPPRESSED reason=COOLDOWN|WAITING_FOR_EXIT ...`
+- `APPROACH_RESTARTED_FROM_PERSISTED_STATE since=...`
+- `SAMPLE at=... lat=... lon=... age=...s` then `LOCATION distance=... accuracy=...`
+- `LOCATION_REJECTED reason=LOW_ACCURACY accuracy=...m max=...m`
+- `LOCATION_IGNORED reason=NO_ACTIVE_VERIFICATION state=...`
+- `EXIT_AWAITING_PRECISE_CONFIRMATION` / `EXIT_CONFIRMED distance=...`
+- `APPROACH_SUMMARY outcome=ARRIVED|EXIT_CONFIRMED|EXITED|TIMEOUT samples=N
+  accepted=N rejectedLowAccuracy=N closest=...m@...m bestAccuracy=...m
+  firstFixAfterEnter=...s duration=...s`
+- Native: `FIRST_LOCATION_SAMPLE after=...ms`, `PLACE_VERIFICATION_STOPPED
+  place=... service=STOPPING|KEPT_FOR [...]`,
+  `BACKGROUND_SAMPLE_NOT_ROUTED reason=NO_BACKGROUND_ENGINE`.
+
+Steps on the Xiaomi 15:
+
+1. Before the drive, copy the Places pipeline card. Note each place's
+   `state=` and radius. A place in `WAITINGFOREXIT` or `COOLDOWN` will
+   suppress its next ENTER until a confirmed exit re-arms it.
+2. Visit each place, including a short (under 1 minute) pass that comes within
+   about 50 m of the pin.
+3. After each visit, open the card (it reloads), check `Loaded ...` is current,
+   and tap **Copy full diagnostics** (clipboard) or **Share diagnostics**
+   (Android share sheet, e.g. WhatsApp or email). Expect `BACKGROUND_ENGINE_READY` after each ENTER; a
+   `BACKGROUND_ENGINE_NOT_READY` line is a release blocker. Every ENTER must
+   be followed by either an
+   `APPROACH_SUMMARY` line or an `ENTER_SUPPRESSED` line with its reason.
+
+### Diagnostics export (Build 18)
+
+The Places pipeline card has **Copy full diagnostics** and **Share
+diagnostics**. Both reload first, then export the full stored history (native
+receiver/registration log up to 300 entries, background pipeline log up to 500),
+not only the lines visible on screen. Sections: app version/build/commit and
+export time, system health, Android registration, places and per-place state,
+background engine events, visit summaries (`APPROACH_SUMMARY`,
+`ENTER_SUPPRESSED`), notification results, errors and failures, then both full
+logs oldest first. Exporting never clears or changes a log. Coordinates are
+rounded to 3 decimals (~100 m); distances, accuracies and timestamps are kept.
+Device information is limited to manufacturer, model and Android SDK level.
+
+## APP-10E blocked foreground-service start (Build 21)
+
+Build 20 field test, Xiaomi 15, SDK 36, 2026-11-04. The third pass at
+legacy-place-1 ("דלק יעד") produced no arrival check:
+
+- `19:39:41.004 GEOFENCE_TRANSITION enter ids=[legacy-place-1]`: the first
+  write in `GeofenceBroadcastReceiver.onReceive`.
+- `19:40:20.366 BACKGROUND_EVENT_RECEIVED enter`: the next write in the same
+  `onReceive`, 39.4 s later.
+- `19:40:20.375 PRECISE_LOCATION_START_BLOCKED place=legacy-place-1
+  error=ForegroundServiceStartNotAllowedException`.
+- `19:40:20.637`: the process was killed (`normal_mem_pressure`).
+- `19:40:26`: EXIT; the place re-armed (`REARMED_ON_EXIT state=ARMED`). No
+  `APPROACH_STARTED`, summary or notification exists for the pass.
+
+Established: Android 12+ refuses a background foreground-service start unless
+an exemption applies. A geofence transition is an exemption, but only for a
+short time. Build 20 called `startForegroundService` 39 s after receipt, after
+its diagnostics, SharedPreferences and configuration reads, and Android
+refused it. Ruled out by the log:
+
+- a battery or background restriction (`backgroundRestricted=false`);
+- a missing permission (that is a `SecurityException`);
+- a replayed event (one transition line, one callback).
+
+Not established: what delayed the receiver thread between its two writes.
+The log records neither CPU state nor process freezing. Build 21 adds timing
+for every stage so the next report can narrow it.
+
+### Build 21 changes
+
+- **Start first, without storage access.** The receiver makes a single
+  `startForegroundService` call for every place of the callback, built only
+  from the platform event's request IDs, before any SharedPreferences read or
+  write. The service promotes itself to the foreground first, then reads the
+  configuration and validates each ID. A place that is not registered is
+  logged (`PRECISE_LOCATION_TARGET_UNKNOWN`) and never gets GPS; the other
+  places of the same callback are verified normally.
+- **EXITs** of one callback also use one `startForegroundService`. Build 20
+  used `startService` while `isRunning` was still true for a service that was
+  already stopping, which Android refuses from the background.
+- **Guarded promotion.** A refused `startForeground` is logged
+  (`FOREGROUND_PROMOTION_FAILED`) and the service stops. Build 20 crashed the
+  process. GPS is never requested without the foreground service.
+- **Timing lines**, all relative to receiver entry:
+  - `GEOFENCE_RECEIVER_TIMING type= places= parse=Nms startInvoked=+Nms
+    startReturned=+Nms start=ACCEPTED|<exception> triggerAge=Nms`
+    (`triggerAge`: receipt time minus the triggering fix time);
+  - `FOREGROUND_PROMOTED sinceReceive=Nms places=[...]` (service);
+  - `GEOFENCE_TARGETS_READ took=Nms resolved=N unknown=[...]` (service);
+  - `PRECISE_LOCATION_START_REQUESTED place=... sinceReceive=Nms`;
+  - `ENTER_RECOVERY_REQUESTED place=... sinceReceive=Nms`,
+    `ENTER_RECOVERY_REREGISTERED|FAILED place=... after=Nms`,
+    `ENTER_RECOVERY_RECEIVER_RELEASED reason=COMPLETED|TIMEOUT after=Nms`.
+- **A refused start is never a verification.** It is logged as
+  `PRECISE_LOCATION_START_BLOCKED place=... stage=START|PROMOTION error=...
+  sinceReceive=Nms recovery=REREGISTER|EXHAUSTED|NOT_REGISTERED` (native) and
+  `<place> APPROACH_SUMMARY outcome=START_BLOCKED visit=none ...` (pipeline,
+  under Visit summaries). No visit is created.
+- **Recovery** (`recovery=REREGISTER`): only that place's geofence is re-added
+  with `INITIAL_TRIGGER_ENTER`, with the same request ID and PendingIntent.
+  - It starts no service and no GPS and touches no other place.
+  - It runs at most once per place per 10 minutes. The marker is committed
+    before the request, so the limit survives process death.
+  - It runs through the registration coordinator without making a user's
+    registration change stale, and is skipped if a newer one arrives.
+  - When it runs it re-checks that the place is still desired and confirmed
+    as applied.
+  - The receiver holds its broadcast (`goAsync`) until every re-add answers
+    or 8 s pass, whichever is first. The hold is released exactly once.
+
+### Platform limits (documented behaviour, not verified on the Xiaomi 15)
+
+- **Replacing one geofence.** `addGeofences` replaces a geofence with the
+  same request ID; other registered geofences are not affected (Play services
+  documentation). The full re-registration at every app start already relies
+  on this.
+- **`INITIAL_TRIGGER_ENTER`** is documented to trigger ENTER when the device
+  is already inside at the time the geofence is added. Like every geofence
+  transition it is best effort: it depends on Play services' own location
+  and may be late or absent.
+- **Exemption for the new ENTER.** Whether that ENTER carries a fresh
+  start-from-background exemption on HyperOS must be confirmed in the field.
+- **Failed, late or abandoned re-adds.**
+  - A failed re-add is logged (`ENTER_RECOVERY_FAILED`) and not retried in
+    the window. The place keeps its existing registration.
+  - An answer later than 8 s is logged if the process is still alive; the
+    request itself was already handed to Play services.
+  - If the process dies while the re-add is still queued behind another
+    registration operation, the re-add is lost. That operation re-adds every
+    place with the same initial trigger anyway.
+- **Delivery the app cannot fix.** If Android delivers the broadcast itself
+  after the exemption has expired, or the device has already left (as on
+  2026-11-04, 6 s before the EXIT), the arrival cannot be recovered.
+- **Battery optimization.** "Battery optimization off" is a documented
+  exemption that the app does not request; whether to request it is a product
+  decision.
+
+### Steps on the Xiaomi 15 (Build 21)
+
+1. Repeat the three-visit route. For every ENTER, check
+   `GEOFENCE_RECEIVER_TIMING ... start=ACCEPTED`, then `FOREGROUND_PROMOTED`,
+   `PRECISE_LOCATION_START_REQUESTED`, then `APPROACH_STARTED` or
+   `ENTER_SUPPRESSED`.
+2. Record `parse`, `startInvoked`, `triggerAge`, `FOREGROUND_PROMOTED
+   sinceReceive` and `GEOFENCE_TARGETS_READ took` for each ENTER.
+3. Any `PRECISE_LOCATION_START_BLOCKED` is a finding. Export diagnostics and
+   check for `ENTER_RECOVERY_REQUESTED`, `ENTER_RECOVERY_REREGISTERED`, the
+   receiver release line and, if you were still inside,
+   `ENTER_RECOVERY_DELIVERED` followed by a normal approach.
+
+## APP-10F diagnostics retention and approach evidence (Build 22)
+
+Build 21 field reports, 2026-11-05/06: a Xiaomi 15 (24129PN74G) and a second
+Xiaomi (23078PND5G) in the same car on the same route. The Xiaomi 15 never
+received a Sagula ENTER on 6 November; its Delek EXIT arrived 80 s after the
+second phone's, at the moment the car left Sagula. The app received no
+callback to act on (see the APP-10F report). Diagnostics-only changes:
+
+- **Per-tier retention** of the background pipeline log (`DiagnosticRetention`):
+  OUTCOME 300 (visit start, summary, notification result, suppression,
+  exit/re-arm decisions, watchdog, blocked starts, every failure and any
+  unknown line), LIFECYCLE 200 (state changes, engine and service plumbing),
+  SAMPLE 150 (per-fix lines). Each tier evicts only its own oldest entries.
+  Build 21's routine-first rule had left zero fixes in a 500-entry log and
+  evicted 111 outcome/lifecycle lines.
+- Export header: `LOG_RETENTION retained=N outcomes=a/300 lifecycle=b/200
+  samples=c/150 evictedOutcome= evictedLifecycle= evictedSample=
+  [beforeBuild22=evictedRoutine:R,evictedCritical:C] policy=PER_TIER`.
+  After installing Build 22 the old counters are reported once as history.
+- **`APPROACH_SUMMARY`** adds, for the first and the last (deciding) fix:
+  `…Age` (delivery time minus fix time), `…Accuracy`, and `…FromEnter` (fix
+  time minus ENTER time; negative means the fix predates the ENTER, e.g. a
+  cached location delivered with the GPS request).
+
+- **Bounded, not permanent.** Every tier, OUTCOME included, evicts its
+  oldest entries once full (about 50 visits of outcomes). Each eviction is
+  counted per tier and shown in `LOG_RETENTION`; `evictedOutcome > 0` means
+  older outcomes existed that the export no longer contains.
+- **Fix ages are diagnostic only.** No arrival, rejection or cooldown
+  decision uses `firstFix*`/`lastFix*` in Build 22. They compare the
+  provider's fix time with the phone's wall clock: a clock offset or a clock
+  change during the approach shifts them, and `…Age` includes time the fix
+  waited in the native queue (for example while the engine started). Treat
+  sub-second values as approximate.
+
+No arrival, notification, cooldown or GPS behaviour changes.
+
+Steps on the Xiaomi 15 and the second phone (Build 22), same car:
+
+1. Repeat the route. Export both phones right after the trip.
+2. `LOG_RETENTION ... evictedOutcome=0`, and `samples=` above 0 with the
+   latest visit's `LOCATION distance=` lines present.
+3. For every arrival, note `firstFixAge`, `firstFixAccuracy` and
+   `firstFixFromEnter`. These decide the stale-location policy (pending).
+4. Compare `GEOFENCE_TRANSITION` times for the same place between phones.
+
+
+## APP-11 map location picker (Build 23)
+
+UI only; see TECH_SPEC.md "Phase 1 APP-11". Detection, registration and
+diagnostics behave exactly as in Build 22.
+
+Automated coverage:
+
+- `test/coordinates_test.dart`: order, precision, negatives, boundaries,
+  NaN/infinity, malformed pairs, links refused, bidi marks, LTR display,
+  radius preview, initial map position.
+- `test/map_location_picker_test.dart` (fake map surface, no network): new
+  and existing places, marker and viewport, confirm/cancel/back, unchanged
+  selection, tile failure fallback, double-open guard, disposed editor,
+  pasted pairs, RTL labels; Save through PlaceManager, registration and
+  rollback, runtime reset only for a moved place, restart persistence.
+- `test/flutter_map_surface_test.dart`: the production flutter_map surface
+  with unreachable tiles: circle radii in metres, markers, taps, tile errors.
+
+Manual check on the phone (needs internet for tiles):
+
+1. Edit an existing place, then tap "בחר מיקום במפה": the map opens on the saved
+   marker with the blue outer circle (its radius) and the green 80 m circle.
+2. Tap "ביטול": coordinates unchanged. Leave the editor without saving: the
+   place list and the Android registration status are unchanged.
+3. Add a place: tap the map, zoom in, tap again to adjust, "אישור מיקום". The
+   latitude/longitude fields fill in; nothing is saved until "שמירה".
+4. Paste `31.732600, 34.757743` into "הדבקת קואורדינטות" and tap "החלה":
+   latitude 31.7326, longitude 34.757743. A Google Maps link shows an error.
+5. Airplane mode, open the map: an error banner appears; manual entry still
+   works.
+6. Repeat the usual arrival route: behaviour as in Build 22.

@@ -132,3 +132,142 @@ final class PlaceMigration {
     );
   });
 }
+
+/// Outcome of the one-time APP-10 legacy sync.
+final class LegacyPlaceSyncResult {
+  const LegacyPlaceSyncResult({required this.changed, required this.detail});
+  final bool changed;
+  final String detail;
+}
+
+/// One-time reconciliation of the migrated place with Build 12-15 edits.
+///
+/// Builds 12-15 migrated the single legacy target into the place list once
+/// (`legacy-place-1`), but their home screen kept editing only the legacy
+/// target. The legacy target is therefore the user's most recent choice for
+/// that place. Before the place list becomes the only editable source, copy
+/// the legacy coordinates, radius, monitoring choice and reminder text onto
+/// `legacy-place-1`.
+///
+/// Runs at most once: completion is recorded in the place document, so later
+/// edits made in the place list are never overwritten. Nothing is deleted. If
+/// the legacy data cannot be read or is invalid, the stored place is kept
+/// unchanged and the reason is reported.
+final class LegacyPlaceSync {
+  LegacyPlaceSync({required this._database, required this._source});
+
+  final PlaceDatabase _database;
+  final LegacySingleTargetSource _source;
+
+  Future<LegacyPlaceSyncResult>
+  syncIfNeeded() => _database.transact<LegacyPlaceSyncResult>((data) async {
+    if (data.legacySyncCompleted) {
+      return PlaceDatabaseChange(
+        data: data,
+        result: const LegacyPlaceSyncResult(
+          changed: false,
+          detail: 'ALREADY_COMPLETED',
+        ),
+        persist: false,
+      );
+    }
+    PlaceDatabaseChange<LegacyPlaceSyncResult> complete(
+      PlaceData updated,
+      bool changed,
+      String detail,
+    ) => PlaceDatabaseChange(
+      data: updated.copyWith(legacySyncCompleted: true),
+      result: LegacyPlaceSyncResult(changed: changed, detail: detail),
+    );
+
+    final index = data.places.indexWhere(
+      (place) => place.id == PlaceMigration.legacyPlaceId,
+    );
+    if (index < 0) return complete(data, false, 'NO_MIGRATED_PLACE');
+
+    LegacySingleTarget? legacy;
+    try {
+      legacy = await _source.read();
+    } catch (error) {
+      return complete(data, false, 'LEGACY_UNREADABLE_KEPT_PLACE: $error');
+    }
+    if (legacy == null) return complete(data, false, 'NO_LEGACY_TARGET');
+
+    final current = data.places[index];
+    final radius = legacy.radius;
+    final candidate = current.copyWith(
+      latitude: legacy.latitude,
+      longitude: legacy.longitude,
+      outerRadius: radius,
+      innerRadius: current.innerRadius > radius ? radius : current.innerRadius,
+      rearmRadius: current.rearmRadius < radius
+          ? radius + 50
+          : current.rearmRadius,
+      enabled: legacy.monitoringEnabled,
+    );
+    try {
+      candidate.validate();
+    } on FormatException catch (error) {
+      return complete(
+        data,
+        false,
+        'LEGACY_INVALID_KEPT_PLACE: ${error.message}',
+      );
+    }
+
+    final text = legacy.reminderText.trim();
+    var reminders = data.reminders;
+    var reminderChanged = false;
+    if (text.isNotEmpty) {
+      final existing = reminders.indexWhere(
+        (reminder) => reminder.id == PlaceMigration.legacyReminderId,
+      );
+      if (existing >= 0) {
+        if (reminders[existing].text != legacy.reminderText) {
+          reminders = [
+            for (final reminder in reminders)
+              reminder.id == PlaceMigration.legacyReminderId
+                  ? reminder.copyWith(text: legacy.reminderText)
+                  : reminder,
+          ];
+          reminderChanged = true;
+        }
+      } else if (!reminders.any((r) => r.placeId == current.id)) {
+        reminders = [
+          ...reminders,
+          Reminder(
+            id: PlaceMigration.legacyReminderId,
+            placeId: current.id,
+            text: legacy.reminderText,
+          ),
+        ];
+        reminderChanged = true;
+      }
+    }
+
+    final placeChanged =
+        candidate.latitude != current.latitude ||
+        candidate.longitude != current.longitude ||
+        candidate.outerRadius != current.outerRadius ||
+        candidate.innerRadius != current.innerRadius ||
+        candidate.rearmRadius != current.rearmRadius ||
+        candidate.enabled != current.enabled;
+    if (!placeChanged && !reminderChanged) {
+      return complete(data, false, 'ALREADY_IN_SYNC');
+    }
+    return complete(
+      data.copyWith(
+        places: [
+          for (final place in data.places)
+            place.id == current.id ? candidate : place,
+        ],
+        reminders: reminders,
+      ),
+      true,
+      'ADOPTED_LEGACY_EDITS '
+      'from=(${current.latitude},${current.longitude},${current.outerRadius},enabled=${current.enabled}) '
+      'to=(${candidate.latitude},${candidate.longitude},${candidate.outerRadius},enabled=${candidate.enabled}) '
+      'reminderChanged=$reminderChanged',
+    );
+  });
+}

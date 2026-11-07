@@ -1,6 +1,10 @@
 package com.example.pingplace
 
 import android.Manifest
+import android.app.ActivityManager
+import android.location.LocationManager
+import android.os.PowerManager
+import androidx.core.app.NotificationManagerCompat
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -15,6 +19,11 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private companion object {
+        const val HEALTH_PREFS = "pingplace_health"
+        const val LAST_EXIT_CHECKED = "last_exit_checked"
+        const val SHARE_CHANNEL = "pingplace/share"
+    }
     private val methodChannelName = "pingplace/geofence"
     private val eventChannelName = "pingplace/geofence/events"
     private val locationMethodChannelName = "pingplace/location"
@@ -23,10 +32,12 @@ class MainActivity : FlutterActivity() {
     private var permissionResult: MethodChannel.Result? = null
     private var eventSink: EventChannel.EventSink? = null
     private var locationEventSink: EventChannel.EventSink? = null
+    private var geofenceMethodChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
+        geofenceMethodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, methodChannelName)
+        geofenceMethodChannel!!
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "checkPermission" -> result.success(permissionStatus())
@@ -34,11 +45,15 @@ class MainActivity : FlutterActivity() {
                     "registrationDetails" -> result.success(registrationDetails())
                     "desiredRegistrationDetails" -> result.success(desiredRegistrationDetails())
                     "desiredMonitoring" -> result.success(GeofenceRecovery.isDesiredMonitoring(this))
+                    "desiredMonitoringState" -> result.success(GeofenceRecovery.desiredMonitoringState(this))
                     "recoveryStatus" -> result.success(GeofenceRecovery.status(this))
-                    "restoreGeofence" -> restoreGeofence(result)
+                    "restoreGeofence" -> if (legacyAllowed(result)) restoreGeofence(result)
                     "requestPermission" -> requestPermission(result)
-                    "register" -> register(call, result)
-                    "remove" -> remove(result)
+                    "register" -> if (legacyAllowed(result)) register(call, result)
+                    "registerPlaces" -> registerPlaces(call, result)
+                    "multiRegistrationStatus" -> result.success(multiRegistrationStatus())
+                    "systemHealth" -> result.success(systemHealth())
+                    "remove" -> if (legacyAllowed(result)) remove(result)
                     else -> result.notImplemented()
                 }
             }
@@ -68,7 +83,7 @@ class MainActivity : FlutterActivity() {
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     locationEventSink = events
-                    PreciseLocationService.handoffToForeground()
+                    PreciseLocationService.handoffToForeground(this@MainActivity)
                     LocationEventBus.attach(this@MainActivity) { payload ->
                         runOnUiThread { locationEventSink?.success(payload) }
                     }
@@ -83,6 +98,10 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 PlatformRuntimeBridge.handleRuntime(this, call, result)
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SHARE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method == "shareText") shareText(call, result) else result.notImplemented()
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PlaceDataBridge.CHANNEL)
             .setMethodCallHandler { call, result ->
                 PlaceDataBridge.handle(this, call, result)
@@ -91,7 +110,19 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 ArrivalNotificationBridge.handle(this, this, call, result)
             }
-        restoreRegistration()
+        recordProcessExits()
+        if (MultiPlaceGeofenceRegistration.hasDesired(this)) {
+            MultiPlaceGeofenceRegistration.restore(this) { success, error ->
+                if (!success) {
+                    GeofenceRecovery.recordDiagnostic(this, "MULTI_GEOFENCE_STARTUP_FAILED ${error ?: "unknown"}")
+                    // The place list is the source of truth. Legacy recovery would
+                    // remove every place geofence and resurrect an old target; the
+                    // Dart startup reconciliation re-registers the stored places.
+                    if (RecoveryPolicy.legacyFallbackAfterMultiFailure(true)) restoreRegistration()
+                }
+                notifyRegistrationStatusChanged()
+            }
+        } else restoreRegistration()
     }
 
     private fun startPreciseLocation(result: MethodChannel.Result) {
@@ -195,6 +226,56 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun multiRegistrationStatus(): Map<String, Any?> {
+        val preferences = getSharedPreferences("pingplace_multi_geofences", MODE_PRIVATE)
+        return mapOf(
+            "mode" to preferences.getBoolean("multi_mode", false),
+            "confirmed" to preferences.getBoolean("registration_confirmed", false),
+            "confirmedLocally" to preferences.getBoolean("registration_confirmed", false),
+            "platformStateVerified" to false,
+            "confirmationSource" to "platform_callback_only",
+            "appliedPlaceIds" to (preferences.getString("applied_requests", null)?.let { raw ->
+                try {
+                    org.json.JSONArray(raw).let { json ->
+                        buildList { for (index in 0 until json.length()) add(json.getString(index)) }
+                    }
+                } catch (_: Exception) { emptyList<String>() }
+            } ?: emptyList<String>()),
+            "desiredPlaceIds" to (MultiPlaceGeofenceRegistration.desiredPlaceIds(this)),
+        )
+    }
+
+    private fun registerPlaces(call: MethodCall, result: MethodChannel.Result) {
+        val raw = call.argument<List<Map<String, Any?>>>("places") ?: emptyList()
+        // Removing geofences needs no location permission: disabling or
+        // deleting the last enabled place must work even without it.
+        if (raw.isNotEmpty() && permissionStatus() != "backgroundAllowed") {
+            result.error("PERMISSION_MISSING", "Background location permission is required", permissionStatus())
+            return
+        }
+        val targets = raw.mapNotNull { item ->
+            val id = item["placeId"] as? String
+            val latitude = (item["latitude"] as? Number)?.toDouble()
+            val longitude = (item["longitude"] as? Number)?.toDouble()
+            val radius = (item["radius"] as? Number)?.toFloat()
+            val innerRadius = (item["innerRadius"] as? Number)?.toFloat() ?: 80f
+            val rearmRadius = (item["rearmRadius"] as? Number)?.toFloat() ?: 350f
+            val cooldownSeconds = (item["cooldownSeconds"] as? Number)?.toLong() ?: 600L
+            val approachTimeoutSeconds = (item["approachTimeoutSeconds"] as? Number)?.toLong() ?: 600L
+            val maxAccuracy = (item["maxAcceptedAccuracy"] as? Number)?.toFloat() ?: 50f
+            val reminderText = item["reminderText"] as? String
+            if (id == null || latitude == null || longitude == null || radius == null) null
+            else MultiPlaceGeofenceRegistration.Target(id, latitude, longitude, radius, innerRadius, rearmRadius, cooldownSeconds, approachTimeoutSeconds, maxAccuracy, reminderText)
+        }
+        if (targets.size != raw.size) {
+            result.error("INVALID_ARGUMENT", "Every place must have an id, coordinates, and radius", null)
+            return
+        }
+        MultiPlaceGeofenceRegistration.register(this, targets) { success, error ->
+            runOnUiThread { if (success) result.success(null) else result.error("GEOFENCE_MULTI_RECONCILE_FAILED", error, null) }
+        }
+    }
+
     private fun remove(result: MethodChannel.Result) {
         GeofenceRecovery.remove(this) { success, error ->
             runOnUiThread {
@@ -208,8 +289,91 @@ class MainActivity : FlutterActivity() {
         // A persisted confirmation is not proof that the platform still owns it.
         GeofenceRecovery.restore(this, "ui_startup") { success, _ ->
             if (!success) GeofenceRecovery.recordDiagnostic(this, "GEOFENCE_STARTUP_RECONCILIATION_FAILED")
+            // Startup reconciliation marks the registration unconfirmed while it
+            // replaces the platform geofence. Tell Dart to re-read the outcome,
+            // whether it succeeded or failed.
+            notifyRegistrationStatusChanged()
         }
     }
+
+    /**
+     * Records why the app process last ended. A force-stop (including HyperOS
+     * "clear all" or battery cleanup) removes every geofence until the app is
+     * opened again, which otherwise looks like geofencing silently stopped.
+     */
+    private fun recordProcessExits() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        try {
+            val activityManager = getSystemService(ActivityManager::class.java) ?: return
+            val preferences = getSharedPreferences(HEALTH_PREFS, MODE_PRIVATE)
+            val since = preferences.getLong(LAST_EXIT_CHECKED, 0L)
+            val records = activityManager.getHistoricalProcessExitReasons(packageName, 0, 16).map {
+                PlaceDiagnostics.ExitRecord(it.reason, it.timestamp, it.description)
+            }
+            PlaceDiagnostics.exitDiagnostics(records, since).forEach { GeofenceRecovery.recordDiagnostic(this, it) }
+            val newest = records.maxOfOrNull { it.timestampMillis } ?: return
+            if (newest > since) preferences.edit().putLong(LAST_EXIT_CHECKED, newest).apply()
+        } catch (error: Exception) {
+            GeofenceRecovery.recordDiagnostic(this, "APP_PROCESS_EXIT_READ_FAILED ${error.javaClass.simpleName}")
+        }
+    }
+
+    /** Opens Android's share sheet with a plain-text diagnostics report. */
+    private fun shareText(call: MethodCall, result: MethodChannel.Result) {
+        val text = call.argument<String>("text")
+        if (text.isNullOrEmpty()) {
+            result.error("SHARE_EMPTY", "Nothing to share", null)
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            putExtra(Intent.EXTRA_SUBJECT, call.argument<String>("subject") ?: "PingPlace diagnostics")
+        }
+        try {
+            startActivity(Intent.createChooser(send, "Share PingPlace diagnostics"))
+            result.success(null)
+        } catch (error: Exception) {
+            result.error("SHARE_FAILED", error.message ?: error.javaClass.simpleName, null)
+        }
+    }
+
+    /** Device and app conditions that decide whether Android delivers geofence events. */
+    private fun systemHealth(): Map<String, Any?> {
+        val power = getSystemService(PowerManager::class.java)
+        val activityManager = getSystemService(ActivityManager::class.java)
+        val location = getSystemService(LocationManager::class.java)
+        return mapOf(
+            "locationPermission" to permissionStatus(),
+            "locationEnabled" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) location?.isLocationEnabled else null,
+            "ignoringBatteryOptimizations" to power?.isIgnoringBatteryOptimizations(packageName),
+            "backgroundRestricted" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) activityManager?.isBackgroundRestricted else null,
+            "notificationsEnabled" to NotificationManagerCompat.from(this).areNotificationsEnabled(),
+            "device" to "${Build.MANUFACTURER} ${Build.MODEL} SDK ${Build.VERSION.SDK_INT}",
+        )
+    }
+
+    /** Rejects legacy single-target calls once places are managed by the place list. */
+    private fun legacyAllowed(result: MethodChannel.Result): Boolean {
+        if (RecoveryPolicy.legacyOperationAllowed(MultiPlaceGeofenceRegistration.hasDesired(this))) return true
+        GeofenceRecovery.recordDiagnostic(this, "LEGACY_REGISTRATION_CALL_REJECTED")
+        result.error(RecoveryPolicy.LEGACY_DISABLED_ERROR, RecoveryPolicy.LEGACY_DISABLED_MESSAGE, null)
+        return false
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        geofenceMethodChannel = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    private fun notifyRegistrationStatusChanged() {
+        runOnUiThread {
+            // Delivery is best-effort: if Dart has not subscribed yet, its first
+            // status read happens after this point and already sees the result.
+            geofenceMethodChannel?.invokeMethod("registrationStatusChanged", null)
+        }
+    }
+
     private fun restoreGeofence(result: MethodChannel.Result) {
         GeofenceRecovery.restore(this, "manual") { success, error ->
             if (success) result.success(true)

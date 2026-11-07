@@ -19,7 +19,6 @@ import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
-import org.json.JSONObject
 import java.time.Instant
 
 object PlatformRuntimeBridge {
@@ -30,25 +29,30 @@ object PlatformRuntimeBridge {
         val preferences = context.getSharedPreferences(RUNTIME_PREFS, Context.MODE_PRIVATE)
         when (call.method) {
             "load" -> {
-                val serialized = preferences.getString(RUNTIME_STATE, null)
-                result.success(serialized?.let { decodeState(it) })
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                val key = stateKey(placeId)
+                val serialized = preferences.getString(key, null)
+                result.success(serialized?.let { RuntimeStateCodec.decode(it) })
             }
             "save" -> {
                 val arguments = call.arguments as? Map<*, *>
                 if (arguments == null) {
                     result.error("INVALID_ARGUMENT", "Runtime state map is required", null)
                 } else {
-                    preferences.edit().putString(RUNTIME_STATE, encodeState(arguments)).commit()
+                    val placeId = arguments["placeId"] as? String
+                    preferences.edit().putString(stateKey(placeId), RuntimeStateCodec.encode(arguments)).commit()
                     result.success(null)
                 }
             }
             "clear" -> {
-                preferences.edit().remove(RUNTIME_STATE).commit()
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                preferences.edit().remove(stateKey(placeId)).commit()
                 result.success(null)
             }
-            "loadReminderText" -> result.success(
-                preferences.getString(REMINDER_TEXT, DEFAULT_REMINDER) ?: DEFAULT_REMINDER,
-            )
+            "loadReminderText" -> {
+                val placeId = (call.arguments as? Map<*, *>)?.get("placeId") as? String
+                result.success(preferences.getString(reminderKey(placeId), DEFAULT_REMINDER) ?: DEFAULT_REMINDER)
+            }
             "saveReminderText" -> {
                 preferences.edit().putString(REMINDER_TEXT, call.arguments as? String ?: DEFAULT_REMINDER).apply()
                 result.success(null)
@@ -57,38 +61,11 @@ object PlatformRuntimeBridge {
         }
     }
 
-    private fun encodeState(arguments: Map<*, *>): String = JSONObject().apply {
-        put("state", arguments["state"] ?: "disarmed")
-        putNullable("targetLatitude", arguments["targetLatitude"])
-        putNullable("targetLongitude", arguments["targetLongitude"])
-        putNullable("approachStartedAt", arguments["approachStartedAt"])
-        putNullable("cooldownUntil", arguments["cooldownUntil"])
-        put("exitObservedDuringCooldown", arguments["exitObservedDuringCooldown"] ?: false)
-        putNullable("visitId", arguments["visitId"])
-    }.toString()
-
-    private fun decodeState(serialized: String): Map<String, Any?> = try {
-        val state = JSONObject(serialized)
-        mapOf(
-            "state" to state.optString("state", "disarmed"),
-            "targetLatitude" to state.optDouble("targetLatitude", Double.NaN).takeUnless { it.isNaN() },
-            "targetLongitude" to state.optDouble("targetLongitude", Double.NaN).takeUnless { it.isNaN() },
-            "approachStartedAt" to state.optString("approachStartedAt").ifEmpty { null },
-            "cooldownUntil" to state.optString("cooldownUntil").ifEmpty { null },
-            "exitObservedDuringCooldown" to state.optBoolean("exitObservedDuringCooldown", false),
-            "visitId" to state.optString("visitId").ifEmpty { null },
-        )
-    } catch (_: Exception) {
-        emptyMap()
-    }
-
-    private fun JSONObject.putNullable(key: String, value: Any?) {
-        put(key, value ?: JSONObject.NULL)
-    }
-
     private const val RUNTIME_PREFS = "pingplace_runtime"
     private const val RUNTIME_STATE = "detection_state"
     private const val REMINDER_TEXT = "reminder_text"
+    private fun stateKey(placeId: String?): String = if (placeId.isNullOrBlank()) RUNTIME_STATE else "detection_state_$placeId"
+    private fun reminderKey(placeId: String?): String = if (placeId.isNullOrBlank()) REMINDER_TEXT else "reminder_text_$placeId"
     private const val DEFAULT_REMINDER = "עצור בתחנת דלק יעד"
 }
 
@@ -308,10 +285,12 @@ object ArrivalNotificationBridge {
     }
 
     private fun backgroundDiagnostics(context: Context): List<String> = try {
-        val serialized = context.getSharedPreferences("pingplace_background", Context.MODE_PRIVATE)
-            .getString("diagnostics", "[]")
-        val array = JSONArray(serialized)
-        buildList { for (index in 0 until array.length()) add(array.getString(index)) }
+        val preferences = context.getSharedPreferences(PreciseLocationService.BACKGROUND_PREFS, Context.MODE_PRIVATE)
+        val array = JSONArray(preferences.getString(PreciseLocationService.BACKGROUND_DIAGNOSTICS, "[]"))
+        val entries = List(array.length()) { array.getString(it) }
+        // Not stored: states how much history the bounded log has dropped.
+        val retention = "${Instant.now()} " + DiagnosticRetention.summaryLine(entries, { key -> preferences.getLong(key, 0L) })
+        listOf(retention) + entries
     } catch (_: Exception) {
         emptyList()
     }

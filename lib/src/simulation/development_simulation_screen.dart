@@ -1,14 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../build_info.dart';
 import '../geofence/development_geofence_controller.dart';
 import '../geofence/geofence_service.dart';
+import '../places/place_manager.dart';
 import 'development_simulation_controller.dart';
+import 'places_pipeline_diagnostics.dart';
 
 final class DevelopmentSimulationScreen extends StatefulWidget {
-  const DevelopmentSimulationScreen({required this.realGeofence, super.key});
+  const DevelopmentSimulationScreen({
+    required this.realGeofence,
+    this.placeManager,
+    super.key,
+  });
 
   final DevelopmentGeofenceController realGeofence;
+  final PlaceManager? placeManager;
 
   @override
   State<DevelopmentSimulationScreen> createState() =>
@@ -16,7 +25,8 @@ final class DevelopmentSimulationScreen extends StatefulWidget {
 }
 
 final class _DevelopmentSimulationScreenState
-    extends State<DevelopmentSimulationScreen> {
+    extends State<DevelopmentSimulationScreen>
+    with WidgetsBindingObserver {
   final SimulationController controller = SimulationController();
   late final DevelopmentGeofenceController realGeofence = widget.realGeofence;
   late final TextEditingController latitudeController;
@@ -26,6 +36,7 @@ final class _DevelopmentSimulationScreenState
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     controller.addListener(_refresh);
     realGeofence.addListener(_refresh);
     latitudeController = TextEditingController(
@@ -38,7 +49,17 @@ final class _DevelopmentSimulationScreenState
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Background recovery and geofence events update native diagnostics while
+    // the UI is not visible; re-read them when the user returns.
+    if (state == AppLifecycleState.resumed) {
+      unawaited(realGeofence.refreshDiagnostics(reason: 'resumed'));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     controller.removeListener(_refresh);
     controller.dispose();
     realGeofence.removeListener(_refresh);
@@ -67,7 +88,20 @@ final class _DevelopmentSimulationScreenState
               'Persistence initialization failure: ${realGeofence.persistenceInitializationFailure}',
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
+          if (realGeofence.persistenceDiagnostics.isNotEmpty)
+            SelectableText(realGeofence.persistenceDiagnostics.join('\n')),
           const SizedBox(height: 12),
+          PlacesPipelineDiagnostics(
+            controller: realGeofence,
+            placeManager: widget.placeManager,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'LEGACY SINGLE-TARGET ENGINE: not used for places. Its engine '
+            'state, visit and precise-location fields below do not describe '
+            'place arrivals.',
+            key: Key('legacy-engine-notice'),
+          ),
           _RealGeofenceSection(
             controller: realGeofence,
             latitudeController: latitudeController,
@@ -182,7 +216,18 @@ final class _RealGeofenceSection extends StatelessWidget {
             Text('Permission: $permission'),
             Text(
               'Platform registration confirmed: '
-              '${controller.recoveryStatus.registrationConfirmed ? 'YES' : 'NO / UNKNOWN'}',
+              '${platformConfirmationLabel(controller.platformConfirmation)}',
+            ),
+            Text(
+              'Diagnostics refreshed: '
+              '${controller.diagnosticsRefreshedAt?.toIso8601String() ?? 'never'}',
+            ),
+            if (controller.diagnosticsRefreshFailure != null)
+              Text(controller.diagnosticsRefreshFailure!),
+            TextButton(
+              onPressed: () =>
+                  unawaited(controller.refreshDiagnostics(reason: 'manual')),
+              child: const Text('Refresh diagnostics'),
             ),
             Text(
               'Last recovery: '
@@ -201,12 +246,6 @@ final class _RealGeofenceSection extends StatelessWidget {
               Text(
                 'Background failure: ${controller.recoveryStatus.lastBackgroundFailure}',
               ),
-            if (controller.recoveryStatus.diagnostics.isNotEmpty)
-              SelectableText(
-                controller.recoveryStatus.diagnostics.reversed
-                    .take(6)
-                    .join('\n'),
-              ),
             Text(
               'Notification readiness: '
               '${controller.notificationPermission.name.toUpperCase()}',
@@ -217,10 +256,10 @@ final class _RealGeofenceSection extends StatelessWidget {
               '${controller.lastNotificationAt?.toIso8601String() ?? ''}',
             ),
             if (controller.currentVisitId != null)
-              Text('Current visit: ${controller.currentVisitId}'),
-            Text('Engine state: ${controller.state.name.toUpperCase()}'),
+              Text('Legacy current visit: ${controller.currentVisitId}'),
+            Text('Legacy engine state: ${controller.state.name.toUpperCase()}'),
             Text(
-              'Precise location: '
+              'Legacy precise location: '
               '${controller.preciseLocationActive ? 'ACTIVE' : 'INACTIVE'}',
             ),
             if (controller.latestLatitude != null)
@@ -269,9 +308,12 @@ final class _RealGeofenceSection extends StatelessWidget {
                   onPressed: controller.requestPermission,
                   child: const Text('REQUEST / CHECK PERMISSION'),
                 ),
-                OutlinedButton(
-                  onPressed: controller.restoreGeofence,
-                  child: const Text('CHECK / RESTORE GEOFENCE'),
+                // Legacy single-target registration is superseded by the place
+                // list (APP-10). Its native calls remove every geofence that
+                // uses the shared PendingIntent, including all places.
+                const OutlinedButton(
+                  onPressed: null,
+                  child: Text('CHECK / RESTORE GEOFENCE'),
                 ),
                 FilledButton(
                   onPressed: controller.requestNotificationPermission,
@@ -281,28 +323,20 @@ final class _RealGeofenceSection extends StatelessWidget {
                   onPressed: controller.openNotificationSettings,
                   child: const Text('NOTIFICATION SETTINGS'),
                 ),
-                FilledButton(
-                  onPressed: controller.initialized
-                      ? () {
-                          final latitude = double.tryParse(
-                            latitudeController.text,
-                          );
-                          final longitude = double.tryParse(
-                            longitudeController.text,
-                          );
-                          if (latitude == null || longitude == null) return;
-                          controller.latitude = latitude;
-                          controller.longitude = longitude;
-                          controller.register();
-                        }
-                      : null,
-                  child: const Text('REGISTER OUTER GEOFENCE'),
+                const FilledButton(
+                  onPressed: null,
+                  child: Text('REGISTER OUTER GEOFENCE'),
                 ),
-                OutlinedButton(
-                  onPressed: controller.remove,
-                  child: const Text('REMOVE GEOFENCE'),
+                const OutlinedButton(
+                  onPressed: null,
+                  child: Text('REMOVE GEOFENCE'),
                 ),
               ],
+            ),
+            const Text(
+              'Legacy single-target registration is disabled: places are '
+              'managed in the Places list on the home screen.',
+              key: Key('legacy-registration-disabled'),
             ),
             const SizedBox(height: 8),
             if (controller.eventLog.isNotEmpty)
@@ -385,3 +419,11 @@ final class _ControlGrid extends StatelessWidget {
     );
   }
 }
+
+/// Display label for Android's registration confirmation. Only a confirmed
+/// platform read is shown as YES.
+String platformConfirmationLabel(PlatformConfirmation value) => switch (value) {
+  PlatformConfirmation.confirmed => 'YES',
+  PlatformConfirmation.notConfirmed => 'NO (not confirmed by Android)',
+  PlatformConfirmation.unknown => 'UNKNOWN (platform state not readable)',
+};

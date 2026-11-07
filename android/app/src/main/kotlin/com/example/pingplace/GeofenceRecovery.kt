@@ -14,7 +14,7 @@ import java.time.Instant
 
 /** Serializes all platform mutations in this process, including Activity recreation. */
 internal object GeofenceLifecycleCoordinator {
-    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL }
+    enum class Kind { REGISTER, REMOVE, RESTORE, RETRY_REMOVAL, MULTI_RECONCILE, ENTER_RECOVERY }
 
     data class Completion(
         val generation: Long,
@@ -39,9 +39,29 @@ internal object GeofenceLifecycleCoordinator {
         kind: Kind,
         action: ((Boolean, String?) -> Unit) -> Unit,
         callback: (Completion) -> Unit,
+    ): Long = enqueue(kind, action, callback, supersede = true)
+
+    /**
+     * Queued behind every earlier operation like [submit], but does not make
+     * earlier operations stale: an APP-10E single-place re-add must never
+     * report a user's in-flight registration change as superseded. It is
+     * itself skipped as stale if a newer operation arrives before it runs;
+     * that operation re-adds or removes the place from the newest state.
+     */
+    fun submitWithoutSuperseding(
+        kind: Kind,
+        action: ((Boolean, String?) -> Unit) -> Unit,
+        callback: (Completion) -> Unit,
+    ): Long = enqueue(kind, action, callback, supersede = false)
+
+    private fun enqueue(
+        kind: Kind,
+        action: ((Boolean, String?) -> Unit) -> Unit,
+        callback: (Completion) -> Unit,
+        supersede: Boolean,
     ): Long {
         val request = synchronized(lock) {
-            val generation = ++latestGeneration
+            val generation = if (supersede) ++latestGeneration else latestGeneration
             Request(kind, generation, action, callback).also(queue::addLast)
         }
         pump()
@@ -87,6 +107,8 @@ internal object GeofenceLifecycleCoordinator {
         when (kind) {
             Kind.REGISTER, Kind.RESTORE -> "Geofence registration failed"
             Kind.REMOVE, Kind.RETRY_REMOVAL -> "Platform removal failed"
+            Kind.MULTI_RECONCILE -> "Multi-place geofence reconciliation failed"
+            Kind.ENTER_RECOVERY -> "Geofence re-add failed"
         }
 }
 
@@ -94,7 +116,8 @@ object GeofenceRecovery {
     const val REGISTRATION_PREFS = "pingplace_registration"
     private const val RECOVERY_PREFS = "pingplace_recovery"
     private const val DIAGNOSTICS = "diagnostics"
-    private const val MAX_DIAGNOSTICS = 100
+    // Exported in full by "Copy full diagnostics"; keep several days of callbacks.
+    private const val MAX_DIAGNOSTICS = 300
     private const val CONFIRMED = "registration_confirmed"
     private const val LAST_ATTEMPT = "last_recovery_attempt"
     private const val LAST_SUCCESS = "last_recovery_success"
@@ -133,6 +156,17 @@ object GeofenceRecovery {
 
     fun readRegistration(context: Context): Registration? =
         readDesiredRegistration(context)?.takeIf { isDesiredMonitoring(context) }
+
+    fun desiredMonitoringState(context: Context): String =
+        try {
+            when (val desired = desiredStore(context).load()) {
+                null -> "unknown"
+                else -> if (desired.desiredMonitoring) "enabled" else "disabled"
+            }
+        } catch (error: DesiredRegistrationStore.StoreException) {
+            recordPersistenceFailure(context, error)
+            "unknown"
+        }
 
     fun isDesiredMonitoring(context: Context): Boolean =
         try {

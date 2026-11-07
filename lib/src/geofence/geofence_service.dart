@@ -1,15 +1,57 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 
 enum GeofencePermissionStatus { denied, foregroundOnly, backgroundAllowed }
 
+enum DesiredMonitoringState { enabled, disabled, unknown }
+
 enum GeofenceEventType { enter, exit, error }
 
+/// Whether Android has confirmed the platform geofence registration.
+///
+/// [unknown] means PingPlace could not read the native state (or has not read
+/// it yet). It must never be displayed or treated as confirmed.
+enum PlatformConfirmation { confirmed, notConfirmed, unknown }
+
+final class GeofencePlaceRegistration {
+  const GeofencePlaceRegistration({
+    required this.placeId,
+    required this.latitude,
+    required this.longitude,
+    required this.radius,
+    this.innerRadius = 80,
+    this.rearmRadius = 350,
+    this.cooldownSeconds = 600,
+    this.approachTimeoutSeconds = 600,
+    this.maxAcceptedAccuracy = 50,
+    this.reminderText,
+  });
+
+  final String placeId;
+  final double latitude;
+  final double longitude;
+  final double radius;
+  final double innerRadius;
+  final double rearmRadius;
+  final int cooldownSeconds;
+  final int approachTimeoutSeconds;
+  final double maxAcceptedAccuracy;
+  final String? reminderText;
+}
+
 final class GeofenceEvent {
-  const GeofenceEvent({required this.type, required this.at, this.error});
+  const GeofenceEvent({
+    required this.type,
+    required this.at,
+    this.error,
+    this.placeId,
+  });
 
   final GeofenceEventType type;
   final DateTime at;
   final String? error;
+  final String? placeId;
 }
 
 final class GeofenceRegistration {
@@ -59,10 +101,20 @@ abstract interface class GeofenceService {
 
   Future<bool> get desiredMonitoring async => registrationStatus;
 
+  Future<DesiredMonitoringState> get desiredMonitoringState async =>
+      (await desiredMonitoring)
+      ? DesiredMonitoringState.enabled
+      : DesiredMonitoringState.disabled;
+
   Future<GeofenceRecoveryStatus> get recoveryStatus async =>
       const GeofenceRecoveryStatus();
 
   Future<bool> restoreRegistration() async => false;
+
+  /// Emits when the native side reports that registration or recovery status
+  /// changed outside a Dart-initiated operation, such as startup
+  /// reconciliation. Listeners must re-read [recoveryStatus].
+  Stream<void> get statusChanges => const Stream<void>.empty();
 
   Future<void> register({
     required double latitude,
@@ -86,9 +138,29 @@ final class MethodChannelGeofenceService implements GeofenceService {
   static const _methodName = 'pingplace/geofence';
   static const _eventName = 'pingplace/geofence/events';
 
+  static const _statusChangedMethod = 'registrationStatusChanged';
+
   final MethodChannel _methodChannel;
   final EventChannel _eventChannel;
   Stream<GeofenceEvent>? _events;
+  StreamController<void>? _statusChanges;
+
+  @override
+  Stream<void> get statusChanges {
+    final controller = _statusChanges;
+    if (controller != null) return controller.stream;
+    final created = _statusChanges = StreamController<void>.broadcast();
+    _methodChannel.setMethodCallHandler(_handleNativeCall);
+    return created.stream;
+  }
+
+  Future<Object?> _handleNativeCall(MethodCall call) async {
+    if (call.method == _statusChangedMethod) {
+      _statusChanges?.add(null);
+      return null;
+    }
+    throw MissingPluginException('Unhandled geofence callback ${call.method}');
+  }
 
   @override
   Stream<GeofenceEvent> get events => _events ??= _eventChannel
@@ -152,6 +224,18 @@ final class MethodChannelGeofenceService implements GeofenceService {
       await _methodChannel.invokeMethod<bool>('desiredMonitoring') ?? false;
 
   @override
+  Future<DesiredMonitoringState> get desiredMonitoringState async {
+    final value = await _methodChannel.invokeMethod<String>(
+      'desiredMonitoringState',
+    );
+    return switch (value) {
+      'enabled' => DesiredMonitoringState.enabled,
+      'disabled' => DesiredMonitoringState.disabled,
+      _ => DesiredMonitoringState.unknown,
+    };
+  }
+
+  @override
   Future<GeofenceRecoveryStatus> get recoveryStatus async {
     final value = await _methodChannel.invokeMethod<Map<dynamic, dynamic>>(
       'recoveryStatus',
@@ -189,11 +273,39 @@ final class MethodChannelGeofenceService implements GeofenceService {
     'reminderText': reminderText,
   });
 
+  Future<void> registerPlaces(Iterable<GeofencePlaceRegistration> places) =>
+      _methodChannel.invokeMethod<void>('registerPlaces', {
+        'places': places
+            .map(
+              (place) => {
+                'placeId': place.placeId,
+                'latitude': place.latitude,
+                'longitude': place.longitude,
+                'radius': place.radius,
+                'innerRadius': place.innerRadius,
+                'rearmRadius': place.rearmRadius,
+                'cooldownSeconds': place.cooldownSeconds,
+                'approachTimeoutSeconds': place.approachTimeoutSeconds,
+                'maxAcceptedAccuracy': place.maxAcceptedAccuracy,
+                'reminderText': place.reminderText,
+              },
+            )
+            .toList(growable: false),
+      });
+
   @override
   Future<void> remove() => _methodChannel.invokeMethod<void>('remove');
 
   @override
-  void dispose() {}
+  void dispose() {
+    final controller = _statusChanges;
+    if (controller != null) {
+      // Only the instance that installed the handler may clear it.
+      _methodChannel.setMethodCallHandler(null);
+      _statusChanges = null;
+      unawaited(controller.close());
+    }
+  }
 
   static GeofencePermissionStatus _parsePermission(String? value) {
     return switch (value) {
@@ -207,8 +319,9 @@ final class MethodChannelGeofenceService implements GeofenceService {
     final type = value['type'] as String?;
     final timestamp = DateTime.tryParse(value['timestamp'] as String? ?? '');
     final rawError = value['error'];
-    final error = rawError is String && rawError.trim().isNotEmpty
-        ? rawError
+    final rawText = rawError is String ? rawError.trim() : '';
+    final error = rawText.isNotEmpty && rawText.toLowerCase() != 'null'
+        ? rawText
         : null;
     final eventType = switch (type) {
       'enter' => GeofenceEventType.enter,
@@ -221,8 +334,39 @@ final class MethodChannelGeofenceService implements GeofenceService {
       error:
           error ??
           (eventType == GeofenceEventType.error
-              ? 'Unknown geofence event type: $type'
+              ? 'MISSING_ERROR_DETAIL (event_type=$type)'
               : null),
+      placeId: value['placeId'] as String?,
     );
+  }
+}
+
+extension GeofenceServiceMultiPlace on GeofenceService {
+  /// Device and app conditions that decide whether Android delivers geofence
+  /// events (permission, location services, battery and background limits).
+  Future<Map<String, Object?>> systemHealth() async {
+    if (this is MethodChannelGeofenceService) {
+      final value = await (this as MethodChannelGeofenceService)._methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('systemHealth');
+      return Map<String, Object?>.from(value ?? const {});
+    }
+    return const {};
+  }
+
+  Future<Map<String, Object?>> multiRegistrationStatus() async {
+    if (this is MethodChannelGeofenceService) {
+      final value = await (this as MethodChannelGeofenceService)._methodChannel
+          .invokeMethod<Map<dynamic, dynamic>>('multiRegistrationStatus');
+      return Map<String, Object?>.from(value ?? const {});
+    }
+    return const {};
+  }
+
+  Future<void> registerPlaces(
+    Iterable<GeofencePlaceRegistration> places,
+  ) async {
+    if (this is MethodChannelGeofenceService) {
+      await (this as MethodChannelGeofenceService).registerPlaces(places);
+    }
   }
 }
