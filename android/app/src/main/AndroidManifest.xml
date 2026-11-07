@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- APP-11: map tiles for the place picker, only while it is open.
+         Debug builds already had it via src/debug; this makes it explicit
+         for every build type. Normal permission: no runtime prompt. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="pingplace"

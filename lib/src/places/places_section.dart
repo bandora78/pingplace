@@ -2,14 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'coordinates.dart';
+import 'map/place_map_surface.dart';
 import 'place_editor_screen.dart';
 import 'place_manager.dart';
 
 /// The user's saved places: list, add, edit, delete and per-place monitoring.
 final class PlacesSection extends StatefulWidget {
-  const PlacesSection({required this.manager, super.key});
+  const PlacesSection({required this.manager, this.mapSurface, super.key});
 
   final PlaceManager manager;
+
+  /// Map used by the editor's location picker; null uses the production map.
+  final PlaceMapSurface? mapSurface;
 
   @override
   State<PlacesSection> createState() => _PlacesSectionState();
@@ -37,7 +42,11 @@ final class _PlacesSectionState extends State<PlacesSection> {
   Future<void> _openEditor([ManagedPlace? existing]) async {
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => PlaceEditorScreen(manager: manager, existing: existing),
+        builder: (_) => PlaceEditorScreen(
+          manager: manager,
+          existing: existing,
+          mapSurface: widget.mapSurface,
+        ),
       ),
     );
   }
@@ -195,8 +204,7 @@ final class _PlacesSectionState extends State<PlacesSection> {
             ),
             if (item.reminderText.isNotEmpty) Text(item.reminderText),
             Text(
-              '${place.latitude.toStringAsFixed(5)}, '
-              '${place.longitude.toStringAsFixed(5)} · '
+              '${displayPair(place.latitude, place.longitude, decimals: 5)} · '
               'רדיוס ${place.outerRadius.round()} מ׳',
               style: theme.textTheme.bodySmall,
             ),
