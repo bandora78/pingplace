@@ -90,6 +90,11 @@ final class DevelopmentGeofenceController {
   DateTime? diagnosticsRefreshedAt;
   String? diagnosticsRefreshFailure;
   bool initialized = false;
+
+  /// True after the last read of the location or notification permission
+  /// failed, so the permission shown is not current (APP-12).
+  bool locationPermissionReadFailed = false;
+  bool notificationPermissionReadFailed = false;
   String? persistenceInitializationFailure;
   List<String> persistenceDiagnostics = const [];
 
@@ -175,9 +180,25 @@ final class DevelopmentGeofenceController {
   Future<void> refreshPermission() async {
     try {
       permission = await service.checkPermission();
+      locationPermissionReadFailed = false;
       _notifyListeners();
     } catch (error) {
+      locationPermissionReadFailed = true;
       _fail('PERMISSION_CHECK_FAILED: $error');
+    }
+  }
+
+  /// Re-reads the notification permission (APP-12, on app resume). Read-only:
+  /// never shows a permission prompt and never touches registrations.
+  Future<void> refreshNotificationPermission() async {
+    try {
+      final status = await notificationService.status();
+      notificationPermission = status.permission;
+      notificationPermissionReadFailed = false;
+      _notifyListeners();
+    } catch (error) {
+      notificationPermissionReadFailed = true;
+      _fail('NOTIFICATION_STATUS_FAILED: $error');
     }
   }
 
@@ -250,6 +271,7 @@ final class DevelopmentGeofenceController {
   Future<void> requestPermission() async {
     try {
       permission = await service.requestPermission();
+      locationPermissionReadFailed = false;
       _log('PERMISSION_STATUS ${permission.name}');
       if (permission != GeofencePermissionStatus.backgroundAllowed) {
         _log('PERMISSION_MISSING ${permission.name}');
@@ -265,6 +287,7 @@ final class DevelopmentGeofenceController {
       await notificationService.requestPermission();
       final status = await notificationService.status();
       notificationPermission = status.permission;
+      notificationPermissionReadFailed = false;
       _notifyListeners();
     } catch (error) {
       _fail('NOTIFICATION_PERMISSION_FAILED: $error');

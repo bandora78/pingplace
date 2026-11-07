@@ -499,46 +499,20 @@ void main() {
     });
   });
 
-  group('pasted coordinates', () {
-    testWidgets('a Google Maps pair fills latitude then longitude', (
-      tester,
-    ) async {
-      final h = await _pump(tester);
-      await _tapKey(tester, 'add-place');
-      await _enter(tester, 'place-paste-coordinates', '31.732600, 34.757743');
-      await _tapKey(tester, 'place-apply-pasted');
-      expect(_field(tester, 'place-latitude'), '31.7326');
-      expect(_field(tester, 'place-longitude'), '34.757743');
-      expect(_field(tester, 'place-paste-coordinates'), isEmpty);
-      expect(h.newRegistrations, 0);
-    });
-
-    testWidgets('links and bad pairs show a message and change nothing', (
+  group('APP-11A editor', () {
+    testWidgets('the coordinate paste field and its Apply button are gone', (
       tester,
     ) async {
       await _pump(tester);
       await _tapKey(tester, 'add-place');
-      await _enter(tester, 'place-latitude', '32.08');
-      await _enter(tester, 'place-longitude', '34.78');
-
-      await _enter(
-        tester,
-        'place-paste-coordinates',
-        'https://maps.app.goo.gl/AbCdEf123',
-      );
-      await _tapKey(tester, 'place-apply-pasted');
-      expect(find.textContaining('קישורים אינם נתמכים'), findsOneWidget);
-
-      await _enter(tester, 'place-paste-coordinates', '134.7, 31.7');
-      await _tapKey(tester, 'place-apply-pasted');
-      expect(find.textContaining('המספר הראשון הוא קו הרוחב'), findsOneWidget);
-
-      await _enter(tester, 'place-paste-coordinates', '31.7 34.7');
-      await _tapKey(tester, 'place-apply-pasted');
-      expect(find.textContaining('מופרדים בפסיק'), findsOneWidget);
-
-      expect(_field(tester, 'place-latitude'), '32.08');
-      expect(_field(tester, 'place-longitude'), '34.78');
+      expect(find.byKey(const Key('place-paste-coordinates')), findsNothing);
+      expect(find.byKey(const Key('place-apply-pasted')), findsNothing);
+      expect(find.text('הדבקת קואורדינטות'), findsNothing);
+      expect(find.text('החלה'), findsNothing);
+      // The map button and both manual fields remain.
+      expect(find.byKey(const Key('place-open-map')), findsOneWidget);
+      expect(find.byKey(const Key('place-latitude')), findsOneWidget);
+      expect(find.byKey(const Key('place-longitude')), findsOneWidget);
     });
   });
 

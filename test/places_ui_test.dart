@@ -192,6 +192,9 @@ void main() {
     );
     await tester.pump();
 
+    // APP-12: Delete is in the card's overflow menu.
+    await tester.tap(find.byKey(const Key('place-menu-place-1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('place-delete-place-1')));
     await tester.pumpAndSettle();
     expect(find.text('מחיקת מקום'), findsOneWidget);
@@ -199,6 +202,9 @@ void main() {
     await _settle(tester);
     expect(rig.stored.places, hasLength(2));
 
+    // APP-12: Delete is in the card's overflow menu.
+    await tester.tap(find.byKey(const Key('place-menu-place-1')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('place-delete-place-1')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('confirm-delete')));

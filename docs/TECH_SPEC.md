@@ -184,9 +184,9 @@ causes no registration and keeps runtime state). The map is drawn behind
 **Coordinates.** `coordinates.dart` is pure Dart. Editor text is Dart's
 shortest round-trip form, so a map value is stored with full precision;
 display uses six decimals inside a left-to-right isolate (U+2066/U+2069) so
-Hebrew RTL layout cannot reorder signs or values. Pasted pairs are read in
-Google Maps order, `latitude, longitude`; order is never guessed, values are
-never clamped or snapped, and links are rejected without being opened.
+Hebrew RTL layout cannot reorder signs or values. Values are never clamped
+or snapped. (The Build 23 coordinate-paste field was removed in APP-11A,
+Build 24; coordinates come from the map or are typed into the two fields.)
 
 **Map provider.** `flutter_map` 8.3.2 (BSD-3-Clause; pure Flutter, no API key,
 no Google Play services dependency, iOS-capable) with raster tiles. The
@@ -209,3 +209,53 @@ the tile provider; no place, reminder or device location is sent. The app
 now declares `INTERNET` in the main manifest (debug builds, including the
 field-test APKs, already had it). No new location permission; the map never
 requests the device location.
+
+
+## Phase 1 APP-12 card home screen and APP-11A editor (Build 24)
+
+UI-only. No change to detection, geofence registration or event routing,
+precise verification, receivers/services, cooldown/re-arm, notification
+dispatch, runtime or place persistence, PlaceManager rules, native code, the
+manifest or signing.
+
+**Home.** One scrolling list: an overall status banner, "המקומות שלי", a
+full-width "הוספת מקום חדש" (`add-place`), one `PlaceCard` per place, and the
+version/build/commit footer (`developer-mode-gesture`: seven taps or a long
+press opens Developer Mode, unchanged).
+
+**Status banner.** `homeStatusFor` (pure Dart, `lib/src/home/home_status.dart`)
+derives one status from existing state, first match wins: startup still
+reading (no permission conclusion before the controller has read it) →
+persistence setup failure → place load failure (read-only reload) →
+permission read failed → location permission missing / foreground only
+(existing request-then-retry flow) → notification permission missing
+("הפעלת התראות" plus the existing notification settings path) → a failed
+place operation → no places → all disabled → "המעקב פעיל" only when both
+permissions are granted and Android confirmed every enabled place → partial
+(exact "N מתוך M") → unknown → pending. `place.enabled` is never treated as
+monitored. The controller's `lastError` stays visible under the banner.
+
+**Cards.** Name and reminder (two lines each), status icon plus text per
+`PlaceRegistrationState` (only `registered` reads as active), the switch
+bound to the stored `enabled` value (never optimistic), and an overflow menu
+with Edit and Delete (confirmation dialog). The content area opens the editor
+and does not overlap the switch or menu. Coordinates and radius are shown
+only in the editor. While PlaceManager is busy every card control is
+disabled; a per-card in-flight set (cleared in `finally`) shows progress and
+makes repeated taps dispatch once; the delete confirmation re-checks the busy
+state before deleting; the editor cannot be opened twice.
+
+**Resume refresh.** On `AppLifecycleState.resumed` the home screen calls
+`controller.refreshPermission()`, the new read-only
+`controller.refreshNotificationPermission()` and `PlaceManager.refresh()`
+(database read plus Android status read; it never registers or writes). It
+is skipped during startup, during a banner action, while a previous refresh
+runs, and while PlaceManager is busy (each operation already ends with the
+same reload). There is no periodic polling. A failed permission read sets a
+read-failure flag and the banner shows "לא ניתן לאמת את מצב המעקב".
+
+**APP-11A.** The place editor no longer has the coordinate-paste field or
+its "החלה" button; `parseCoordinatePair` and its result/error types were
+removed with them. The map picker, the manual latitude/longitude fields,
+`parseCoordinate`/`editorText`, `GeoPoint` and the display helpers are
+unchanged. There is still no unsaved-changes prompt (owner decision 4).
